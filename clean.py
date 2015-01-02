@@ -65,7 +65,7 @@ def hogbom(dirty,
         window=numpy.ones(dirty.shape,
                           numpy.bool)
     for i in range(niter):
-        mx, my=argmax(numpy.fabs(res[window]))
+        mx, my=numpy.unravel_index((numpy.fabs(res[window])).argmax(), dirty.shape)
         mval=res[mx, my]*gain/pmax
         comps[mx, my]+=mval
         a1o, a2o=overlapIndices(dirty, psf,
