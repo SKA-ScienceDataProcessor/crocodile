@@ -8,6 +8,9 @@ import scipy.special
 def ucs(m):
     return numpy.mgrid[-1:1:(m.shape[0]*1j), -1:1:(m.shape[1]*1j)]
 
+def ucsN(N):
+    return numpy.mgrid[-1:1:(N*1j), -1:1:(N*1j)]
+
 def uax(m, n, eps=0):
     "1D Array which spans nth axes of m with values between -1 and 1"
     return numpy.mgrid[(-1+eps):(1-eps):(m.shape[n]*1j)]
@@ -21,11 +24,18 @@ def aaf(a, m, c):
            [0,1])
     return numpy.outer(sx,sy)
 
-def wkern(a, T2, w):
+def wkernff(N, T2, w):
     "W convolution kernel. T2 is half-width of map in radian"
-    r2=((ucs(a)*T2)**2).sum(axis=0)
+    r2=((ucsN(N)*T2)**2).sum(axis=0)
     ph=w*(1-numpy.sqrt(1-r2))
     return (numpy.exp(2j*numpy.pi*ph))
+
+def wkernaf(N, T2, w, s):
+    wff=wkernff(N, T2 , w)
+    waf=exmid(numpy.fft.fftshift(numpy.fft.fft2(wff)), s)
+    #waf=waf*(1.0/numpy.abs(waf.sum()))
+    waf=waf*(1.0/waf.sum())
+    return waf
 
 def sample(a, p):
     "Take samples from array a"
@@ -53,6 +63,16 @@ def convgrid(a, p, v, gcf):
     for i in range(len(x)):
         convgridone(a, (x[i], y[i]), gcf, v[i])
     return a
+
+def convdegrid(a, p, gcf):
+    x=((1+p[:,0])*a.shape[0]/2).astype(int)
+    y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    v=[]
+    sx, sy= gcf.shape[0]/2, gcf.shape[1]/2
+    for i in range(len(x)):
+        pi=(x[i], y[i])
+        v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf).sum())
+    return numpy.array(v)
 
 def exmid(a, s):
     "Extract a section from middle of a map"
@@ -82,7 +102,10 @@ def rotw(p, v):
 def sortw(p, v):
     "Sort on the w value"
     zs=numpy.argsort(p[:,2])
-    return p[zs], v[zs]
+    if v is not None:
+        return p[zs], v[zs]
+    else:
+        return p[zs]
 
 def doweight(T2, L2, p, v):
     N= T2*L2 *4
@@ -119,6 +142,26 @@ def wslicimg(T2, L2, p, v,
         wg=wg*(1.0/numpy.abs(wg).sum())
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
+
+def wslicfwd(guv,
+             T2, L2, p,
+             wstep=2000):
+    "Predict visibilities using w-slices"
+    N= T2*L2 *4
+    p= sortw(p, None)
+    nv=len(p)
+    ii=range( 0, nv, wstep)
+    ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
+    res=[]
+    for ilow, ihigh in ir:
+        w=p[ilow:ihigh,2].mean()
+        wg=wkernaf(N, T2, w, 15)
+        res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
+    v=numpy.concatenate(res)
+    pp=p.copy()
+    pp[:,2]*=-1
+    return (p, rotw(pp,v))
+
 
 def doimg(T2, L2, p, v, imgfn):
     v=doweight(T2, L2, p, v)
