@@ -14,7 +14,7 @@ def uax(m, n, eps=0):
 
 def aaf(a, m, c):
     """Compute the anti-aliasing function as separable product. See VLA
-    Scientific Memoranda 132 by Fred Schwab.
+    Scientific Memoranda 129, 131, 132 
 
     """
     sx,sy=map(lambda i: scipy.special.pro_ang1(m,m,c,uax(a,i,eps=1e-10))[0],
@@ -28,7 +28,7 @@ def sample(a, p):
     return a[x,y]
 
 def grid(a, aw, p, v):
-    "Grid samples back onto array a"
+    "Grid samples array a without convolution"
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     for i in range(len(x)):
@@ -39,6 +39,7 @@ def grid(a, aw, p, v):
     return a, aw
 
 def convgridone(a, aw, pi, gcf, v):
+    "Convolve and grid one sample"
     sx, sy= gcf.shape[0]/2, gcf.shape[1]/2
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf*v
     aw[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += 1
@@ -67,10 +68,15 @@ def div0(a1, a2):
 
 def inv(g, w):
     return numpy.fft.ifft2(numpy.fft.ifftshift(div0(c1,c1w)))
+
+def rotv(p, l, m, v):
+    "Rotate visibilities to direction (l,m)"
+    s=numpy.array([l, m , numpy.sqrt(1 - l**2 - m**2)])
+    return (v * numpy.exp(2j*numpy.pi*numpy.dot(p, s)))    
     
 def rotw(p, v):
     "Rotate visibilities to zero w plane"
-    return (v * numpy.exp(2j*numpy.pi*p[:,2]))
+    return rotv(p, 0, 0, v)
 
 
 
