@@ -30,3 +30,9 @@ def bls(p):
 
 def genuv(p, ha, dec):
     return(numpy.concatenate([bls(rot(p,hax,dec)) for hax in ha]))
+
+def genvis(p, l, m):
+    "Simulate visibilities for point source at (l,m)"
+    s=numpy.array([l, m , numpy.sqrt(1 - l**2 - m**2)])
+    return numpy.exp(-2j*numpy.pi* numpy.dot(p, s))
+

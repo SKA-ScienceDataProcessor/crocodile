@@ -68,4 +68,9 @@ def div0(a1, a2):
 def inv(g, w):
     return numpy.fft.ifft2(numpy.fft.ifftshift(div0(c1,c1w)))
     
+def rotw(p, v):
+    "Rotate visibilities to zero w plane"
+    return (v * numpy.exp(2j*numpy.pi*p[:,2]))
+
+
 
