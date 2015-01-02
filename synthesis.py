@@ -33,30 +33,26 @@ def sample(a, p):
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     return a[x,y]
 
-def grid(a, aw, p, v):
+def grid(a, p, v):
     "Grid samples array a without convolution"
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     for i in range(len(x)):
         a[x[i],y[i]] += v[i]
-        aw[x[i],y[i]] +=1
-    return a, aw
+    return a
 
-def convgridone(a, aw, pi, gcf, v):
+def convgridone(a, pi, gcf, v):
     "Convolve and grid one sample. Note the normalisation."
     sx, sy= gcf.shape[0]/2, gcf.shape[1]/2
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf*v
-    #aw[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += numpy.abs(gcf)
-    #aw[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += 1
-    aw[ pi[0],  pi[1] ] += 1
 
-def convgrid(a, aw, p, v, gcf):
+def convgrid(a, p, v, gcf):
     "Grid after convolving with gcf" 
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     for i in range(len(x)):
-        convgridone(a, aw, (x[i], y[i]), gcf, v[i])
-    return a, aw    
+        convgridone(a, (x[i], y[i]), gcf, v[i])
+    return a
 
 def exmid(a, s):
     "Extract a section from middle of a map"
@@ -71,8 +67,8 @@ def div0(a1, a2):
     res[m]/=a2[m]
     return res
 
-def inv(g, w):
-    return numpy.fft.ifft2(numpy.fft.ifftshift(div0(g,w)))
+def inv(g):
+    return numpy.fft.ifft2(numpy.fft.ifftshift(g))
 
 def rotv(p, l, m, v):
     "Rotate visibilities to direction (l,m)"
@@ -88,19 +84,30 @@ def sortw(p, v):
     zs=numpy.argsort(p[:,2])
     return p[zs], v[zs]
 
+def doweight(T2, L2, p, v):
+    N= T2*L2 *4
+    gw =numpy.zeros([N, N])
+    p=p/L2
+    x=((1+p[:,0])*a.shape[0]/2).astype(int)
+    y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    for i in range(len(x)):
+        gw[x[i],y[i]] += 1
+    v=v.copy()
+    for i in range(len(x)):
+        v[i] /= gw[x[i],y[i]]
+    return v
+
 def simpleimg(T2, L2, p, v):
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
-    gw =numpy.zeros([N, N])
-    grid(guv, gw, p/L2, v)
-    return guv, gw
+    grid(guv, p/L2, v)
+    return guv
 
 def wslicimg(T2, L2, p, v,
              wstep=2000):
     "Basic w-projection by w-sort and slicing in w" 
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
-    gw =numpy.zeros([N, N], dtype=complex)
     p, v = sortw(p, v)
     nv=len(v)
     ii=range( 0, nv, wstep)
@@ -108,15 +115,16 @@ def wslicimg(T2, L2, p, v,
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wk=wkern(guv, T2 , w)
-        wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),15)
-        convgrid(guv, gw, p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
-    return guv, gw
+        wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),9)
+        convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
+    return guv
 
 def doimg(T2, L2, p, v, imgfn):
-    c, cw=imgfn(T2, L2, p, rotw(p, v))
-    s=numpy.fft.fftshift(inv(c, cw).real)
-    c, cw=imgfn(T2, L2, p, numpy.ones(len(p)))
-    p=numpy.fft.fftshift(inv(c, cw).real)
+    v=doweight(T2, L2, p, v)
+    c=imgfn(T2, L2, p, rotw(p, v))
+    s=numpy.fft.fftshift(inv(c).real)
+    c=imgfn(T2, L2, p, numpy.ones(len(p)))
+    p=numpy.fft.fftshift(inv(c).real)
     return (s,p)
     
 
