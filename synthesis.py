@@ -25,7 +25,7 @@ def wkern(a, T2, w):
     "W convolution kernel. T2 is half-width of map in radian"
     r2=((ucs(a)*T2)**2).sum(axis=0)
     ph=w*(1-numpy.sqrt(1-r2))
-    return (numpy.exp(-2j*numpy.pi*ph))
+    return (numpy.exp(2j*numpy.pi*ph))
 
 def sample(a, p):
     "Take samples from array a"
@@ -39,16 +39,16 @@ def grid(a, aw, p, v):
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     for i in range(len(x)):
         a[x[i],y[i]] += v[i]
-        a[-x[i],-y[i]] += numpy.conj(v[i])
         aw[x[i],y[i]] +=1
-        aw[-x[i],-y[i]] +=1
     return a, aw
 
 def convgridone(a, aw, pi, gcf, v):
     "Convolve and grid one sample"
     sx, sy= gcf.shape[0]/2, gcf.shape[1]/2
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf*v
-    aw[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += 1
+    #aw[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += numpy.abs(gcf)
+    #aw[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += 1
+    aw[ pi[0],  pi[1] ] += 1
 
 def convgrid(a, aw, p, v, gcf):
     "Grid after convolving with gcf" 
@@ -56,7 +56,6 @@ def convgrid(a, aw, p, v, gcf):
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     for i in range(len(x)):
         convgridone(a, aw, (x[i], y[i]), gcf, v[i])
-        convgridone(a, aw, (-x[i], -y[i]), gcf, numpy.conj(v[i]))
     return a, aw    
 
 def exmid(a, s):
@@ -73,7 +72,7 @@ def div0(a1, a2):
     return res
 
 def inv(g, w):
-    return numpy.fft.ifft2(numpy.fft.ifftshift(div0(c1,c1w)))
+    return numpy.fft.ifft2(numpy.fft.ifftshift(div0(g,w)))
 
 def rotv(p, l, m, v):
     "Rotate visibilities to direction (l,m)"
@@ -100,8 +99,9 @@ def wslicimg(T2, L2, p, v,
     "Basic w-projection by w-sort and slicing in w" 
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
-    gw =numpy.zeros([N, N])
+    gw =numpy.zeros([N, N], dtype=complex)
     p, v = sortw(p, v)
+    v=rotw(p,v)
     nv=len(v)
     ii=range( 0, nv, wstep)
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
@@ -109,8 +109,7 @@ def wslicimg(T2, L2, p, v,
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wk=wkern(guv, T2 , w)
-        wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),7)
-        #wg= wg * (1/wg.real.sum())
+        wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),15)
         wgl.append(wg)
         convgrid(guv, gw, p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv, gw, wgl
