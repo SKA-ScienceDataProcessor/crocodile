@@ -28,7 +28,8 @@ def overlapIndices(a1, a2,
 
     return (a1xbeg, a1xend, a1ybeg, a1yend), (a2xbeg, a2xend, a2ybeg, a2yend)
 
-        
+def argmax(a):
+    return numpy.unravel_index(a.argmax(), a.shape)
 
 def hogbom(dirty,
            psf,
@@ -59,12 +60,12 @@ def hogbom(dirty,
     comps=numpy.zeros(dirty.shape)
     res=numpy.array(dirty)
     pmax=psf.max()
-    psfpeak=numpy.unravel_index(numpy.fabs(psf).argmax(), psf.shape)
+    psfpeak=argmax(numpy.fabs(psf))
     if window is True:
         window=numpy.ones(dirty.shape,
                           numpy.bool)
     for i in range(niter):
-        mx, my=numpy.unravel_index(numpy.fabs(res[window]).argmax(), res.shape)
+        mx, my=argmax(numpy.fabs(res[window]))
         mval=res[mx, my]*gain/pmax
         comps[mx, my]+=mval
         a1o, a2o=overlapIndices(dirty, psf,
