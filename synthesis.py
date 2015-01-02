@@ -116,6 +116,7 @@ def wslicimg(T2, L2, p, v,
         w=p[ilow:ihigh,2].mean()
         wk=wkern(guv, T2 , w)
         wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),9)
+        wg=wg*(1.0/numpy.abs(wg).sum())
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
 
