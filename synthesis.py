@@ -43,7 +43,7 @@ def grid(a, aw, p, v):
     return a, aw
 
 def convgridone(a, aw, pi, gcf, v):
-    "Convolve and grid one sample"
+    "Convolve and grid one sample. Note the normalisation."
     sx, sy= gcf.shape[0]/2, gcf.shape[1]/2
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf*v
     #aw[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += numpy.abs(gcf)
@@ -84,6 +84,7 @@ def rotw(p, v):
     return rotv(p, 0, 0, v)
 
 def sortw(p, v):
+    "Sort on the w value"
     zs=numpy.argsort(p[:,2])
     return p[zs], v[zs]
 
@@ -100,19 +101,17 @@ def wslicimg(T2, L2, p, v,
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
     gw =numpy.zeros([N, N], dtype=complex)
-    p, v = sortw(p, v)
     v=rotw(p,v)
+    p, v = sortw(p, v)
     nv=len(v)
     ii=range( 0, nv, wstep)
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
-    wgl=[]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wk=wkern(guv, T2 , w)
         wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),15)
-        wgl.append(wg)
         convgrid(guv, gw, p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
-    return guv, gw, wgl
+    return guv, gw
     
     
     
