@@ -92,7 +92,7 @@ def simpleimg(T2, L2, p, v):
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
     gw =numpy.zeros([N, N])
-    grid(guv, gw, p/L2, rotw(p, v))
+    grid(guv, gw, p/L2, v)
     return guv, gw
 
 def wslicimg(T2, L2, p, v,
@@ -101,7 +101,6 @@ def wslicimg(T2, L2, p, v,
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
     gw =numpy.zeros([N, N], dtype=complex)
-    v=rotw(p,v)
     p, v = sortw(p, v)
     nv=len(v)
     ii=range( 0, nv, wstep)
@@ -112,8 +111,13 @@ def wslicimg(T2, L2, p, v,
         wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),15)
         convgrid(guv, gw, p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv, gw
-    
-    
+
+def doimg(T2, L2, p, v, imgfn):
+    c, cw=imgfn(T2, L2, p, rotw(p, v))
+    s=numpy.fft.fftshift(inv(c, cw).real)
+    c, cw=imgfn(T2, L2, p, numpy.ones(len(p)))
+    p=numpy.fft.fftshift(inv(c, cw).real)
+    return (s,p)
     
 
 
