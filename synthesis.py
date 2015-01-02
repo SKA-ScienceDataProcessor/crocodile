@@ -21,6 +21,12 @@ def aaf(a, m, c):
            [0,1])
     return numpy.outer(sx,sy)
 
+def wkern(a, T2, w):
+    "W convolution kernel. T2 is half-width of map in radian"
+    r2=((ucs(a)*T2)**2).sum(axis=0)
+    ph=w*(1-numpy.sqrt(1-r2))
+    return (numpy.exp(-2j*numpy.pi*ph))
+
 def sample(a, p):
     "Take samples from array a"
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
@@ -77,6 +83,40 @@ def rotv(p, l, m, v):
 def rotw(p, v):
     "Rotate visibilities to zero w plane"
     return rotv(p, 0, 0, v)
+
+def sortw(p, v):
+    zs=numpy.argsort(p[:,2])
+    return p[zs], v[zs]
+
+def simpleimg(T2, L2, p, v):
+    N= T2*L2 *4
+    guv=numpy.zeros([N, N], dtype=complex)
+    gw =numpy.zeros([N, N])
+    grid(guv, gw, p/L2, rotw(p, v))
+    return guv, gw
+
+def wslicimg(T2, L2, p, v,
+             wstep=2000):
+    "Basic w-projection by w-sort and slicing in w" 
+    N= T2*L2 *4
+    guv=numpy.zeros([N, N], dtype=complex)
+    gw =numpy.zeros([N, N])
+    p, v = sortw(p, v)
+    nv=len(v)
+    ii=range( 0, nv, wstep)
+    ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
+    wgl=[]
+    for ilow, ihigh in ir:
+        w=p[ilow:ihigh,2].mean()
+        wk=wkern(guv, T2 , w)
+        wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),7)
+        #wg= wg * (1/wg.real.sum())
+        wgl.append(wg)
+        convgrid(guv, gw, p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
+    return guv, gw, wgl
+    
+    
+    
 
 
 
