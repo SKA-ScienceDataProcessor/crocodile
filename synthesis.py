@@ -32,8 +32,7 @@ def wkernff(N, T2, w):
 
 def wkernaf(N, T2, w, s):
     wff=wkernff(N, T2 , w)
-    waf=exmid(numpy.fft.fftshift(numpy.fft.fft2(wff)), s)
-    #waf=waf*(1.0/numpy.abs(waf.sum()))
+    waf=exmid(numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(wff))), s)
     waf=waf*(1.0/waf.sum())
     return waf
 
@@ -137,9 +136,7 @@ def wslicimg(T2, L2, p, v,
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wk=wkern(guv, T2 , w)
-        wg=exmid(numpy.fft.fftshift(numpy.fft.fft2(wk)),9)
-        wg=wg*(1.0/numpy.abs(wg).sum())
+        wg=wkernaf(N, T2, w, 15)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
 
