@@ -76,5 +76,22 @@ def hogbom(dirty,
             break
     return comps, res
         
-        
+
+def majorcycle(T2, L2,
+               p, v,
+               gain,
+               nmajor,
+               nminor,
+               wsteps):
+    "Major cycle clean"
+    ps, vs = sortw(p, v)
+    for i in range(nmajor):
+        dirty,psf=doimg(T2, L2, ps, vs, simpleimg)
+        cc,rres=hogbom(dirty, psf, True, gain, 0,
+                       nminor)
+        xuv=numpy.fft.fftshift(numpy.fft.fft2(numpy.fft.ifftshift(cc)))
+        ps, vsp=wslicfwd(xuv, T2, L2, p, wstep=wsteps)
+        vs=vs-vsp
+    return ps, vs
+
     
