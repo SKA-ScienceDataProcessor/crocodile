@@ -25,16 +25,21 @@ def aaf(a, m, c):
     return numpy.outer(sx,sy)
 
 def wkernff(N, T2, w):
-    "W convolution kernel. T2 is half-width of map in radian"
+    "W beam (i.e., w effect in the far-field). T2 is half-width of map in radian"
     r2=((ucsN(N)*T2)**2).sum(axis=0)
     ph=w*(1-numpy.sqrt(1-r2))
     return (numpy.exp(2j*numpy.pi*ph))
 
 def wkernaf(N, T2, w, s):
+    "The middle s pixels of W convolution kernel"
     wff=wkernff(N, T2 , w)
     waf=exmid(numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(wff))), s)
     waf=waf*(1.0/waf.sum())
     return waf
+
+def kinvert(a):
+    "Pseudo-Invert a kernel" 
+    return numpy.conj(a) / (numpy.abs(a)**2)
 
 def sample(a, p):
     "Take samples from array a"
@@ -64,6 +69,7 @@ def convgrid(a, p, v, gcf):
     return a
 
 def convdegrid(a, p, gcf):
+    "Convolutional-degridding"
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     v=[]
@@ -107,6 +113,7 @@ def sortw(p, v):
         return p[zs]
 
 def doweight(T2, L2, p, v):
+    "Re-weight visibilities"
     N= T2*L2 *4
     gw =numpy.zeros([N, N])
     p=p/L2
@@ -137,6 +144,7 @@ def wslicimg(T2, L2, p, v,
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wg=wkernaf(N, T2, w, 15)
+        wg=numpy.conj(wg)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
 
