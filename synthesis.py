@@ -117,8 +117,8 @@ def doweight(T2, L2, p, v):
     N= T2*L2 *4
     gw =numpy.zeros([N, N])
     p=p/L2
-    x=((1+p[:,0])*a.shape[0]/2).astype(int)
-    y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    x=((1+p[:,0])*N/2).astype(int)
+    y=((1+p[:,1])*N/2).astype(int)
     for i in range(len(x)):
         gw[x[i],y[i]] += 1
     v=v.copy()
