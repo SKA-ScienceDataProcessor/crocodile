@@ -78,13 +78,19 @@ def convgridone(a, pi, fi, gcf, v):
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[0]][fi[1]]*v
 
-def convgrid(a, p, v, gcf):
-    "Grid after convolving with gcf" 
+
+def convcoords(a, p, gcf):
+    "Compute grid coordinates and fractional values for convolutional gridding"
     Qpx=len(gcf)
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
     xf=((((1+p[:,0])*a.shape[0]/2)-x)*Qpx).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     yf=((((1+p[:,1])*a.shape[1]/2)-y)*Qpx).astype(int)
+    return x, xf, y, yf
+
+def convgrid(a, p, v, gcf):
+    "Grid after convolving with gcf" 
+    x, xf, y, yf=convcoords(a, p, gcf)
     for i in range(len(x)):
         convgridone(a,
                     (x[i], y[i]),
@@ -94,11 +100,7 @@ def convgrid(a, p, v, gcf):
 
 def convdegrid(a, p, gcf):
     "Convolutional-degridding"
-    Qpx=len(gcf)
-    x=((1+p[:,0])*a.shape[0]/2).astype(int)
-    xf=((((1+p[:,0])*a.shape[0]/2)-x)*Qpx).astype(int)
-    y=((1+p[:,1])*a.shape[1]/2).astype(int)
-    yf=((((1+p[:,1])*a.shape[1]/2)-y)*Qpx).astype(int)
+    x, xf, y, yf=convcoords(a, p, gcf)
     v=[]
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
     for i in range(len(x)):
