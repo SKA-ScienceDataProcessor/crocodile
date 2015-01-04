@@ -103,7 +103,7 @@ def convdegrid(a, p, gcf):
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
     for i in range(len(x)):
         pi=(x[i], y[i])
-        v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf][yf]).sum())
+        v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
     return numpy.array(v)
 
 def exmid(a, s):
