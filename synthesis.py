@@ -1,6 +1,14 @@
 # Bojan Nikolic <b.nikolic@mrao.cam.ac.uk>
 # 
 # Synthetise and image interfometer data
+"""
+Parameter name meanings:
+
+T2: Theta2, the half-width of the field of view to be synthetised  (radian)
+
+L2: Half-width of the uv-plane (unitless). Controls resultion of the images
+
+"""
 
 import numpy
 import scipy.special
@@ -133,6 +141,13 @@ def rotw(p, v):
     "Rotate visibilities to zero w plane"
     return rotv(p, 0, 0, v)
 
+def posvv(p, v):
+    "Move all visibilities to positive v"
+    s=p[:,1]<0
+    p[s]*=-1.0
+    v[s]=numpy.conjugate(v[s])
+    return p,v
+
 def sortw(p, v):
     "Sort on the w value"
     zs=numpy.argsort(p[:,2])
@@ -173,6 +188,7 @@ def wslicimg(T2, L2, p, v,
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
+        #wg=wkernaf(129, T2, w, 15, Qpx)
         wg=wkernaf(N/Qpx, T2, w, 15, Qpx)
         wg=map(lambda x: map(numpy.conj, x), wg)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
@@ -200,6 +216,7 @@ def wslicfwd(guv,
 
 
 def doimg(T2, L2, p, v, imgfn):
+    posvv(p,v)
     v=doweight(T2, L2, p, v)
     c=imgfn(T2, L2, p, rotw(p, v))
     s=numpy.fft.fftshift(inv(c).real)
