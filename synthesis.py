@@ -130,7 +130,8 @@ def div0(a1, a2):
     return res
 
 def inv(g):
-    return numpy.fft.ifft2(numpy.fft.ifftshift(g))
+    N=g.shape[1]
+    return numpy.fft.fftshift(numpy.fft.irfft2(numpy.roll(g[:,(N/2-1):], shift=-N/2, axis=0)))
 
 def rotv(p, l, m, v):
     "Rotate visibilities to direction (l,m)"
@@ -219,9 +220,9 @@ def doimg(T2, L2, p, v, imgfn):
     posvv(p,v)
     v=doweight(T2, L2, p, v)
     c=imgfn(T2, L2, p, rotw(p, v))
-    s=numpy.fft.fftshift(inv(c).real)
+    s=inv(c)
     c=imgfn(T2, L2, p, numpy.ones(len(p)))
-    p=numpy.fft.fftshift(inv(c).real)
+    p=inv(c)
     return (s,p)
     
 
