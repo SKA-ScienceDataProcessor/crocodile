@@ -189,7 +189,6 @@ def wslicimg(T2, L2, p, v,
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        #wg=wkernaf(129, T2, w, 15, Qpx)
         wg=wkernaf(N/Qpx+1, T2, w, 15, Qpx)
         wg=map(lambda x: map(numpy.conj, x), wg)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
