@@ -24,18 +24,36 @@ def aaf(a, m, c):
            [0,1])
     return numpy.outer(sx,sy)
 
-def wkernff(N, T2, w):
+def wkernff(N, T2, w, Qpx):
     "W beam (i.e., w effect in the far-field). T2 is half-width of map in radian"
     r2=((ucsN(N)*T2)**2).sum(axis=0)
     ph=w*(1-numpy.sqrt(1-r2))
-    return (numpy.exp(2j*numpy.pi*ph))
+    cp=(numpy.exp(2j*numpy.pi*ph))
+    return numpy.pad(cp,
+                     pad_width=(N*(Qpx-1)/2,),
+                     mode='constant',
+                     constant_values=(0.0,))
 
-def wkernaf(N, T2, w, s):
-    "The middle s pixels of W convolution kernel"
-    wff=wkernff(N, T2 , w)
-    waf=exmid(numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(wff))), s)
-    waf=waf*(1.0/waf.sum())
-    return waf
+def wextract(a, i, j, Qpx, s):
+    "Extract the (ith,jth) w-kernel from the oversampled parent and normalise"
+    x=a[i::Qpx, j::Qpx]
+    x*=1.0/x.sum()
+    return exmid(x,s)
+
+def wkernaf(N, T2, w, s,
+            Qpx):
+    """
+    The middle s pixels of W convolution kernel.
+
+    :param Qpx: Oversampling, pixels will be Qpx smaller in aperture
+    plane than required to minimially sample T2.
+
+    :return: (Qpx,Qpx) shaped list of convolution kernels
+    """
+    wff=wkernff(N, T2 , w, Qpx)
+    waf=numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(wff)))
+    res=[[wextract(waf, i, j, Qpx, s) for i in range(Qpx)] for j in range(Qpx)]
+    return res
 
 def kinvert(a):
     "Pseudo-Invert a kernel" 
@@ -55,28 +73,37 @@ def grid(a, p, v):
         a[x[i],y[i]] += v[i]
     return a
 
-def convgridone(a, pi, gcf, v):
+def convgridone(a, pi, fi, gcf, v):
     "Convolve and grid one sample. Note the normalisation."
-    sx, sy= gcf.shape[0]/2, gcf.shape[1]/2
-    a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf*v
+    sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
+    a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[0]][fi[1]]*v
 
 def convgrid(a, p, v, gcf):
     "Grid after convolving with gcf" 
+    Qpx=len(gcf)
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
+    xf=((((1+p[:,0])*a.shape[0]/2)-x)*Qpx).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    yf=((((1+p[:,1])*a.shape[1]/2)-y)*Qpx).astype(int)
     for i in range(len(x)):
-        convgridone(a, (x[i], y[i]), gcf, v[i])
+        convgridone(a,
+                    (x[i], y[i]),
+                    (xf[i], yf[i]),
+                    gcf, v[i])
     return a
 
 def convdegrid(a, p, gcf):
     "Convolutional-degridding"
+    Qpx=len(gcf)
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
+    xf=((((1+p[:,0])*a.shape[0]/2)-x)*Qpx).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    yf=((((1+p[:,1])*a.shape[1]/2)-y)*Qpx).astype(int)
     v=[]
-    sx, sy= gcf.shape[0]/2, gcf.shape[1]/2
+    sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
     for i in range(len(x)):
         pi=(x[i], y[i])
-        v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf).sum())
+        v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf][yf]).sum())
     return numpy.array(v)
 
 def exmid(a, s):
@@ -133,7 +160,8 @@ def simpleimg(T2, L2, p, v):
     return guv
 
 def wslicimg(T2, L2, p, v,
-             wstep=2000):
+             wstep=2000,
+             Qpx=4):
     "Basic w-projection by w-sort and slicing in w" 
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
@@ -143,14 +171,15 @@ def wslicimg(T2, L2, p, v,
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wg=wkernaf(N, T2, w, 15)
-        wg=numpy.conj(wg)
+        wg=wkernaf(N/Qpx, T2, w, 15, Qpx)
+        wg=map(lambda x: map(numpy.conj, x), wg)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
 
 def wslicfwd(guv,
              T2, L2, p,
-             wstep=2000):
+             wstep=2000,
+             Qpx=4):
     "Predict visibilities using w-slices"
     N= T2*L2 *4
     p= sortw(p, None)
@@ -160,7 +189,7 @@ def wslicfwd(guv,
     res=[]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wg=wkernaf(N, T2, w, 15)
+        wg=wkernaf(N/Qpx, T2, w, 15, Qpx)
         res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
     v=numpy.concatenate(res)
     pp=p.copy()
