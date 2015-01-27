@@ -2,6 +2,8 @@
 
 import numpy
 
+from synthesis import sortw, doimg, wslicimg, wslicfwd
+
 def overlapIndices(a1, a2, 
                    shiftx, shifty):
     if shiftx >=0:
@@ -86,7 +88,7 @@ def majorcycle(T2, L2,
     "Major cycle clean"
     ps, vs = sortw(p, v)
     for i in range(nmajor):
-        dirty,psf=doimg(T2, L2, ps, vs, lambda *x: wslicimg(*x, wstep=wstep))
+        dirty,psf=doimg(T2, L2, ps, vs, lambda *x: wslicimg(*x, wstep=wstep, Qpx=1))
         cc,rres=hogbom(dirty, psf, True, gain, 0,
                        nminor)
         xuv=numpy.fft.fftshift(numpy.fft.fft2(numpy.fft.ifftshift(cc)))
