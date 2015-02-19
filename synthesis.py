@@ -81,6 +81,15 @@ def grid(a, p, v):
         a[x[i],y[i]] += v[i]
     return a
 
+
+def grid1(a, p, v):
+    "Grid samples array a without convolution"
+    x=((1+p[:,0])*a.shape[0]/2).astype(int)
+    y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    for i in range(len(x)):
+        a[x[i],y[i]] = v[i]
+    return a
+
 def convgridone(a, pi, fi, gcf, v):
     "Convolve and grid one sample. Note the normalisation."
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
