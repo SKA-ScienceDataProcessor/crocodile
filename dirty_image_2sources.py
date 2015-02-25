@@ -31,7 +31,7 @@ if 1:
     """
     uvstep = 0.1
     wl = 5.0
-    dec = numpy.pi/2.0
+    dec = numpy.pi/4.0
     obsTime = numpy.pi
     vobs=genuv(vlas, numpy.arange(0,obsTime,uvstep) ,  dec)
     pyplot.cla()
@@ -45,13 +45,19 @@ if 1:
 
     """
     Generate visibilities from two point sources of unit intensity, located
-    at (l1,m1) = (0.01 rad, 0.01 rad) and (l2,m2) = (-0.01 rad, -0.01 rad)
-    w.r.t. the phase center
+    at (l1,m1) and (l2,m2), units are radians w.r.t. the phase center
 
     """
-    yy=genvis(vobs/wl, 0.01, 0.01)
-    yy=yy + genvis(vobs/wl, -0.01, -0.01)
-
+    l1 = 0.01
+    m1 = 0.01
+    l2 = -0.001
+    m2 = -0.001
+    yy=genvis(vobs/wl, l1, m1)
+    yy=yy + genvis(vobs/wl, l2, m2)
+    """
+    Rotate UV plane to exclude W component
+    """
+    yy=rotw(vobs/wl, yy)
 
     """
     Fill the Hermitian conjugated part of the UV plane, V(-u,-v) = V*(u,v)
@@ -73,9 +79,11 @@ if 1:
 #    raw_input("press enter")
 
 
-    
+    """
+    Plot the model of the sources
+    """
     pyplot.cla()
-    pyplot.scatter((0.01, -0.01), (0.01, -0.01))
+    pyplot.scatter((l1, l2), (m1, m2))
     pyplot.title('A model of two point sources with unit intensity')
     pyplot.xlabel('l, radians')
     pyplot.ylabel('m, radians')
