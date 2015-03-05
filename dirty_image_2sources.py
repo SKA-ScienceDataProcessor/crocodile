@@ -77,7 +77,7 @@ if 1:
     """
     Read antenna positions from ASCII file (XYZ, meters)
     """
-    vlas=numpy.genfromtxt("/home/vlad/software/SKA/crocodile/test/VLA_A_hor_xyz_5ants.txt", delimiter=",")
+    vlas=numpy.genfromtxt("test/VLA_A_hor_xyz_5ants.txt", delimiter=",")
     plot_scatter(vlas[:,0], vlas[:,1], 'Antenna positions on the (X,Y) plane', 'X, meters', 'Y, meters')
 
 
