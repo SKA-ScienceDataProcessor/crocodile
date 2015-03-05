@@ -83,7 +83,7 @@ if 1:
 
     """
     Set the parameters of the observations, e.g. wavelength, declination of the tracking center,
-    the lenth of the observations and the interval between the stapshots
+    the lenth of the observations and the interval between the snapshots
     """
     uvstep = 22.9  	# an interval between the snapshots (a step in time), minutes
     uvstep = uvstep/60./12.* numpy.pi
@@ -152,7 +152,7 @@ if 1:
     maxvobs = max(vobs_new[:,0:1])[0] + 1
     mat_a = grid1(mat_a,(vobs_new/maxvobs),yy_new)
     plot_contour(numpy.abs(mat_a), 'Module of visibility V(u,v) resampled to the matrix',
-    	'U, number of pixel', 'V, number of pixel', 'abs(V(u,v)')
+    	'V, number of pixel', 'U, number of pixel', 'abs(V(u,v)')
 
 
     """
@@ -160,7 +160,7 @@ if 1:
     """
     mat_b = numpy.fft.ifftshift(mat_a)
     plot_contour(numpy.abs(mat_b), 'Module of V(u,v) resampled to the matrix after FFTSHIFT',
-    	'U, number of pixel', 'V, number of pixel', 'abs(V(u,v)')
+    	'V, number of pixel', 'U, number of pixel', 'abs(V(u,v)')
     
 
     """
