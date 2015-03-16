@@ -20,7 +20,7 @@ def ucsN(N):
     return numpy.mgrid[-1:1:(N*1j), -1:1:(N*1j)]
 
 def uax(m, n, eps=0):
-    "1D Array which spans nth axes of m with values between -1 and 1"
+    "1D Array which spans the n-axis axes of m with values between -1 and 1"
     return numpy.mgrid[(-1+eps):(1-eps):(m.shape[n]*1j)]
 
 def aaf(a, m, c):
@@ -74,7 +74,7 @@ def sample(a, p):
     return a[x,y]
 
 def grid(a, p, v):
-    "Grid samples array a without convolution"
+    "Grid visibilies (v) at positions (p) into (a) without convolution"
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     for i in range(len(x)):
@@ -82,7 +82,7 @@ def grid(a, p, v):
     return a
 
 def convgridone(a, pi, fi, gcf, v):
-    "Convolve and grid one sample. Note the normalisation."
+    "Convolve and grid one visibility sample"
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[0]][fi[1]]*v
 
@@ -143,14 +143,16 @@ def rotw(p, v):
     return rotv(p, 0, 0, v)
 
 def posvv(p, v):
-    "Move all visibilities to positive v"
+    """Move all visibilities to the positive v half-plane"""
     s=p[:,1]<0
     p[s]*=-1.0
     v[s]=numpy.conjugate(v[s])
     return p,v
 
 def sortw(p, v):
-    "Sort on the w value"
+    """Sort on the w value. (p) are uvw coordinates and (v) are the
+    visibility values
+    """
     zs=numpy.argsort(p[:,2])
     if v is not None:
         return p[zs], v[zs]
@@ -216,6 +218,7 @@ def wslicfwd(guv,
 
 
 def doimg(T2, L2, p, v, imgfn):
+    "Do imaging with imaging function (imgfn)"
     posvv(p,v)
     v=doweight(T2, L2, p, v)
     c=imgfn(T2, L2, p, rotw(p, v))

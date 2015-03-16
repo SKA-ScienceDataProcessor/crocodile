@@ -29,10 +29,15 @@ def bls(p):
     return numpy.array(res)
 
 def genuv(p, ha, dec):
+    """Generate UVW coordianates given a sequence of antenna uvw positions
+    (p), a sequence of hour angles (ha) and a decliation (dec)
+
+    """
     return(numpy.concatenate([bls(rot(p,hax,dec)) for hax in ha]))
 
 def genvis(p, l, m):
-    "Simulate visibilities for point source at (l,m)"
+    """Simulate visibilities for point source at (l,m) at uvw coordinates in
+    (p)"""
     s=numpy.array([l, m , numpy.sqrt(1 - l**2 - m**2)])
     return numpy.exp(-2j*numpy.pi* numpy.dot(p, s))
 
