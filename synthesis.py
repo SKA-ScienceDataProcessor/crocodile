@@ -64,7 +64,9 @@ def wkernaf(N, T2, w, s,
     return res
 
 def kinvert(a):
-    "Pseudo-Invert a kernel" 
+    """
+    Pseudo-Invert a kernel (see RauThesis2010:Eq4.6)
+    """ 
     return numpy.conj(a) / (numpy.abs(a)**2)
 
 def sample(a, p):
