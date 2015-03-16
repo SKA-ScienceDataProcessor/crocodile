@@ -40,7 +40,7 @@ def hogbom(dirty,
            thresh,
            niter):
     """
-    Hogbom clean
+    Hogbom CLEAN (1974A&AS...15..417H)
 
     :param dirty: The dirty image, i.e., the image to be deconvolved
 
