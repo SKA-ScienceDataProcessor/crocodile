@@ -1,12 +1,12 @@
 # Bojan Nikolic <b.nikolic@mrao.cam.ac.uk>
 # 
-# Synthetise and image interfometer data
+# Synthetise and image interferometer data
 """
 Parameter name meanings:
 
-T2: Theta2, the half-width of the field of view to be synthetised  (radian)
+T2: Theta2, the half-width of the field of view to be synthetised (radian)
 
-L2: Half-width of the uv-plane (unitless). Controls resultion of the images
+L2: Half-width of the uv-plane (unitless). Controls resolution of the images
 
 """
 
@@ -65,7 +65,7 @@ def wkernaf(N, T2, w, s,
 
 def kinvert(a):
     """
-    Pseudo-Invert a kernel (see RauThesis2010:Eq4.6)
+    Pseudo-Invert a kernel: element-wise inversion (see RauThesis2010:Eq4.6)
     """ 
     return numpy.conj(a) / (numpy.abs(a)**2)
 
