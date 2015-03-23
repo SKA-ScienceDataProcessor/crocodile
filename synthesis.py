@@ -123,7 +123,14 @@ def convcoords(a, p, gcf):
     return x, xf, y, yf
 
 def convgrid(a, p, v, gcf):
-    "Grid after convolving with gcf" 
+    """Grid after convolving with gcf, taking into account fractional uv
+    cordinate values
+
+    :param a: Grid to add to
+    :param p: UVW positions
+    :param v: Visibility values
+    :param gcf: List  (shape Qpx, Qpx) of convolution kernels of 
+    """ 
     x, xf, y, yf=convcoords(a, p, gcf)
     for i in range(len(x)):
         convgridone(a,
