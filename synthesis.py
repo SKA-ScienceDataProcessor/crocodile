@@ -116,9 +116,9 @@ def convgridone(a, pi, fi, gcf, v):
 def convcoords(a, p, gcf):
     "Compute grid coordinates and fractional values for convolutional gridding"
     Qpx=len(gcf)
-    x=((1+p[:,0])*a.shape[0]/2).astype(int)
+    x=numpy.floor(((1+p[:,0])*a.shape[0]/2)).astype(int)
     xf=((((1+p[:,0])*a.shape[0]/2)-x)*Qpx).astype(int)
-    y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    y=numpy.floor(((1+p[:,1])*a.shape[1]/2)).astype(int)
     yf=((((1+p[:,1])*a.shape[1]/2)-y)*Qpx).astype(int)
     return x, xf, y, yf
 
@@ -212,6 +212,13 @@ def simpleimg(T2, L2, p, v):
     grid(guv, p/L2, v)
     return guv
 
+def convimg(T2, L2, p, v, kv):
+    """Convolve and grid with user-supplied kernels"""
+    N= T2*L2 *4
+    guv=numpy.zeros([N, N], dtype=complex)
+    convgrid(guv, p/L2, v, kv)
+    return guv
+
 def wslicimg(T2, L2, p, v,
              wstep=2000,
              Qpx=4):
@@ -252,6 +259,7 @@ def wslicfwd(guv,
 
 def doimg(T2, L2, p, v, imgfn):
     "Do imaging with imaging function (imgfn)"
+    p=p.copy(); v=v.copy()
     posvv(p,v)
     v=doweight(T2, L2, p, v)
     c=imgfn(T2, L2, p, rotw(p, v))

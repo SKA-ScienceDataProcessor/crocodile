@@ -1,0 +1,71 @@
+=========================================
+Anti-Aliasing Functions in Interferometry
+=========================================
+
+The problem can be illustrated as follows:
+
+<<>>=
+import numpy
+import scipy
+import scipy.special
+
+from clean import *
+from synthesis import *
+from simulate import *
+
+from matplotlib import pylab
+
+vlas=numpy.genfromtxt("../test/VLA_A_hor_xyz.txt", delimiter=",")
+vobs=genuv(vlas, numpy.arange(0,numpy.pi,0.01) ,  numpy.pi/4)
+yyone=genvis(vobs/5, 0.001, 0.001)
+yytwo=yyone+ genvis(vobs/5, 0.0065, 0.0065)*5
+@
+
+<<caption="Single source in field of view">>=
+d,p=doimg(0.002, 15000, vobs/5, yyone, simpleimg)
+pylab.matshow(d)  ; pylab.colorbar();  pylab.show()
+@
+
+<<term=True,caption="Single source in field of view and a strong source outside the field of view">>=
+d,p=doimg(0.002, 15000, vobs/5, yytwo, simpleimg)
+pylab.matshow(d)  ; pylab.colorbar();  pylab.show()
+print d[40:60,40:60].std()
+@
+
+Anti-aliasing function
+======================
+
+<<caption="Anti aliasing fn">>=
+aa=aaf(numpy.zeros(shape=(120,120)), 0, 5)
+pylab.matshow(aa)  ; pylab.colorbar();  pylab.show()
+@
+
+<<caption="Real part of the an anti-aliasing fn extract">>=
+kv=pxoversample(aa, 120, 4, 7)
+pylab.matshow(kv[0][0].real)  ; pylab.colorbar();  pylab.show()
+@
+
+<<caption="Grid with conv function">>=
+d,p=doimg(0.002, 15000, vobs/5, yyone, lambda *x: convimg(*x, kv=kv))
+pylab.matshow(d/aa)  ; pylab.colorbar();  pylab.show()
+@
+
+<<term=True,caption="Grid with conv function">>=
+d,p=doimg(0.002, 15000, vobs/5, yytwo, lambda *x: convimg(*x, kv=kv))
+pylab.matshow(d/aa)  ; pylab.colorbar();  pylab.show()
+print (d/aa)[40:60,40:60].std()
+@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
