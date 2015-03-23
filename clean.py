@@ -3,6 +3,8 @@
 import numpy
 
 from synthesis import sortw, doimg, wslicimg, wslicfwd
+from simplots import *
+
 
 def overlapIndices(a1, a2, 
                    shiftx, shifty):
@@ -96,4 +98,27 @@ def majorcycle(T2, L2,
         vs=vs-vsp
     return ps, vs
 
-    
+"""
+Version of majorcycle with dirty image plotted by plot_image()/imshow()
+before every call of hogbom() in major cycle
+"""
+def majorcycle_imshow(T2, L2,
+               p, v,
+               gain,
+               nmajor,
+               nminor,
+               wstep):
+    "Major cycle clean"
+    ps, vs = sortw(p, v)
+    for i in range(nmajor):
+        dirty,psf=doimg(T2, L2, ps, vs, lambda *x: wslicimg(*x, wstep=wstep, Qpx=1))
+	plot_image(numpy.abs(dirty), 'Dirty image befor iteration '+str(i+1) + ' in majorcycle',
+    	'l, number of pixel', 'm, number of pixel', 'I(l,m)')
+
+        cc,rres=hogbom(dirty, psf, True, gain, 0,
+                       nminor)
+        xuv=numpy.fft.fftshift(numpy.fft.fft2(numpy.fft.ifftshift(cc)))
+        ps, vsp=wslicfwd(xuv, T2, L2, p, wstep=wstep)
+        vs=vs-vsp
+    return ps, vs
+   
