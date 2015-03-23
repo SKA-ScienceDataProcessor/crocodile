@@ -36,6 +36,26 @@ def aaf(a, m, c):
            [0,1])
     return numpy.outer(sx,sy)
 
+def pxoversample(ff, N, Qpx, s):
+    """Takes a farfield pattern and creates oversampled convolution
+    functions from it.
+
+    :param ff: Far field pattern
+
+    :param N:  Image size
+
+    :param Qpx: Factor to oversample by -- there will be Qpx x Qpx convolution functions
+
+    :param s: Size of convolution function to extract
+    """
+    padff=numpy.pad(ff,
+                    pad_width=(N*(Qpx-1)/2,),
+                    mode='constant',
+                    constant_values=(0.0,))
+    af=numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(padff)))
+    res=[[wextract(af, i, j, Qpx, s) for i in range(Qpx)] for j in range(Qpx)]
+    return res
+
 def wkernff(N, T2, w, Qpx):
     "W beam (i.e., w effect in the far-field). T2 is half-width of map in radian"
     r2=((ucsN(N)*T2)**2).sum(axis=0)
