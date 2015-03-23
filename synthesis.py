@@ -1,12 +1,16 @@
 # Bojan Nikolic <b.nikolic@mrao.cam.ac.uk>
 # 
 # Synthetise and image interferometer data
-"""
-Parameter name meanings:
+"""Parameter name meanings:
 
 T2: Theta2, the half-width of the field of view to be synthetised (radian)
 
 L2: Half-width of the uv-plane (unitless). Controls resolution of the images
+
+
+Qpx: Oversampling of pixels by the convolution kernels -- there are
+(Qpx x Qpx) convolution kernels per pixels to account for fractional
+pixel values. 
 
 """
 
