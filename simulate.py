@@ -44,12 +44,12 @@ def rot(ants_xyz, ha, dec):
     astronomical source position (ra, dec).
 
     (see note on co-ordinate systems in header)
+
+    ants_xyz : (x,y,z) co-ordinates of antennas in array
+    ha : hour angle of source (ha = ra - lst)
+    dec : declination of source
     """
-
-    # ants_xyz : (x,y,z) co-ordinates of antennas in array
-    # ha : hour angle of source (ha = ra - lst)
-    # dec : declination of source
-
+    
     x,y,z=numpy.hsplit(ants_xyz,3)
 
     t=x*numpy.cos(ha) - y*numpy.sin(ha)
@@ -67,11 +67,11 @@ def bls(ants_uvw):
     """
     Compute baselines in uvw co-ordinate system from 
     uvw co-ordinate system station positions
+    
+    ants_uvw : (u,v,w) co-ordinates of antennas in array
+    basel_uvw : delta-(u,v,w) values for baseline
     """
 
-    # ants_uvw : (u,v,w) co-ordinates of antennas in array
-    # basel_uvw : delta-(u,v,w) values for baseline
-    
     res=[]
     for i in range(ants_uvw.shape[0]):
         for j in range(i+1, ants_uvw.shape[0]):
@@ -88,12 +88,12 @@ def genuv(ants_xyz, ha_range, dec):
     Calculate baselines in (u,v,w) co-ordinate system 
     for a range of hour angles (i.e. non-snapshot observation)
     to create a uvw sampling distribution
+    
+    ants_xyz : (x,y,z) co-ordinates of antennas in array
+    ha_range : list of hour angle values for astronomical source as function of time
+    dec : declination of astronomical source [constant, not f(t)]
+    dist_uvw : (u,v,w) distribution of projected baselines
     """
-
-    # ants_xyz : (x,y,z) co-ordinates of antennas in array
-    # ha_range : list of hour angle values for astronomical source as function of time
-    # dec : declination of astronomical source [constant, not f(t)]
-    # dist_uvw : (u,v,w) distribution of projected baselines
 
     dist_uvw = numpy.concatenate([bls(rot(ants_xyz,hax,dec)) for hax in ha_range])
 
@@ -110,13 +110,13 @@ def genvis(dist_uvw, l, m):
     Note that point source is delta function, therefore
     FT relation ship becomes an exponential, evaluated at 
     (uvw.lmn)
+    
+    dist_uvw : (u,v,w) distribution of projected baselines
+    l : direction cosine relative to phase centre defined at (ra,dec)
+    m : orthogonal directon cosine relative to phase centre defined at (ra,dec)
+    s : (l,m,n) vector direction to source 
+    vis : complex valued visibility data 
     """
-
-    # dist_uvw : (u,v,w) distribution of projected baselines
-    # l : direction cosine relative to phase centre defined at (ra,dec)
-    # m : orthogonal directon cosine relative to phase centre defined at (ra,dec)
-    # s : (l,m,n) vector direction to source 
-    # vis : complex valued visibility data 
 
     s=numpy.array([l, m , numpy.sqrt(1 - l**2 - m**2)])
     vis = numpy.exp(-2j*numpy.pi* numpy.dot(dist_uvw, s))
