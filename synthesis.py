@@ -27,12 +27,16 @@ def uax(m, n, eps=0):
     "1D Array which spans the n-axis axes of m with values between -1 and 1"
     return numpy.mgrid[(-1+eps):(1-eps):(m.shape[n]*1j)]
 
+def uax2(N, eps=0):
+    """1D array which spans -1 to 1 with 0 at position N/2"""
+    return numpy.mgrid[(-1+eps):(1.0-eps)*(N-2)/N:1j*N]
+
 def aaf(a, m, c):
     """Compute the anti-aliasing function as separable product. See VLA
     Scientific Memoranda 129, 131, 132 
 
     """
-    sx,sy=map(lambda i: scipy.special.pro_ang1(m,m,c,uax(a,i,eps=1e-10))[0],
+    sx,sy=map(lambda i: scipy.special.pro_ang1(m,m,c,uax2(a.shape[i],eps=1e-10))[0],
            [0,1])
     return numpy.outer(sx,sy)
 

@@ -16,7 +16,7 @@ from simulate import *
 from matplotlib import pylab
 
 vlas=numpy.genfromtxt("../test/VLA_A_hor_xyz.txt", delimiter=",")
-vobs=genuv(vlas, numpy.arange(0,numpy.pi,0.01) ,  numpy.pi/4)
+vobs=genuv(vlas, numpy.arange(0,numpy.pi,0.04) ,  numpy.pi/4)
 yyone=genvis(vobs/5, 0.001, 0.001)
 yytwo=yyone+ genvis(vobs/5, 0.0065, 0.0065)*5
 @
@@ -41,8 +41,12 @@ pylab.matshow(aa)  ; pylab.colorbar();  pylab.show()
 @
 
 <<caption="Real part of the an anti-aliasing fn extract">>=
-kv=pxoversample(aa, 120, 4, 7)
+kv=pxoversample(aa, 120, 1, 7)
 pylab.matshow(kv[0][0].real)  ; pylab.colorbar();  pylab.show()
+@
+
+<<caption="Imaginary part of the an anti-aliasing fn extract">>=
+pylab.matshow(kv[0][0].imag)  ; pylab.colorbar();  pylab.show()
 @
 
 <<caption="Grid with conv function">>=
