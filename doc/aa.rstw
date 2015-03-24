@@ -18,7 +18,7 @@ from matplotlib import pylab
 vlas=numpy.genfromtxt("../test/VLA_A_hor_xyz.txt", delimiter=",")
 vobs=genuv(vlas, numpy.arange(0,numpy.pi,0.04) ,  numpy.pi/4)
 yyone=genvis(vobs/5, 0.001, 0.001)
-yytwo=yyone+ genvis(vobs/5, 0.0065, 0.0065)*5
+yytwo=yyone+ genvis(vobs/5, 0.0025, 0.0025)*5
 @
 
 <<caption="Single source in field of view">>=
@@ -41,7 +41,7 @@ pylab.matshow(aa)  ; pylab.colorbar();  pylab.show()
 @
 
 <<caption="Real part of the an anti-aliasing fn extract">>=
-kv=pxoversample(aa, 120, 1, 7)
+kv=pxoversample(aa, 120, 4, 7)
 pylab.matshow(kv[0][0].real)  ; pylab.colorbar();  pylab.show()
 @
 

@@ -51,6 +51,9 @@ def pxoversample(ff, N, Qpx, s):
     :param Qpx: Factor to oversample by -- there will be Qpx x Qpx convolution functions
 
     :param s: Size of convolution function to extract
+
+    :returns: List of of shape (Qpx, Qpx), with the inner list on the
+    u coordinate and outer indexed by j
     """
     padff=numpy.pad(ff,
                     pad_width=(N*(Qpx-1)/2,),
@@ -71,10 +74,15 @@ def wkernff(N, T2, w, Qpx):
                      constant_values=(0.0,))
 
 def wextract(a, i, j, Qpx, s):
-    "Extract the (ith,jth) w-kernel from the oversampled parent and normalise"
+    """Extract the (ith,jth) w-kernel from the oversampled parent and normalise
+
+    The kernel is reversed in order to make the suitable for
+    correcting the fractional coordinates
+    """
     x=a[i::Qpx, j::Qpx]
+    x=x[::-1,::-1]
     x*=1.0/x.sum()
-    return exmid(x,s)
+    return exmid2(x,s)
 
 def wkernaf(N, T2, w, s,
             Qpx):
@@ -104,9 +112,13 @@ def sample(a, p):
     return a[x,y]
 
 def grid(a, p, v):
-    "Grid visibilies (v) at positions (p) into (a) without convolution"
-    x=((1+p[:,0])*a.shape[0]/2).astype(int)
-    y=((1+p[:,1])*a.shape[1]/2).astype(int)
+    """Grid visibilies (v) at positions (p) into (a) without convolution
+
+    The zeroth frequency is at N/2 where N is the length on side of
+    the grid.
+    """
+    x=numpy.around(((1+p[:,0])*a.shape[0]/2)).astype(int)
+    y=numpy.around(((1+p[:,1])*a.shape[1]/2)).astype(int)
     for i in range(len(x)):
         a[x[i],y[i]] += v[i]
     return a
@@ -114,17 +126,26 @@ def grid(a, p, v):
 def convgridone(a, pi, fi, gcf, v):
     "Convolve and grid one visibility sample"
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
-    a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[0]][fi[1]]*v
+    # NB the order of fi below 
+    a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[1]][fi[0]]*v
 
 
-def convcoords(a, p, gcf):
-    "Compute grid coordinates and fractional values for convolutional gridding"
-    Qpx=len(gcf)
-    x=numpy.floor(((1+p[:,0])*a.shape[0]/2)).astype(int)
-    xf=((((1+p[:,0])*a.shape[0]/2)-x)*Qpx).astype(int)
-    y=numpy.floor(((1+p[:,1])*a.shape[1]/2)).astype(int)
-    yf=((((1+p[:,1])*a.shape[1]/2)-y)*Qpx).astype(int)
-    return x, xf, y, yf
+def convcoords(a, p, Qpx):
+    """Compute grid coordinates and fractional values for convolutional
+    gridding
+
+    The fractional values are rounded to nearest 1/Qpx pixel value at
+    fractional values greater than (Qpx-0.5)/Qpx are roundeded to next
+    integer index
+    """
+    Hx, Hy = [ a.shape[i]/2 for i in [0,1] ]
+    x=(1+p[:,0])*Hx 
+    flx=numpy.floor(x+ 0.5 /Qpx)
+    fracx=numpy.around(((x-flx)*Qpx))
+    y=((1+p[:,1])*Hy) 
+    fly=numpy.floor(y+ 0.5/Qpx)
+    fracy=numpy.around(((y-fly)*Qpx))
+    return (flx).astype(int), fracx.astype(int), (fly).astype(int), fracy.astype(int)
 
 def convgrid(a, p, v, gcf):
     """Grid after convolving with gcf, taking into account fractional uv
@@ -135,7 +156,7 @@ def convgrid(a, p, v, gcf):
     :param v: Visibility values
     :param gcf: List  (shape Qpx, Qpx) of convolution kernels of 
     """ 
-    x, xf, y, yf=convcoords(a, p, gcf)
+    x, xf, y, yf=convcoords(a, p, len(gcf))
     for i in range(len(x)):
         convgridone(a,
                     (x[i], y[i]),
@@ -145,7 +166,7 @@ def convgrid(a, p, v, gcf):
 
 def convdegrid(a, p, gcf):
     "Convolutional-degridding"
-    x, xf, y, yf=convcoords(a, p, gcf)
+    x, xf, y, yf=convcoords(a, p, len(gcf))
     v=[]
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
     for i in range(len(x)):
@@ -159,6 +180,12 @@ def exmid(a, s):
     cy=a.shape[1]/2
     return a[cx-s:cx+s+1, cy-s:cy+s+1]
 
+def exmid2(a, s):
+    """Extract a section from middle of a map, suitable for zero frequencies at N/2"""
+    cx=a.shape[0]/2
+    cy=a.shape[1]/2
+    return a[cx-s-1:cx+s, cy-s-1:cy+s]
+
 def div0(a1, a2):
     "Divide a1 by a2 except pixels where a2 is zero"
     m= (a2!=0)
@@ -167,8 +194,20 @@ def div0(a1, a2):
     return res
 
 def inv(g):
-    N=g.shape[1]
-    return numpy.fft.fftshift(numpy.fft.irfft2(numpy.roll(g[:,(N/2-1):], shift=-N/2, axis=0)))
+    """Invert a hermitian symetric n-dim function
+
+    The difficulty here is doing a ifftshift on the x axis but not on
+    the y
+    """
+    Nx,Ny=g.shape
+    huv=numpy.roll(g[:,(Ny/2):], shift=-(Nx-1)/2, axis=0)
+    huv=numpy.pad(huv,
+                  pad_width=((0,0),(0,1)),
+                  mode='constant',
+                  constant_values=((0.0j, 0.0j),(0.0j, 0.0j)))
+    print huv.shape
+    return numpy.fft.fftshift(numpy.fft.irfft2(huv))
+
 
 def rotv(p, l, m, v):
     "Rotate visibilities to direction (l,m)"
@@ -197,12 +236,14 @@ def sortw(p, v):
         return p[zs]
 
 def doweight(T2, L2, p, v):
-    "Re-weight visibilities"
+    """Re-weight visibilities
+
+    Note convolution kernels are not taken into account properly here
+    """
     N= T2*L2 *4
     gw =numpy.zeros([N, N])
     p=p/L2
-    x=((1+p[:,0])*N/2).astype(int)
-    y=((1+p[:,1])*N/2).astype(int)
+    x, xf, y, yf=convcoords(gw, p, 1)
     for i in range(len(x)):
         gw[x[i],y[i]] += 1
     v=v.copy()
@@ -262,9 +303,13 @@ def wslicfwd(guv,
 
 
 def doimg(T2, L2, p, v, imgfn):
-    "Do imaging with imaging function (imgfn)"
-    p=p.copy(); v=v.copy()
-    posvv(p,v)
+    """Do imaging with imaging function (imgfn)
+
+    Note: No longer move all visibilities to postivie v -- need to
+    check the convolution kernels
+    """
+    p=numpy.vstack([p, p*-1])
+    v=numpy.hstack([v, numpy.conj(v)])
     v=doweight(T2, L2, p, v)
     c=imgfn(T2, L2, p, rotw(p, v))
     s=inv(c)
