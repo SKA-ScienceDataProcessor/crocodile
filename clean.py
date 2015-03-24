@@ -87,7 +87,26 @@ def majorcycle(T2, L2,
                nmajor,
                nminor,
                wstep):
-    "Major cycle clean"
+    """
+    Major cycle clean.
+    Implementation of CLEAN Cotton-Schwab algorithm, in
+    Synthesis Imaging in Radio Astronomy II, ed. by Taylor G.B., Carilli C.L. and Perley R.A,
+    ASP conf. series, vol 180, p.155 (1999)  
+
+    Input parameters:
+    T2 - Theta2, the half-width of the field of view to be synthetised  (radian)
+    L2 - Half-width of the uv-plane (unitless). Controls resultion of the images
+    p - points on UV plane
+    v - visibilities to clean
+    nmajor - number of iterations in the major cycle (C-S algorithm)
+    nminor - number of iterations in the minor cycle (Hogborn algorithm)
+    gain - gain in hogbom algorithm
+    wstep - wstep in wslicimg() and wslicfwd() function calls
+
+    Output parameters:
+    ps - points on UV plane
+    vs - cleaned visibilities    
+    """
     ps, vs = sortw(p, v)
     for i in range(nmajor):
         dirty,psf=doimg(T2, L2, ps, vs, lambda *x: wslicimg(*x, wstep=wstep, Qpx=1))
@@ -98,17 +117,33 @@ def majorcycle(T2, L2,
         vs=vs-vsp
     return ps, vs
 
-"""
-Version of majorcycle with dirty image plotted by plot_image()/imshow()
-before every call of hogbom() in major cycle
-"""
 def majorcycle_imshow(T2, L2,
                p, v,
                gain,
                nmajor,
                nminor,
                wstep):
-    "Major cycle clean"
+    """
+    Version of majorcycle with dirty image plotted by plot_image()/imshow()
+    before every call of hogbom() in major cycle
+    Implementation of CLEAN Cotton-Schwab algorithm, in
+    Synthesis Imaging in Radio Astronomy II, ed. by Taylor G.B., Carilli C.L. and Perley R.A,
+    ASP conf. series, vol 180, p.155 (1999)  
+
+    Input parameters:
+    T2 - Theta2, the half-width of the field of view to be synthetised  (radian)
+    L2 - Half-width of the uv-plane (unitless). Controls resultion of the images
+    p - points on UV plane
+    v - visibilities to clean
+    nmajor - number of iterations in the major cycle (C-S algorithm)
+    nminor - number of iterations in the minor cycle (Hogborn algorithm)
+    gain - gain in hogbom algorithm
+    wstep - wstep in wslicimg() and wslicfwd() function calls
+
+    Output parameters:
+    ps - points on UV plane
+    vs - cleaned visibilities    
+    """
     ps, vs = sortw(p, v)
     for i in range(nmajor):
         dirty,psf=doimg(T2, L2, ps, vs, lambda *x: wslicimg(*x, wstep=wstep, Qpx=1))
