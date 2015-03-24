@@ -93,19 +93,28 @@ def majorcycle(T2, L2,
     Synthesis Imaging in Radio Astronomy II, ed. by Taylor G.B., Carilli C.L. and Perley R.A,
     ASP conf. series, vol 180, p.155 (1999)  
 
-    Input parameters:
-    T2 - Theta2, the half-width of the field of view to be synthetised  (radian)
-    L2 - Half-width of the uv-plane (unitless). Controls resultion of the images
-    p - points on UV plane
-    v - visibilities to clean
-    nmajor - number of iterations in the major cycle (C-S algorithm)
-    nminor - number of iterations in the minor cycle (Hogborn algorithm)
-    gain - gain in hogbom algorithm
-    wstep - wstep in wslicimg() and wslicfwd() function calls
+    Input parameters
+
+    :param T2: Theta2, the half-width of the field of view to be synthetised  (radian)
+
+    :param L2: Half-width of the uv-plane (unitless). Controls resultion of the images
+
+    :param p: points on UV plane
+
+    :param v: visibilities to clean
+
+    :param nmajor: number of iterations in the major cycle (C-S algorithm)
+
+    :param nminor: number of iterations in the minor cycle (Hogbom algorithm)
+
+    :param gain: loop gain in Hogbom algorithm
+
+    :param wstep: wstep in wslicimg() and wslicfwd() function calls
 
     Output parameters:
     ps - points on UV plane
     vs - cleaned visibilities    
+    """
     """
     ps, vs = sortw(p, v)
     for i in range(nmajor):
@@ -130,15 +139,23 @@ def majorcycle_imshow(T2, L2,
     Synthesis Imaging in Radio Astronomy II, ed. by Taylor G.B., Carilli C.L. and Perley R.A,
     ASP conf. series, vol 180, p.155 (1999)  
 
-    Input parameters:
-    T2 - Theta2, the half-width of the field of view to be synthetised  (radian)
-    L2 - Half-width of the uv-plane (unitless). Controls resultion of the images
-    p - points on UV plane
-    v - visibilities to clean
-    nmajor - number of iterations in the major cycle (C-S algorithm)
-    nminor - number of iterations in the minor cycle (Hogborn algorithm)
-    gain - gain in hogbom algorithm
-    wstep - wstep in wslicimg() and wslicfwd() function calls
+    Input parameters
+
+    :param T2: Theta2, the half-width of the field of view to be synthetised  (radian)
+
+    :param L2: Half-width of the uv-plane (unitless). Controls resultion of the images
+
+    :param p: points on UV plane
+
+    :param v: visibilities to clean
+
+    :param nmajor: number of iterations in the major cycle (C-S algorithm)
+
+    :param nminor: number of iterations in the minor cycle (Hogbom algorithm)
+
+    :param gain: loop gain in Hogbom algorithm
+
+    :param wstep: wstep in wslicimg() and wslicfwd() function calls
 
     Output parameters:
     ps - points on UV plane
