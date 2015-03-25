@@ -129,6 +129,19 @@ def convgridone(a, pi, fi, gcf, v):
     # NB the order of fi below 
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[1]][fi[0]]*v
 
+def fraccoord(N, p, Qpx):
+    """Compute whole and fractional parts of coordinates, rounded to Qpx-th fraction of pixel size
+
+    :param N: Number of pixels in total 
+    :param p: coordinates in range -1,1
+    :param Qpx: Fractional values to round to
+    """
+    H=N/2
+    x=(1+p)*H
+    flx=numpy.floor(x+ 0.5 /Qpx)
+    fracx=numpy.around(((x-flx)*Qpx))    
+    return (flx).astype(int), fracx.astype(int)
+
 
 def convcoords(a, p, Qpx):
     """Compute grid coordinates and fractional values for convolutional
@@ -138,14 +151,8 @@ def convcoords(a, p, Qpx):
     fractional values greater than (Qpx-0.5)/Qpx are roundeded to next
     integer index
     """
-    Hx, Hy = [ a.shape[i]/2 for i in [0,1] ]
-    x=(1+p[:,0])*Hx 
-    flx=numpy.floor(x+ 0.5 /Qpx)
-    fracx=numpy.around(((x-flx)*Qpx))
-    y=((1+p[:,1])*Hy) 
-    fly=numpy.floor(y+ 0.5/Qpx)
-    fracy=numpy.around(((y-fly)*Qpx))
-    return (flx).astype(int), fracx.astype(int), (fly).astype(int), fracy.astype(int)
+    (x, xf), (y, yf) = [fraccoord(a.shape[i], p[:,i], Qpx) for i in [0,1]]
+    return x, xf, y, yf
 
 def convgrid(a, p, v, gcf):
     """Grid after convolving with gcf, taking into account fractional uv
