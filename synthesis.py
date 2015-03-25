@@ -95,9 +95,8 @@ def wkernaf(N, T2, w, s,
     :return: (Qpx,Qpx) shaped list of convolution kernels
     """
     wff=wkernff(N, T2 , w, Qpx)
-    waf=numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(wff)))
-    res=[[wextract(waf, i, j, Qpx, s) for i in range(Qpx)] for j in range(Qpx)]
-    return res
+    return pxoversample(wff, N, Qpx, s)
+
 
 def kinvert(a):
     """
