@@ -60,6 +60,15 @@ pylab.matshow(kv[0][0].imag)  ; pylab.colorbar();  pylab.show()
 Gridding with the anti-aliasing function:
 =========================================
 
+This is the image of single source within field of view *without correcting the taper* . Note that the strength of the source is
+surpressed.
+
+<<caption="Grid with conv function and one source, not taper correction">>=
+d,p=doimg(0.002, 15000, vobs/5, yyone, lambda *x: convimg(*x, kv=kv))
+pylab.matshow(d)  ; pylab.colorbar();  pylab.show()
+@
+
+
 This is the image of single source within field of view. Note that the
 image is divided by the anti-aliasing funciton to correct for the
 taper introduced by it:
@@ -74,6 +83,13 @@ is very strongly surprssed.
 d,p=doimg(0.002, 15000, vobs/5, yytwo, lambda *x: convimg(*x, kv=kv))
 pylab.matshow(d/aa)  ; pylab.colorbar();  pylab.show()
 print (d/aa)[40:60,40:60].std()
+@
+
+As above but without correcting the taper.
+<<term=True,caption="Grid with convolution function and with two sources">>=
+d,p=doimg(0.002, 15000, vobs/5, yytwo, lambda *x: convimg(*x, kv=kv))
+pylab.matshow(d)  ; pylab.colorbar();  pylab.show()
+print (d)[40:60,40:60].std()
 @
 
 
