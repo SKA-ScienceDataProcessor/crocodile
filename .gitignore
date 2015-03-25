@@ -1,2 +1,5 @@
 /*.pyc
 /.gitignore~
+/doc/aa.rst
+/doc/aa.html
+/doc/figures/*
