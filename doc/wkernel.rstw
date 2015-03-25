@@ -1,0 +1,47 @@
+=========
+W kernels
+=========
+
+<<>>=
+import numpy
+import scipy
+import scipy.special
+
+from clean import *
+from synthesis import *
+from simulate import *
+
+from matplotlib import pylab
+
+@
+
+Example of the w-effect in the farfield, with reasonable choice of N,
+which is NpixFF in wslicimg:
+<<caption="W far-field">>=
+ff=wkernff(256, 0.1, 1000)
+pylab.matshow(ff.real) ; pylab.colorbar();  pylab.show()
+@
+
+Example of a poor choice of N. Note the aliasing artifacts happening because  the pixels are too large:
+<<caption="W far-field">>=
+ff=wkernff(256, 0.1, 5000)
+pylab.matshow(ff.real) ; pylab.colorbar();  pylab.show()
+@
+
+Zoom in at edge to show the effect:
+<<caption="W far-field">>=
+pylab.matshow(ff.real[200:,200:]) ; pylab.colorbar();  pylab.show()
+@
+
+
+Need higher N!
+<<caption="W far-field">>=
+ff=wkernff(256*8, 0.1, 5000)
+pylab.matshow(ff.real) ; pylab.colorbar();  pylab.show()
+@
+
+Zoom in at edge to show the effect:
+<<caption="W far-field">>=
+pylab.matshow(ff.real[200*8:,200*8:]) ; pylab.colorbar();  pylab.show()
+@
+

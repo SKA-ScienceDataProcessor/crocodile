@@ -70,7 +70,7 @@ def pxoversample(ff, N, Qpx, s):
     res=[[wextract(af, i, j, Qpx, s) for i in range(Qpx)] for j in range(Qpx)]
     return res
 
-def wkernff(N, T2, w, Qpx):
+def wkernff(N, T2, w):
     "W beam (i.e., w effect in the far-field). T2 is half-width of map in radian"
     r2=((ucsN(N)*T2)**2).sum(axis=0)
     ph=w*(1-numpy.sqrt(1-r2))
@@ -98,7 +98,7 @@ def wkernaf(N, T2, w, s,
 
     :return: (Qpx,Qpx) shaped list of convolution kernels
     """
-    wff=wkernff(N, T2 , w, Qpx)
+    wff=wkernff(N, T2 , w)
     return pxoversample(wff, N, Qpx, s)
 
 

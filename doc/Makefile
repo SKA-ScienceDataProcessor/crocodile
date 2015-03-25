@@ -1,4 +1,4 @@
-PWs=   wimaging.rstw aa.rstw
+PWs=   wimaging.rstw aa.rstw wkernel.rstw
 HTMLs= $(PWs:.rstw=.html)
 
 default: docset.zip
