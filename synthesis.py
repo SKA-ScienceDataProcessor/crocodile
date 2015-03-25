@@ -21,18 +21,11 @@ def ceil2(x):
     """Find next greater power of 2"""
     return 1<<(x-1).bit_length()
 
-def ucs(m):
-    return numpy.mgrid[-1:1:(m.shape[0]*1j), -1:1:(m.shape[1]*1j)]
-
 def ucsN(N):
     """Two dimensional grid of coordinates spanning -1 to 1 in each dimension, with (zero,zero) at pixel (n/2,n/2)
     """
     return numpy.mgrid[-1:(1.0*(N-2)/N):(N*1j),
                        -1:(1.0*(N-2)/N):(N*1j)]
-
-def uax(m, n, eps=0):
-    "1D Array which spans the n-axis axes of m with values between -1 and 1"
-    return numpy.mgrid[(-1+eps):(1-eps):(m.shape[n]*1j)]
 
 def uax2(N, eps=0):
     """1D array which spans -1 to 1 with 0 at position N/2"""
@@ -183,12 +176,6 @@ def convdegrid(a, p, gcf):
         pi=(x[i], y[i])
         v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
     return numpy.array(v)
-
-def exmid(a, s):
-    "Extract a section from middle of a map"
-    cx=a.shape[0]/2
-    cy=a.shape[1]/2
-    return a[cx-s:cx+s+1, cy-s:cy+s+1]
 
 def exmid2(a, s):
     """Extract a section from middle of a map, suitable for zero frequencies at N/2"""
