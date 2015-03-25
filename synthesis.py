@@ -203,8 +203,11 @@ def div0(a1, a2):
 def inv(g):
     """Invert a hermitian symetric n-dim function
 
-    The difficulty here is doing a ifftshift on the x axis but not on
-    the y
+    :param g: The uv grid to invert. Note that the zero frequency is
+    expected at pixel N/2 where N is the size of the grid on the side.
+
+    This function is like doing ifftshift on the x axis but not on the
+    y axis
     """
     Nx,Ny=g.shape
     huv=numpy.roll(g[:,(Ny/2):], shift=-(Nx-1)/2, axis=0)
@@ -212,7 +215,6 @@ def inv(g):
                   pad_width=((0,0),(0,1)),
                   mode='constant',
                   constant_values=((0.0j, 0.0j),(0.0j, 0.0j)))
-    print huv.shape
     return numpy.fft.fftshift(numpy.fft.irfft2(huv))
 
 
