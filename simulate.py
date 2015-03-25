@@ -36,6 +36,9 @@
 
 import numpy
 
+
+# ---------------------------------------------------------------------------------
+
 def rot(ants_xyz, ha, dec):
 
     """
@@ -62,6 +65,8 @@ def rot(ants_xyz, ha, dec):
     return ants_uvw
 
 
+# ---------------------------------------------------------------------------------
+
 def bls(ants_uvw):
 
     """
@@ -82,13 +87,15 @@ def bls(ants_uvw):
     return basel_uvw
 
 
+# ---------------------------------------------------------------------------------
+
 def genuv(ants_xyz, ha_range, dec):
 
     """
     Calculate baselines in (u,v,w) co-ordinate system 
     for a range of hour angles (i.e. non-snapshot observation)
     to create a uvw sampling distribution
-    
+
     ants_xyz : (x,y,z) co-ordinates of antennas in array
     ha_range : list of hour angle values for astronomical source as function of time
     dec : declination of astronomical source [constant, not f(t)]
@@ -99,6 +106,8 @@ def genuv(ants_xyz, ha_range, dec):
 
     return dist_uvw
 
+
+# ---------------------------------------------------------------------------------
 
 def genvis(dist_uvw, l, m):
 
