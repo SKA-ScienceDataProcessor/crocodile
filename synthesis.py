@@ -87,7 +87,7 @@ def wextract(a, i, j, Qpx, s):
 def wkernaf(N, T2, w, s,
             Qpx):
     """
-    The middle s pixels of W convolution kernel.
+    The middle s pixels of W convolution kernel. (W-KERNel-Aperture-Function)
 
     :param Qpx: Oversampling, pixels will be Qpx smaller in aperture
     plane than required to minimially sample T2.
@@ -200,13 +200,17 @@ def div0(a1, a2):
     return res
 
 def inv(g):
-    """Invert a hermitian symetric n-dim function
+    """Invert a hermitian-symetric two-dimensional grid. 
+
+    The hermitian symetric dimension is the second (last) index, like
+    in numpy.fft
 
     :param g: The uv grid to invert. Note that the zero frequency is
     expected at pixel N/2 where N is the size of the grid on the side.
 
     This function is like doing ifftshift on the x axis but not on the
     y axis
+
     """
     Nx,Ny=g.shape
     huv=numpy.roll(g[:,(Ny/2):], shift=-(Nx-1)/2, axis=0)
