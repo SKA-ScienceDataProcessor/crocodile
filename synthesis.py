@@ -21,7 +21,10 @@ def ucs(m):
     return numpy.mgrid[-1:1:(m.shape[0]*1j), -1:1:(m.shape[1]*1j)]
 
 def ucsN(N):
-    return numpy.mgrid[-1:1:(N*1j), -1:1:(N*1j)]
+    """Two dimensional grid of coordinates spanning -1 to 1 in each dimension, with (zero,zero) at pixel (n/2,n/2)
+    """
+    return numpy.mgrid[-1:(1.0*(N-2)/N):(N*1j),
+                       -1:(1.0*(N-2)/N):(N*1j)]
 
 def uax(m, n, eps=0):
     "1D Array which spans the n-axis axes of m with values between -1 and 1"
@@ -68,10 +71,7 @@ def wkernff(N, T2, w, Qpx):
     r2=((ucsN(N)*T2)**2).sum(axis=0)
     ph=w*(1-numpy.sqrt(1-r2))
     cp=(numpy.exp(2j*numpy.pi*ph))
-    return numpy.pad(cp,
-                     pad_width=(N*(Qpx-1)/2,),
-                     mode='constant',
-                     constant_values=(0.0,))
+    return cp
 
 def wextract(a, i, j, Qpx, s):
     """Extract the (ith,jth) w-kernel from the oversampled parent and normalise
@@ -288,7 +288,7 @@ def wslicimg(T2, L2, p, v,
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wg=wkernaf(257, T2, w, 15, Qpx)
+        wg=wkernaf(N, T2, w, 15, Qpx)
         wg=map(lambda x: map(numpy.conj, x), wg)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
