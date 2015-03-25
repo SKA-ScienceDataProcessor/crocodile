@@ -64,7 +64,14 @@ def pxoversample(ff, N, Qpx, s):
     return res
 
 def wkernff(N, T2, w):
-    "W beam (i.e., w effect in the far-field). T2 is half-width of map in radian"
+    """W beam (i.e., w effect in the far-field).
+
+    :param N:  Size of the field in pixels
+    :param T2: is half-width of far-field in radian
+    :param w: The w value
+
+    :returns: N x N array with the far field
+    """
     r2=((ucsN(N)*T2)**2).sum(axis=0)
     ph=w*(1-numpy.sqrt(1-r2))
     cp=(numpy.exp(2j*numpy.pi*ph))
@@ -102,7 +109,10 @@ def kinvert(a):
     return numpy.conj(a) / (numpy.abs(a)**2)
 
 def sample(a, p):
-    "Take samples from array a"
+    """Take samples from array a
+
+    This should use numpy.around as grid does.
+    """
     x=((1+p[:,0])*a.shape[0]/2).astype(int)
     y=((1+p[:,1])*a.shape[1]/2).astype(int)
     return a[x,y]
@@ -120,7 +130,7 @@ def grid(a, p, v):
     return a
 
 def convgridone(a, pi, fi, gcf, v):
-    "Convolve and grid one visibility sample"
+    """Convolve and grid one visibility sample"""
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
     # NB the order of fi below 
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[1]][fi[0]]*v
@@ -168,7 +178,14 @@ def convgrid(a, p, v, gcf):
     return a
 
 def convdegrid(a, p, gcf):
-    "Convolutional-degridding"
+    """Convolutional-degridding
+
+    :param a:   The uv plane to de-grid from
+    :param p:   The coordinates to degrid at.
+    :param gcf: List of convolution kernels
+
+    :returns: Array of visibilities.
+    """
     x, xf, y, yf=convcoords(a, p, len(gcf))
     v=[]
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
@@ -184,7 +201,7 @@ def exmid2(a, s):
     return a[cx-s-1:cx+s, cy-s-1:cy+s]
 
 def div0(a1, a2):
-    "Divide a1 by a2 except pixels where a2 is zero"
+    """Divide a1 by a2 except pixels where a2 is zero"""
     m= (a2!=0)
     res=a1.copy()
     res[m]/=a2[m]
@@ -213,12 +230,12 @@ def inv(g):
 
 
 def rotv(p, l, m, v):
-    "Rotate visibilities to direction (l,m)"
+    """Rotate visibilities to direction (l,m)"""
     s=numpy.array([l, m , numpy.sqrt(1 - l**2 - m**2)])
     return (v * numpy.exp(2j*numpy.pi*numpy.dot(p, s)))    
     
 def rotw(p, v):
-    "Rotate visibilities to zero w plane"
+    """Rotate visibilities to zero w plane"""
     return rotv(p, 0, 0, v)
 
 def posvv(p, v):
@@ -241,7 +258,7 @@ def sortw(p, v):
 def doweight(T2, L2, p, v):
     """Re-weight visibilities
 
-    Note convolution kernels are not taken into account properly here
+    Note convolution kernels are not taken into account
     """
     N= T2*L2 *4
     gw =numpy.zeros([N, N])
@@ -255,6 +272,8 @@ def doweight(T2, L2, p, v):
     return v
 
 def simpleimg(T2, L2, p, v):
+    """Trivial function for imaging which does no convolution but simply
+    puts the visibilities into a grid cell"""
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
     grid(guv, p/L2, v)
@@ -281,7 +300,8 @@ def wslicimg(T2, L2, p, v,
     for each slice, for the mean of the w-coordinates of all
     visibilities falling into the slides.
 
-    :param NpixFF: Size of the far-field for computing the w-kernel
+    :param NpixFF: Size of the far-field for computing the
+    w-kernel. See doc/wkernel.
 
     :param NpixKern: Size of the extracted convolution
     kernels. Currently kernels are the same size for all w-values.
