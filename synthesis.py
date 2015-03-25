@@ -274,10 +274,18 @@ def wslicimg(T2, L2, p, v,
              NpixKern=15):
     """Basic w-projection by w-sort and slicing in w
 
+    :param p: UVWs of visiblities
+    :param v: visibility values
+
+    :param wstep: The step between w-slices. W kernels are re-computed
+    for each slice, for the mean of the w-coordinates of all
+    visibilities falling into the slides.
+
     :param NpixFF: Size of the far-field for computing the w-kernel
 
     :param NpixKern: Size of the extracted convolution
     kernels. Currently kernels are the same size for all w-values.
+
     """
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
@@ -298,7 +306,10 @@ def wslicfwd(guv,
              Qpx=4,
              NpixFF=256,
              NpixKern=15):
-    "Predict visibilities using w-slices"
+    """Predict visibilities using w-slices
+
+    :param guv: Input uv plane to de-grid from
+    """
     N= T2*L2 *4
     p= sortw(p, None)
     nv=len(p)
