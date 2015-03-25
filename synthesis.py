@@ -17,6 +17,10 @@ pixel values.
 import numpy
 import scipy.special
 
+def ceil2(x):
+    """Find next greater power of 2"""
+    return 1<<(x-1).bit_length()
+
 def ucs(m):
     return numpy.mgrid[-1:1:(m.shape[0]*1j), -1:1:(m.shape[1]*1j)]
 
@@ -278,8 +282,16 @@ def convimg(T2, L2, p, v, kv):
 
 def wslicimg(T2, L2, p, v,
              wstep=2000,
-             Qpx=4):
-    "Basic w-projection by w-sort and slicing in w" 
+             Qpx=4,
+             NpixFF=256,
+             NpixKern=15):
+    """Basic w-projection by w-sort and slicing in w
+
+    :param NpixFF: Size of the far-field for computing the w-kernel
+
+    :param NpixKern: Size of the extracted convolution
+    kernels. Currently kernels are the same size for all w-values.
+    """
     N= T2*L2 *4
     guv=numpy.zeros([N, N], dtype=complex)
     p, v = sortw(p, v)
@@ -288,7 +300,7 @@ def wslicimg(T2, L2, p, v,
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wg=wkernaf(N, T2, w, 15, Qpx)
+        wg=wkernaf(NpixFF, T2, w, NpixKern, Qpx)
         wg=map(lambda x: map(numpy.conj, x), wg)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
@@ -296,7 +308,9 @@ def wslicimg(T2, L2, p, v,
 def wslicfwd(guv,
              T2, L2, p,
              wstep=2000,
-             Qpx=4):
+             Qpx=4,
+             NpixFF=256,
+             NpixKern=15):
     "Predict visibilities using w-slices"
     N= T2*L2 *4
     p= sortw(p, None)
@@ -306,7 +320,7 @@ def wslicfwd(guv,
     res=[]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wg=wkernaf(257, T2, w, 15, Qpx)
+        wg=wkernaf(NpixFF, T2, w, NpixKern, Qpx)
         res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
     v=numpy.concatenate(res)
     pp=p.copy()

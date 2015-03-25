@@ -1,8 +1,10 @@
+PWs=   wimaging.rstw aa.rstw
+HTMLs= $(PWs:.rstw=.html)
 
 default: docset.zip
 
-aa.html: aa.rstw ../synthesis.py
-	PYTHONPATH=../:${PYTHONPATH} Pweave aa.rstw ; rst2html aa.rst > aa.html
+%.html: %.rstw ../synthesis.py
+	PYTHONPATH=../:${PYTHONPATH} Pweave $< ; rst2html $(<:.rstw=.rst)  > $@
 
-docset.zip: aa.html
+docset.zip: $(HTMLs)
 	zip -r $@ $^ figures
