@@ -186,12 +186,55 @@ def convdegrid(a, p, gcf):
 
     :returns: Array of visibilities.
     """
-    x, xf, y, yf=convcoords(a, p, len(gcf))
-    v=[]
-    sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
-    for i in range(len(x)):
-        pi=(x[i], y[i])
-        v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
+    v = gpuconvdegrid(a,p,gcf)
+    if 0:
+        x, xf, y, yf=convcoords(a, p, len(gcf))
+        vorig=[]
+        sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
+        for i in range(len(x)):
+            pi=(x[i], y[i])
+            vorig.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
+            if (abs(vorig[i]-v[i]) > 0.0000001):
+                print "vorig[" + str(i) + "] (" + str(x[i]) + ", " + str(y[i]) + " = " + str(vorig[i]) + " != " 
+                print "v[" + str(i) + "] = " + str(v[i])
+    return numpy.array(v)
+
+def gpuconvdegrid(a,p,gcf):
+    """Extract the numpy arrays to 1-d lists, then pass to GPUDegrid.convdegrid
+
+    :param a:   The uv plane to de-grid from
+    :param p:   The coordinates to degrid at.
+    :param gcf: List of convolution kernels
+
+    :returns: Array of visibilities.
+    """
+
+    #Un-normalize p
+    p[:,0] = (p[:,0]+1)*a.shape[0]/2
+    p[:,1] = (a.shape[1]/2)*(p[:,1]+1)
+
+    pflat = p[:,0:2].reshape((p.shape[0]*2))
+    pflat = pflat.tolist()
+
+    gcfflat = []
+    
+    #Transpose GCF
+    gcftrans = gcf
+    for zz in range(len(gcf)):
+       for yy in range(len(gcf[0])):
+          gcftrans[yy][zz] = gcf[zz][yy]
+    
+    for xfine in gcftrans:
+       for yfine in xfine:
+          gcfflat = gcfflat + yfine.transpose().reshape(yfine.shape[0]*yfine.shape[1]).tolist()
+
+
+    #Note transpose a to row-major format
+    aflat = a.transpose().reshape((a.shape[0]*a.shape[1]))
+    aflat = aflat.tolist()
+
+    v = GPUDegrid.convdegrid(pflat, p.shape[0], aflat, a.shape[0], gcfflat, 
+                             len(gcf), gcf[0][0].shape[0])
     return numpy.array(v)
 
 def exmid2(a, s):
