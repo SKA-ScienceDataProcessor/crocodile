@@ -381,7 +381,8 @@ def wslicfwd(guv,
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wg=wkernaf(NpixFF, T2, w, NpixKern, Qpx)
-        res.append (gpuconvdegrid(guv,  p[ilow:ihigh]/L2, wg))
+        #res.append (gpuconvdegrid(guv,  p[ilow:ihigh]/L2, wg))
+        res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
     v=numpy.concatenate(res)
     pp=p.copy()
     pp[:,2]*=-1
