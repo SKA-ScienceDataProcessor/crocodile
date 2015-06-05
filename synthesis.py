@@ -16,6 +16,10 @@ pixel values.
 
 import numpy
 import scipy.special
+try:
+    import GPUDegrid
+except:
+    print "Could not load GPUDegrid. Make sure PYTHONPATH includes the location of GPUDegrid.so"
 
 def ceil2(x):
     """Find next greater power of 2"""
@@ -186,17 +190,12 @@ def convdegrid(a, p, gcf):
 
     :returns: Array of visibilities.
     """
-    v = gpuconvdegrid(a,p,gcf)
-    if 0:
-        x, xf, y, yf=convcoords(a, p, len(gcf))
-        vorig=[]
-        sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
-        for i in range(len(x)):
-            pi=(x[i], y[i])
-            vorig.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
-            if (abs(vorig[i]-v[i]) > 0.0000001):
-                print "vorig[" + str(i) + "] (" + str(x[i]) + ", " + str(y[i]) + " = " + str(vorig[i]) + " != " 
-                print "v[" + str(i) + "] = " + str(v[i])
+    x, xf, y, yf=convcoords(a, p, len(gcf))
+    v=[]
+    sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
+    for i in range(len(x)):
+        pi=(x[i], y[i])
+        v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
     return numpy.array(v)
 
 def gpuconvdegrid(a,p,gcf):
@@ -382,7 +381,7 @@ def wslicfwd(guv,
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wg=wkernaf(NpixFF, T2, w, NpixKern, Qpx)
-        res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
+        res.append (gpuconvdegrid(guv,  p[ilow:ihigh]/L2, wg))
     v=numpy.concatenate(res)
     pp=p.copy()
     pp[:,2]*=-1
