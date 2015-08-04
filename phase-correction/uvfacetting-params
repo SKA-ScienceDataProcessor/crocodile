@@ -1,0 +1,7 @@
+in_long:	65
+in_lat:		23
+in_epoch:	b1950
+out_long:	65
+out_lat:	23
+out_epoch:	j2000
+uv_projection:	N
