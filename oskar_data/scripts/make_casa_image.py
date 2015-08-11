@@ -65,9 +65,6 @@ if new_phase_centre:
                                             '%.14fdeg' % dec0))
 
 im.weight(type='natural')
-# NOTE The padding here seems to be important. Setting it to 1.0
-# can result in artifacts at the edge of the field that look like too much
-# grid correction. TODO(BM) look into this.
 if w_planes > 0:
     im.setoptions(ftmachine='wproject', wprojplanes=w_planes,
                   gridfunction=grid_function,
@@ -75,8 +72,7 @@ if w_planes > 0:
                   applypointingoffsets=False)
 else:
     im.setoptions(ftmachine='ft', gridfunction=grid_function,
-                  padding=1.2,
-                  dopbgriddingcorrections=True,
+                  padding=1.0, dopbgriddingcorrections=True,
                   applypointingoffsets=False)
 dirty_image = image_root_name + '_dirty_%05i_w%03i' % (size, w_planes)
 t0 = time.time()
