@@ -36,7 +36,8 @@ ms_path = os.path.abspath(sys.argv[-1])
 ms_name = os.path.basename(ms_path)
 image_root_name = os.path.splitext(ms_path)[0]
 size = 1024
-fov = 3.5  # deg
+fov = 3.0  # deg
+# fov = 0.2  # deg
 cell = fov_to_cell_size(fov, size)  # arcsec
 im_size = [size, size]
 cell_size = ['%.10farcsec' % cell, '%.10farcsec' % cell]
@@ -74,7 +75,8 @@ else:
     im.setoptions(ftmachine='ft', gridfunction=grid_function,
                   padding=1.0, dopbgriddingcorrections=True,
                   applypointingoffsets=False)
-dirty_image = image_root_name + '_dirty_%05i_w%03i' % (size, w_planes)
+dirty_image = image_root_name + '_dirty_s%04i_f%04.1f_w%03i' % (size, fov,
+                                                                w_planes)
 t0 = time.time()
 print '*' * 80
 print '* Starting imaging...'
@@ -82,7 +84,8 @@ im.makeimage(image=dirty_image + '.img', type='observed', verbose=True)
 print '* Time taken to make dirty image = %.3f s' % (time.time() - t0)
 print '*' * 80
 if make_psf:
-    psf_image = image_root_name + '_psf_%05i_w%03i' % (size, w_planes)
+    psf_image = image_root_name + '_psf_s%04i_f%04.1f_w%03i' % (size, fov,
+                                                                w_planes)
     im.makeimage(image=psf_image + '.img', type='psf', verbose=True)
 im.close()
 ia.open(dirty_image + '.img')

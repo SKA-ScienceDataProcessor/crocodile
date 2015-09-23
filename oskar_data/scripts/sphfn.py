@@ -188,4 +188,5 @@ def sphfn(eta, exponent_id, support, gridding=True):
         return psi
     if math.fabs(eta) == 1.0:
         return 0.0
-    return (1.0 - eta2)**alpha[exponent_id] * psi
+
+    return math.pow((1.0 - eta2), alpha[exponent_id]) * psi
