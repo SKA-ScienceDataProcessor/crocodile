@@ -339,9 +339,9 @@ class OskarVis(OskarBinary):
         tag_uu = self.VisBlock.UU
         tag_vv = self.VisBlock.VV
         tag_ww = self.VisBlock.WW
-        uu = numpy.empty((self.num_baselines, self.num_times), dtype='f8')
-        vv = numpy.empty((self.num_baselines, self.num_times), dtype='f8')
-        ww = numpy.empty((self.num_baselines, self.num_times), dtype='f8')
+        uu = numpy.empty((self.num_times, self.num_baselines), dtype='f8')
+        vv = numpy.empty((self.num_times, self.num_baselines), dtype='f8')
+        ww = numpy.empty((self.num_times, self.num_baselines), dtype='f8')
         for index in range(0, self.num_blocks):
             block_dims = self.record[group][self.VisBlock.Dims][index]['data']
             block_times = block_dims[2]
@@ -353,16 +353,16 @@ class OskarVis(OskarBinary):
                 "Invalid block length ?!."
             uu_block = self.record[group][tag_uu][index]['data']
             uu_block = uu_block[0:block_baselines * block_times]
-            uu_block = uu_block.reshape((block_baselines, block_times))
-            uu[:, block_time_start:block_time_start + block_times] = uu_block
+            uu_block = uu_block.reshape((block_times, block_baselines))
+            uu[block_time_start:block_time_start + block_times, :] = uu_block
             vv_block = self.record[group][tag_vv][index]['data']
             vv_block = vv_block[0:block_baselines * block_times]
-            vv_block = vv_block.reshape((block_baselines, block_times))
-            vv[:, block_time_start:block_time_start + block_times] = vv_block
+            vv_block = vv_block.reshape((block_times, block_baselines))
+            vv[block_time_start:block_time_start + block_times, :] = vv_block
             ww_block = self.record[group][tag_ww][index]['data']
             ww_block = ww_block[0:block_baselines * block_times]
-            ww_block = ww_block.reshape((block_baselines, block_times))
-            ww[:, block_time_start:block_time_start + block_times] = ww_block
+            ww_block = ww_block.reshape((block_times, block_baselines))
+            ww[block_time_start:block_time_start + block_times, :] = ww_block
         # FIXME(BM): The data starts flat so if flatten, just don't reshape?
         if flatten:
             uu = uu.flatten()
@@ -376,7 +376,7 @@ class OskarVis(OskarBinary):
         tag_dims = self.VisBlock.Dims
 
         if self.pol_type == self.PolarisationType.I:
-            amp = numpy.empty((self.num_baselines, self.num_times), dtype='c16')
+            amp = numpy.empty((self.num_times, self.num_baselines), dtype='c16')
             for index in range(0, self.num_blocks):
                 block_dims = self.record[group][tag_dims][index]['data']
                 block_time_start = block_dims[0]
@@ -388,15 +388,15 @@ class OskarVis(OskarBinary):
                     "Invalid block length ?!."
                 amp_block = self.record[group][tag][index]['data']
                 amp_block = amp_block[0:block_baselines * block_times]
-                amp_block = amp_block.reshape((block_baselines, block_times))
-                amp[:, block_time_start:block_time_start + block_times] = \
+                amp_block = amp_block.reshape((block_times, block_baselines))
+                amp[block_time_start:block_time_start + block_times, :] = \
                     amp_block
             if flatten:
                 amp = amp.flatten()
             return amp
 
         elif self.pol_type == self.PolarisationType.Linear:
-            amp = numpy.empty((self.num_baselines, self.num_times, 2, 2),
+            amp = numpy.empty((self.num_times, self.num_baselines, 2, 2),
                               dtype='c16')
             for index in range(0, self.num_blocks):
                 block_dims = self.record[group][tag_dims][index]['data']
@@ -409,9 +409,9 @@ class OskarVis(OskarBinary):
                     "Invalid block length ?!."
                 amp_block = self.record[group][tag][index]['data']
                 amp_block = amp_block[0:block_baselines * block_times]
-                amp_block = amp_block.reshape((block_baselines, block_times,
+                amp_block = amp_block.reshape((block_times, block_baselines,
                                                2, 2))
-                amp[:, block_time_start:block_time_start + block_times] = \
+                amp[block_time_start:block_time_start + block_times, :] = \
                     amp_block
             if flatten:
                 amp = amp.reshape(self.num_baselines * self.num_times, 2, 2)
