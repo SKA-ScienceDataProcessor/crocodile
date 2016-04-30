@@ -1,5 +1,5 @@
 # Bojan Nikolic <b.nikolic@mrao.cam.ac.uk>
-# 
+#
 # Synthetise and image interferometer data
 """Parameter name meanings:
 
@@ -10,7 +10,7 @@ L2: Half-width of the uv-plane (unitless). Controls resolution of the images
 
 Qpx: Oversampling of pixels by the convolution kernels -- there are
 (Qpx x Qpx) convolution kernels per pixels to account for fractional
-pixel values. 
+pixel values.
 
 """
 
@@ -21,11 +21,29 @@ def ceil2(x):
     """Find next greater power of 2"""
     return 1<<(x-1).bit_length()
 
-def ucsN(N):
-    """Two dimensional grid of coordinates spanning -1 to 1 in each dimension, with (zero,zero) at pixel (n/2,n/2)
+def ucsBounds(N):
+    """Returns the lowest and highest coordinates of the array if we
+    assume that it is centered consistently with fftshift. To be
+    concrete, this must satisfy two properties:
+
+    1. A grid with bounds [high,low] has step size 1/N:
+          (high-low)/(N-1) == 1/N
+    2. The coordinate floor(N/2) falls exactly on zero:
+          0 == low + floor(N/2) * (high-low)
     """
-    return numpy.mgrid[-1:(1.0*(N-2)/N):(N*1j),
-                       -1:(1.0*(N-2)/N):(N*1j)]
+    if N % 2 == 0:
+        return -0.5, 0.5*(N-2)/N
+    else:
+        return -0.5*(N-1)/N, 0.5*(N-1)/N
+
+def ucsN(N):
+    """Two dimensional grids of coordinates spanning -1 to 1 in each
+    dimension, with
+    1. a step size of 2/N and
+    2. (0,0) at pixel (floor(n/2),floor(n/2))
+    """
+    low,high = ucsBounds(N)
+    return numpy.mgrid[low:high:(N*1j),low:high:(N*1j)]
 
 def uax2(N, eps=0):
     """1D array which spans -1 to 1 with 0 at position N/2"""
@@ -33,7 +51,7 @@ def uax2(N, eps=0):
 
 def aaf(a, m, c):
     """Compute the anti-aliasing function as separable product. See VLA
-    Scientific Memoranda 129, 131, 132 
+    Scientific Memoranda 129, 131, 132
 
     """
     sx,sy=map(lambda i: scipy.special.pro_ang1(m,m,c,uax2(a.shape[i],eps=1e-10))[0],
@@ -55,57 +73,102 @@ def pxoversample(ff, N, Qpx, s):
     :returns: List of of shape (Qpx, Qpx), with the inner list on the
     u coordinate and outer indexed by j
     """
-    padff=numpy.pad(ff,
-                    pad_width=(N*(Qpx-1)/2,),
-                    mode='constant',
-                    constant_values=(0.0,))
-    af=numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(padff)))
-    res=[[wextract(af, i, j, Qpx, s) for i in range(Qpx)] for j in range(Qpx)]
-    return res
 
-def wkernff(N, T2, w):
+    # Pad the far field to the required pixel size
+    padff = wkernpad(ff, N*Qpx)
+
+    # Obtain oversampled uv-grid
+    af=numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(padff)))
+
+    # Extract kernels
+    res=[[wextract(af, x, y, Qpx, s) for x in range(Qpx)] for y in range(Qpx)]
+    return numpy.array(res)
+
+def wkernff(N, theta, w):
     """W beam (i.e., w effect in the far-field).
 
     :param N:  Size of the field in pixels
-    :param T2: is half-width of far-field in radian
+    :param T:  width of far-field in radian
     :param w: The w value
 
     :returns: N x N array with the far field
     """
-    r2=((ucsN(N)*T2)**2).sum(axis=0)
-    ph=w*(1-numpy.sqrt(1-r2))
-    cp=(numpy.exp(2j*numpy.pi*ph))
+
+    m,l=ucsN(N)*theta
+    ph=w*(1-numpy.sqrt(1-l**2-m**2))
+    cp=numpy.exp(2j*numpy.pi*ph)
     return cp
 
-def wextract(a, i, j, Qpx, s):
-    """Extract the (ith,jth) w-kernel from the oversampled parent and normalise
+def wkernpad(ff, N):
+    """Pad a far field image with zeroes to make it the given size. In
+    comparison of creating a far field of the full size right away,
+    this means that we "limit" the pattern, which would be a
+    convolution with a sinc pattern in the uv-grid.
+
+    :param ff: The input far field. Should be smaller than NxN.
+    :param N:  The desired far field size
+    """
+
+    N0 = ff.shape[0]
+    if N==N0: return ff
+    assert N>N0
+    return numpy.pad(ff,
+                     pad_width=[((N-N0+1)/2,(N-N0)/2), ((N-N0+1)/2,(N-N0)/2)],
+                     mode='constant',
+                     constant_values=(0.0,))
+
+def wkernsinc(N, theta, over=1):
+    """Pattern for sub-pixel averaging the image on the uv-plane. This
+    conforms to convolving the uv-grid with a one-pixel box function.
+
+    :param N:     Size of the field in pixels
+    :param theta: Width of far-field in radian
+    """
+
+    # Note that theta actually cancels out here - the pattern only
+    # depends on the pixel size we do the FFT with.
+    lambda_pix = 1 / theta # Size of a pixel in the uv-plane
+    m,l=ucsN(N)*theta/2
+    return numpy.sinc(lambda_pix*l*over)*numpy.sinc(lambda_pix*m*over)
+
+def wextract(a, x, y, Qpx, s):
+    """Extract the (xth,yth) w-kernel from the oversampled parent
 
     The kernel is reversed in order to make the suitable for
     correcting the fractional coordinates
     """
-    x=a[i::Qpx, j::Qpx]
-    x=x[::-1,::-1]
-    x*=1.0/x.sum()
-    return exmid2(x,s)
+    a=a[y::Qpx, x::Qpx] # view every Qpx-th pixel
+    a=exmid2(a, s)      # extract middle
+    a=a[::-1,::-1]      # reverse
+    return Qpx*Qpx*a    # normalise
 
-def wkernaf(N, T2, w, s,
+def wkernaf2(N, lam, w):
+
+    duv = T2/N
+    vs,us=ucsN(N)*lam/2
+    vs0 = vs - duv; vs1 = vs + duv
+    us0 = vs - duv; us1 = us + duv
+    from scipy.special import erf
+    f = (1j - 1) * numpy.sqrt(numpy.pi / 2 / w)
+    return -(erf(vs0) - erf(vs1)) * (erf(us0) - erf(us1)) / 4
+
+def wkernaf(N, theta, w, s,
             Qpx):
     """
     The middle s pixels of W convolution kernel. (W-KERNel-Aperture-Function)
 
     :param Qpx: Oversampling, pixels will be Qpx smaller in aperture
-    plane than required to minimially sample T2.
+    plane than required to minimially sample theta.
 
     :return: (Qpx,Qpx) shaped list of convolution kernels
     """
-    wff=wkernff(N, T2 , w)
+    wff=wkernff(N, theta, w)
     return pxoversample(wff, N, Qpx, s)
-
 
 def kinvert(a):
     """
     Pseudo-Invert a kernel: element-wise inversion (see RauThesis2010:Eq4.6)
-    """ 
+    """
     return numpy.conj(a) / (numpy.abs(a)**2)
 
 def sample(a, p):
@@ -123,8 +186,8 @@ def grid(a, p, v):
     The zeroth frequency is at N/2 where N is the length on side of
     the grid.
     """
-    x=numpy.around(((1+p[:,0])*a.shape[0]/2)).astype(int)
-    y=numpy.around(((1+p[:,1])*a.shape[1]/2)).astype(int)
+    x=numpy.around(((.5+p[:,0])*a.shape[0])).astype(int)
+    y=numpy.around(((.5+p[:,1])*a.shape[1])).astype(int)
     for i in range(len(x)):
         a[x[i],y[i]] += v[i]
     return a
@@ -132,20 +195,20 @@ def grid(a, p, v):
 def convgridone(a, pi, fi, gcf, v):
     """Convolve and grid one visibility sample"""
     sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
-    # NB the order of fi below 
+    # NB the order of fi below
     a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[1]][fi[0]]*v
 
 def fraccoord(N, p, Qpx):
     """Compute whole and fractional parts of coordinates, rounded to Qpx-th fraction of pixel size
 
-    :param N: Number of pixels in total 
+    :param N: Number of pixels in total
     :param p: coordinates in range -1,1
     :param Qpx: Fractional values to round to
     """
     H=N/2
     x=(1+p)*H
     flx=numpy.floor(x+ 0.5 /Qpx)
-    fracx=numpy.around(((x-flx)*Qpx))    
+    fracx=numpy.around(((x-flx)*Qpx))
     return (flx).astype(int), fracx.astype(int)
 
 
@@ -167,8 +230,8 @@ def convgrid(a, p, v, gcf):
     :param a: Grid to add to
     :param p: UVW positions
     :param v: Visibility values
-    :param gcf: List  (shape Qpx, Qpx) of convolution kernels of 
-    """ 
+    :param gcf: List  (shape Qpx, Qpx) of convolution kernels of
+    """
     x, xf, y, yf=convcoords(a, p, len(gcf))
     for i in range(len(x)):
         convgridone(a,
@@ -195,10 +258,13 @@ def convdegrid(a, p, gcf):
     return numpy.array(v)
 
 def exmid2(a, s):
-    """Extract a section from middle of a map, suitable for zero frequencies at N/2"""
-    cx=a.shape[0]/2
-    cy=a.shape[1]/2
-    return a[cx-s-1:cx+s, cy-s-1:cy+s]
+    """Extract a section from middle of a map, suitable for zero
+    frequencies at N/2. For even dimensions, this is the reverse
+    operation to wkernpad.
+    """
+    cx=(a.shape[0])/2
+    cy=(a.shape[1])/2
+    return a[cx-s:cx+s+1, cy-s:cy+s+1]
 
 def div0(a1, a2):
     """Divide a1 by a2 except pixels where a2 is zero"""
@@ -208,7 +274,7 @@ def div0(a1, a2):
     return res
 
 def inv(g):
-    """Invert a hermitian-symetric two-dimensional grid. 
+    """Invert a hermitian-symetric two-dimensional grid.
 
     The hermitian symetric dimension is the second (last) index, like
     in numpy.fft
@@ -225,15 +291,15 @@ def inv(g):
     huv=numpy.pad(huv,
                   pad_width=((0,0),(0,1)),
                   mode='constant',
-                  constant_values=((0.0j, 0.0j),(0.0j, 0.0j)))
+                  constant_values=numpy.array(((0.0j, 0.0j),(0.0j, 0.0j))))
     return numpy.fft.fftshift(numpy.fft.irfft2(huv))
 
 
 def rotv(p, l, m, v):
     """Rotate visibilities to direction (l,m)"""
     s=numpy.array([l, m , numpy.sqrt(1 - l**2 - m**2)])
-    return (v * numpy.exp(2j*numpy.pi*numpy.dot(p, s)))    
-    
+    return (v * numpy.exp(2j*numpy.pi*numpy.dot(p, s)))
+
 def rotw(p, v):
     """Rotate visibilities to zero w plane"""
     return rotv(p, 0, 0, v)
@@ -255,14 +321,14 @@ def sortw(p, v):
     else:
         return p[zs]
 
-def doweight(T2, L2, p, v):
+def doweight(theta, lam, p, v):
     """Re-weight visibilities
 
     Note convolution kernels are not taken into account
     """
-    N= T2*L2 *4
-    gw =numpy.zeros([N, N])
-    p=p/L2
+    N = theta * lam
+    gw = numpy.zeros([N, N])
+    p /= lam
     x, xf, y, yf=convcoords(gw, p, 1)
     for i in range(len(x)):
         gw[x[i],y[i]] += 1
@@ -271,22 +337,22 @@ def doweight(T2, L2, p, v):
         v[i] /= gw[x[i],y[i]]
     return v
 
-def simpleimg(T2, L2, p, v):
+def simpleimg(theta, lam, p, v):
     """Trivial function for imaging which does no convolution but simply
     puts the visibilities into a grid cell"""
-    N= T2*L2 *4
+    N= theta * lam
     guv=numpy.zeros([N, N], dtype=complex)
-    grid(guv, p/L2, v)
+    grid(guv, p/lam, v)
     return guv
 
-def convimg(T2, L2, p, v, kv):
+def convimg(theta, lam, p, v, kv):
     """Convolve and grid with user-supplied kernels"""
-    N= T2*L2 *4
+    N= theta * lam
     guv=numpy.zeros([N, N], dtype=complex)
-    convgrid(guv, p/L2, v, kv)
+    convgrid(guv, p/lam, v, kv)
     return guv
 
-def wslicimg(T2, L2, p, v,
+def wslicimg(theta, lam, p, v,
              wstep=2000,
              Qpx=4,
              NpixFF=256,
@@ -307,7 +373,7 @@ def wslicimg(T2, L2, p, v,
     kernels. Currently kernels are the same size for all w-values.
 
     """
-    N= T2*L2 *4
+    N= theta * lam
     guv=numpy.zeros([N, N], dtype=complex)
     p, v = sortw(p, v)
     nv=len(v)
@@ -315,13 +381,13 @@ def wslicimg(T2, L2, p, v,
     ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wg=wkernaf(NpixFF, T2, w, NpixKern, Qpx)
+        wg=wkernaf(NpixFF, theta, w, NpixKern, Qpx)
         wg=map(lambda x: map(numpy.conj, x), wg)
         convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
     return guv
 
 def wslicfwd(guv,
-             T2, L2, p,
+             theta, lam, p,
              wstep=2000,
              Qpx=4,
              NpixFF=256,
@@ -330,7 +396,7 @@ def wslicfwd(guv,
 
     :param guv: Input uv plane to de-grid from
     """
-    N= T2*L2 *4
+    N= theta * lam
     p= sortw(p, None)
     nv=len(p)
     ii=range( 0, nv, wstep)
@@ -338,7 +404,7 @@ def wslicfwd(guv,
     res=[]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
-        wg=wkernaf(NpixFF, T2, w, NpixKern, Qpx)
+        wg=wkernaf(NpixFF, theta, w, NpixKern, Qpx)
         res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
     v=numpy.concatenate(res)
     pp=p.copy()
@@ -346,7 +412,7 @@ def wslicfwd(guv,
     return (p, rotw(pp,v))
 
 
-def doimg(T2, L2, p, v, imgfn):
+def doimg(theta, lam, p, v, imgfn):
     """Do imaging with imaging function (imgfn)
 
     Note: No longer move all visibilities to postivie v -- need to
@@ -354,13 +420,13 @@ def doimg(T2, L2, p, v, imgfn):
     """
     p=numpy.vstack([p, p*-1])
     v=numpy.hstack([v, numpy.conj(v)])
-    v=doweight(T2, L2, p, v)
-    c=imgfn(T2, L2, p, rotw(p, v))
+    v=doweight(theta, lam, p, v)
+    c=imgfn(theta, lam, p, rotw(p, v))
     s=inv(c)
-    c=imgfn(T2, L2, p, numpy.ones(len(p)))
+    c=imgfn(theta, lam, p, numpy.ones(len(p)))
     p=inv(c)
     return (s,p)
-    
+
 
 
 
