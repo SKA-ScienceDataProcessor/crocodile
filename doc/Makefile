@@ -17,5 +17,8 @@ default: docset.zip
 %.html: %.rstw ../synthesis.py
 	PYTHONPATH=${PPATH} ${PWEAVE} $< ; ${RST2HTML} $(<:.rstw=.rst)  > $@
 
+clean:
+	rm -f g${HTMLs} docset.zip
+
 docset.zip: $(HTMLs)
 	zip -r $@ $^ figures
