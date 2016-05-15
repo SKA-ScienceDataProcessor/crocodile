@@ -16,6 +16,10 @@ pixel values.
 
 import numpy
 import scipy.special
+try:
+    import GPUDegrid
+except:
+    print "Could not load GPUDegrid. Make sure PYTHONPATH includes the location of GPUDegrid.so"
 
 def ceil2(x):
     """Find next greater power of 2"""
@@ -194,6 +198,44 @@ def convdegrid(a, p, gcf):
         v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
     return numpy.array(v)
 
+def gpuconvdegrid(a,p,gcf):
+    """Extract the numpy arrays to 1-d lists, then pass to GPUDegrid.convdegrid
+
+    :param a:   The uv plane to de-grid from
+    :param p:   The coordinates to degrid at.
+    :param gcf: List of convolution kernels
+
+    :returns: Array of visibilities.
+    """
+
+    #Un-normalize p
+    p[:,0] = (p[:,0]+1)*a.shape[0]/2
+    p[:,1] = (a.shape[1]/2)*(p[:,1]+1)
+
+    pflat = p[:,0:2].reshape((p.shape[0]*2))
+    pflat = pflat.tolist()
+
+    gcfflat = []
+    
+    #Transpose GCF
+    gcftrans = gcf
+    for zz in range(len(gcf)):
+       for yy in range(len(gcf[0])):
+          gcftrans[yy][zz] = gcf[zz][yy]
+    
+    for xfine in gcftrans:
+       for yfine in xfine:
+          gcfflat = gcfflat + yfine.transpose().reshape(yfine.shape[0]*yfine.shape[1]).tolist()
+
+
+    #Note transpose a to row-major format
+    aflat = a.transpose().reshape((a.shape[0]*a.shape[1]))
+    aflat = aflat.tolist()
+
+    v = GPUDegrid.convdegrid(pflat, p.shape[0], aflat, a.shape[0], gcfflat, 
+                             len(gcf), gcf[0][0].shape[0])
+    return numpy.array(v)
+
 def exmid2(a, s):
     """Extract a section from middle of a map, suitable for zero frequencies at N/2"""
     cx=a.shape[0]/2
@@ -339,6 +381,7 @@ def wslicfwd(guv,
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wg=wkernaf(NpixFF, T2, w, NpixKern, Qpx)
+        #res.append (gpuconvdegrid(guv,  p[ilow:ihigh]/L2, wg))
         res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
     v=numpy.concatenate(res)
     pp=p.copy()
