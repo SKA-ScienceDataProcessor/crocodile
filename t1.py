@@ -18,12 +18,12 @@ def aaf_ns(a, m, c):
 
 
 if 1:
-    vlas=numpy.genfromtxt("/home/bnikolic/n/uvwsim/test/data/VLA_A_hor_xyz.txt", delimiter=",")
+    vlas=numpy.genfromtxt("test/VLA_A_hor_xyz.txt", delimiter=",")
     vobs=genuv(vlas, numpy.arange(0,numpy.pi,0.1) ,  numpy.pi/4)
     yy=genvis(vobs/5, 0.01, 0.01)
 
 if 1:
-    majorcycle(0.025, 15000, vobs/5 , yy, 0.1, 5, 100, 250000)
+    majorcycle(2*0.025, 2*15000, vobs/5 , yy, 0.1, 5, 100, 250000)
     
 
 if 0: # some other testing code bits
@@ -31,7 +31,7 @@ if 0: # some other testing code bits
     ws=numpy.arange( p[:,2].min(), p[:,2].max(), wstep)
     wr=zip(ws[:-1], ws[1:]) + [ (ws[-1], p[:,2].max() ) ]
     yy=genvis(vobs/5, 0.001, 0.001)
-    d,p=doimg(0.025, 15000, vobs/5, yy, lambda *x: wslicimg(*x, wstep=250))
+    d,p=doimg(2*0.025, 2*15000, vobs/5, yy, lambda *x: wslicimg(*x, wstep=250))
     pylab.matshow(p[740:850,740:850]); pylab.colorbar(); pylab.show()
     x=numpy.zeros_like(d)
     x[1050,1050]=1

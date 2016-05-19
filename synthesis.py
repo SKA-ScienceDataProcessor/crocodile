@@ -143,9 +143,8 @@ def wextract(a, x, y, Qpx, s):
     return Qpx*Qpx*a    # normalise
 
 def wkernaf2(N, lam, w):
-
     duv = T2/N
-    vs,us=ucsN(N)*lam/2
+    vs,us=ucsN(N)*lam
     vs0 = vs - duv; vs1 = vs + duv
     us0 = vs - duv; us1 = us + duv
     from scipy.special import erf
@@ -205,8 +204,7 @@ def fraccoord(N, p, Qpx):
     :param p: coordinates in range -1,1
     :param Qpx: Fractional values to round to
     """
-    H=N/2
-    x=(1+p)*H
+    x=(.5+p)*N
     flx=numpy.floor(x+ 0.5 /Qpx)
     fracx=numpy.around(((x-flx)*Qpx))
     return (flx).astype(int), fracx.astype(int)
@@ -291,7 +289,7 @@ def inv(g):
     huv=numpy.pad(huv,
                   pad_width=((0,0),(0,1)),
                   mode='constant',
-                  constant_values=numpy.array(((0.0j, 0.0j),(0.0j, 0.0j))))
+                  constant_values=0)
     return numpy.fft.fftshift(numpy.fft.irfft2(huv))
 
 
@@ -383,7 +381,7 @@ def wslicimg(theta, lam, p, v,
         w=p[ilow:ihigh,2].mean()
         wg=wkernaf(NpixFF, theta, w, NpixKern, Qpx)
         wg=map(lambda x: map(numpy.conj, x), wg)
-        convgrid(guv,  p[ilow:ihigh]/L2, v[ilow:ihigh],  wg)
+        convgrid(guv,  p[ilow:ihigh]/lam, v[ilow:ihigh],  wg)
     return guv
 
 def wslicfwd(guv,
@@ -405,7 +403,7 @@ def wslicfwd(guv,
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wg=wkernaf(NpixFF, theta, w, NpixKern, Qpx)
-        res.append (convdegrid(guv,  p[ilow:ihigh]/L2, wg))
+        res.append (convdegrid(guv,  p[ilow:ihigh]/lam, wg))
     v=numpy.concatenate(res)
     pp=p.copy()
     pp[:,2]*=-1
