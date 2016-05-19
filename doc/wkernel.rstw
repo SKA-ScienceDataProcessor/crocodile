@@ -18,7 +18,7 @@ from matplotlib import pylab
 Example of the w-effect in the farfield, with reasonable choice of N,
 which is NpixFF in wslicimg:
 <<caption="W far-field">>=
-ff=wkernff(256, 0.1, 1000)
+ff=wkernff(256, 2*0.1, 1000)
 pylab.matshow(ff.real) ; pylab.colorbar();  pylab.show()
 @
 
@@ -54,7 +54,7 @@ pylab.matshow(af[0][0].real) ; pylab.colorbar();  pylab.show()
 
 For this value of W we need higher N. Here is a full image:
 <<caption="W far-field at high w but with correspondingly increased N">>=
-ff=wkernff(256*8, 0.1, 7000)
+ff=wkernff(256*8, 2*0.1, 7000)
 pylab.matshow(ff.real) ; pylab.colorbar();  pylab.show()
 @
 

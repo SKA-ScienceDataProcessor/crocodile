@@ -326,8 +326,7 @@ def doweight(theta, lam, p, v):
     """
     N = theta * lam
     gw = numpy.zeros([N, N])
-    p /= lam
-    x, xf, y, yf=convcoords(gw, p, 1)
+    x, xf, y, yf=convcoords(gw, p / lam, 1)
     for i in range(len(x)):
         gw[x[i],y[i]] += 1
     v=v.copy()
