@@ -47,17 +47,17 @@ def hogbom(dirty,
     :param psf: The point spread-function
 
     :param window: Regions where clean components are allowed. If
-    True, thank all of the dirty image is assumed to be allowed for
-    clean components
+      True, thank all of the dirty image is assumed to be allowed for
+      clean components
 
     :param gain: The "loop gain", i.e., the fraction of the brightest
-    pixel that is removed in each iteration
+      pixel that is removed in each iteration
 
     :param thresh: Cleaning stops when the maximum of the absolute
-    deviation of the residual is less than this value
+      deviation of the residual is less than this value
 
     :param niter: Maximum number of components to make if the
-    threshold "thresh" is not hit
+      threshold `thresh` is not hit
     """
     comps=numpy.zeros(dirty.shape)
     res=numpy.array(dirty)

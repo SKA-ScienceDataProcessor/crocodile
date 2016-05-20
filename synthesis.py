@@ -3,15 +3,11 @@
 # Synthetise and image interferometer data
 """Parameter name meanings:
 
-T2: Theta2, the half-width of the field of view to be synthetised (radian)
-
-L2: Half-width of the uv-plane (unitless). Controls resolution of the images
-
-
-Qpx: Oversampling of pixels by the convolution kernels -- there are
-(Qpx x Qpx) convolution kernels per pixels to account for fractional
-pixel values.
-
+- T2: Theta2, the half-width of the field of view to be synthetised (radian)
+- L2: Half-width of the uv-plane (unitless). Controls resolution of the images
+- Qpx: Oversampling of pixels by the convolution kernels -- there are
+    (Qpx x Qpx) convolution kernels per pixels to account for fractional
+    pixel values.
 """
 
 import numpy
@@ -22,14 +18,17 @@ def ceil2(x):
     return 1<<(x-1).bit_length()
 
 def ucsBounds(N):
-    """Returns the lowest and highest coordinates of the array if we
-    assume that it is centered consistently with fftshift. To be
+    r"""Returns the lowest and highest coordinates of the array if we
+    assume that it is centered consistently with `fftshift`. To be
     concrete, this must satisfy two properties:
 
-    1. A grid with bounds [high,low] has step size 1/N:
-          (high-low)/(N-1) == 1/N
-    2. The coordinate floor(N/2) falls exactly on zero:
-          0 == low + floor(N/2) * (high-low)
+    1. A grid with bounds :math:`[high,low]` has step size :math:`1/N`:
+
+       .. math:: \frac{high-low}{N-1} = \frac{1}{N}
+
+    2. The coordinate :math:`\lfloor N/2\rfloor` falls exactly on zero:
+
+       .. math:: low + \left\lfloor\frac{N}{2}\right\rfloor * (high-low) = 0
     """
     if N % 2 == 0:
         return -0.5, 0.5*(N-2)/N
@@ -39,6 +38,7 @@ def ucsBounds(N):
 def ucsN(N):
     """Two dimensional grids of coordinates spanning -1 to 1 in each
     dimension, with
+
     1. a step size of 2/N and
     2. (0,0) at pixel (floor(n/2),floor(n/2))
     """
@@ -63,15 +63,11 @@ def pxoversample(ff, N, Qpx, s):
     functions from it.
 
     :param ff: Far field pattern
-
     :param N:  Image size
-
     :param Qpx: Factor to oversample by -- there will be Qpx x Qpx convolution functions
-
     :param s: Size of convolution function to extract
-
     :returns: List of of shape (Qpx, Qpx), with the inner list on the
-    u coordinate and outer indexed by j
+              u coordinate and outer indexed by j
     """
 
     # Pad the far field to the required pixel size
@@ -157,7 +153,7 @@ def wkernaf(N, theta, w, s,
     The middle s pixels of W convolution kernel. (W-KERNel-Aperture-Function)
 
     :param Qpx: Oversampling, pixels will be Qpx smaller in aperture
-    plane than required to minimially sample theta.
+      plane than required to minimially sample theta.
 
     :return: (Qpx,Qpx) shaped list of convolution kernels
     """
@@ -201,7 +197,7 @@ def fraccoord(N, p, Qpx):
     """Compute whole and fractional parts of coordinates, rounded to Qpx-th fraction of pixel size
 
     :param N: Number of pixels in total
-    :param p: coordinates in range -1,1
+    :param p: coordinates in range [-.5,.5[
     :param Qpx: Fractional values to round to
     """
     x=(.5+p)*N
@@ -275,12 +271,12 @@ def inv(g):
     """Invert a hermitian-symetric two-dimensional grid.
 
     The hermitian symetric dimension is the second (last) index, like
-    in numpy.fft
+    in `numpy.fft`
 
     :param g: The uv grid to invert. Note that the zero frequency is
     expected at pixel N/2 where N is the size of the grid on the side.
 
-    This function is like doing ifftshift on the x axis but not on the
+    This function is like doing `ifftshift` on the x axis but not on the
     y axis
 
     """
@@ -358,17 +354,13 @@ def wslicimg(theta, lam, p, v,
 
     :param p: UVWs of visiblities
     :param v: visibility values
-
     :param wstep: The step between w-slices. W kernels are re-computed
-    for each slice, for the mean of the w-coordinates of all
-    visibilities falling into the slides.
-
+      for each slice, for the mean of the w-coordinates of all
+      visibilities falling into the slides.
     :param NpixFF: Size of the far-field for computing the
-    w-kernel. See doc/wkernel.
-
+      w-kernel. See doc/wkernel.
     :param NpixKern: Size of the extracted convolution
-    kernels. Currently kernels are the same size for all w-values.
-
+      kernels. Currently kernels are the same size for all w-values.
     """
     N= theta * lam
     guv=numpy.zeros([N, N], dtype=complex)
