@@ -10,6 +10,8 @@
     pixel values.
 """
 
+from __future__ import division
+
 import numpy
 import scipy.special
 
@@ -109,7 +111,7 @@ def wkernpad(ff, N):
     if N==N0: return ff
     assert N>N0
     return numpy.pad(ff,
-                     pad_width=[((N-N0+1)/2,(N-N0)/2), ((N-N0+1)/2,(N-N0)/2)],
+                     pad_width=[((N-N0+1)//2,(N-N0)//2), ((N-N0+1)//2,(N-N0)//2)],
                      mode='constant',
                      constant_values=(0.0,))
 
@@ -181,17 +183,18 @@ def grid(a, p, v):
     The zeroth frequency is at N/2 where N is the length on side of
     the grid.
     """
-    x=numpy.around(((.5+p[:,0])*a.shape[0])).astype(int)
-    y=numpy.around(((.5+p[:,1])*a.shape[1])).astype(int)
+    x=numpy.around((0.5+p[:,0])*a.shape[0]).astype(int)
+    y=numpy.around((0.5+p[:,1])*a.shape[1]).astype(int)
     for i in range(len(x)):
-        a[x[i],y[i]] += v[i]
+        a[y[i],x[i]] += v[i]
     return a
 
 def convgridone(a, pi, fi, gcf, v):
     """Convolve and grid one visibility sample"""
-    sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
+    sx, sy= gcf[0][0].shape[0]//2, gcf[0][0].shape[1]//2
     # NB the order of fi below
-    a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] += gcf[fi[1]][fi[0]]*v
+    a[ int(pi[1])-sx: int(pi[1])+sx+1,
+       int(pi[0])-sy: int(pi[0])+sy+1 ] += gcf[fi[1]][fi[0]]*v
 
 def fraccoord(N, p, Qpx):
     """Compute whole and fractional parts of coordinates, rounded to Qpx-th fraction of pixel size
@@ -203,8 +206,7 @@ def fraccoord(N, p, Qpx):
     x=(.5+p)*N
     flx=numpy.floor(x+ 0.5 /Qpx)
     fracx=numpy.around(((x-flx)*Qpx))
-    return (flx).astype(int), fracx.astype(int)
-
+    return flx.astype(int), fracx.astype(int)
 
 def convcoords(a, p, Qpx):
     """Compute grid coordinates and fractional values for convolutional
@@ -245,7 +247,7 @@ def convdegrid(a, p, gcf):
     """
     x, xf, y, yf=convcoords(a, p, len(gcf))
     v=[]
-    sx, sy= gcf[0][0].shape[0]/2, gcf[0][0].shape[1]/2
+    sx, sy= gcf[0][0].shape[0]//2, gcf[0][0].shape[1]//2
     for i in range(len(x)):
         pi=(x[i], y[i])
         v.append((a[ pi[0]-sx: pi[0]+sx+1,  pi[1]-sy: pi[1]+sy+1 ] * gcf[xf[i]][yf[i]]).sum())
@@ -256,8 +258,8 @@ def exmid2(a, s):
     frequencies at N/2. For even dimensions, this is the reverse
     operation to wkernpad.
     """
-    cx=(a.shape[0])/2
-    cy=(a.shape[1])/2
+    cx=a.shape[0]//2
+    cy=a.shape[1]//2
     return a[cx-s:cx+s+1, cy-s:cy+s+1]
 
 def div0(a1, a2):
@@ -281,7 +283,7 @@ def inv(g):
 
     """
     Nx,Ny=g.shape
-    huv=numpy.roll(g[:,(Ny/2):], shift=-(Nx-1)/2, axis=0)
+    huv=numpy.roll(g[:,(Ny//2):], shift=-(Nx-1)//2, axis=0)
     huv=numpy.pad(huv,
                   pad_width=((0,0),(0,1)),
                   mode='constant',
@@ -320,7 +322,7 @@ def doweight(theta, lam, p, v):
 
     Note convolution kernels are not taken into account
     """
-    N = theta * lam
+    N = int(theta * lam)
     gw = numpy.zeros([N, N])
     x, xf, y, yf=convcoords(gw, p / lam, 1)
     for i in range(len(x)):
@@ -333,14 +335,14 @@ def doweight(theta, lam, p, v):
 def simpleimg(theta, lam, p, v):
     """Trivial function for imaging which does no convolution but simply
     puts the visibilities into a grid cell"""
-    N= theta * lam
+    N = int(theta * lam)
     guv=numpy.zeros([N, N], dtype=complex)
     grid(guv, p/lam, v)
     return guv
 
 def convimg(theta, lam, p, v, kv):
     """Convolve and grid with user-supplied kernels"""
-    N= theta * lam
+    N = int(theta * lam)
     guv=numpy.zeros([N, N], dtype=complex)
     convgrid(guv, p/lam, v, kv)
     return guv
@@ -362,16 +364,16 @@ def wslicimg(theta, lam, p, v,
     :param NpixKern: Size of the extracted convolution
       kernels. Currently kernels are the same size for all w-values.
     """
-    N= theta * lam
+    N = int(theta * lam)
     guv=numpy.zeros([N, N], dtype=complex)
     p, v = sortw(p, v)
     nv=len(v)
     ii=range( 0, nv, wstep)
-    ir=zip(ii[:-1], ii[1:]) + [ (ii[-1], nv) ]
+    ir=list(zip(ii[:-1], ii[1:])) + [ (ii[-1], nv) ]
     for ilow, ihigh in ir:
         w=p[ilow:ihigh,2].mean()
         wg=wkernaf(NpixFF, theta, w, NpixKern, Qpx)
-        wg=map(lambda x: map(numpy.conj, x), wg)
+        wg=list(map(lambda x: list(map(numpy.conj, x)), wg))
         convgrid(guv,  p[ilow:ihigh]/lam, v[ilow:ihigh],  wg)
     return guv
 
@@ -385,7 +387,7 @@ def wslicfwd(guv,
 
     :param guv: Input uv plane to de-grid from
     """
-    N= theta * lam
+    N = int(theta * lam)
     p= sortw(p, None)
     nv=len(p)
     ii=range( 0, nv, wstep)

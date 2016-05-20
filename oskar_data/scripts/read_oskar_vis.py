@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """Read OSKAR binary files from python."""
 
+from __future__ import print_function
+from __future__ import division
+
 import struct
 import collections
 import numpy
 import os
-
 
 class OskarBinary(object):
 
@@ -41,7 +43,7 @@ class OskarBinary(object):
         if not os.path.exists(file_name):
             raise RuntimeError('Specified visibility file not found!')
         self.file_name = file_name
-        self.file_handle = open(file_name)
+        self.file_handle = open(file_name, 'rb')
         self.bin_ver = 0
         self.record = collections.OrderedDict()
         self.read()
@@ -54,7 +56,7 @@ class OskarBinary(object):
         """Read header."""
         f = self.file_handle
         name = f.read(9)
-        if name[0:8] != 'OSKARBIN':
+        if name[0:8] != b'OSKARBIN':
             raise RuntimeError('Not a valid OSKAR binary file.')
         bin_ver = struct.unpack('B', f.read(1))[0]
         if not (bin_ver == 1 or bin_ver == 2):
@@ -134,41 +136,41 @@ class OskarBinary(object):
 
         elif self.is_set(block['data_type'], self.DataType.Int):
             name = 'int'
-            n = data_size / block['element_size']
+            n = data_size // block['element_size']
             data = struct.unpack('i' * n, f.read(data_size))
 
         elif self.is_set(block['data_type'], self.DataType.Single):
             if self.is_set(block['data_type'], self.DataType.Matrix):
                 if self.is_set(block['data_type'], self.DataType.Complex):
                     name = 'single complex matrix'
-                    n = data_size / block['element_size'] * 2 * 4
+                    n = data_size // block['element_size'] * 2 * 4
                 else:
                     name = 'single matrix'
-                    n = data_size / block['element_size'] * 4
+                    n = data_size // block['element_size'] * 4
             else:
                 if self.is_set(block['data_type'], self.DataType.Complex):
                     name = 'single complex'
-                    n = data_size / block['element_size'] * 2
+                    n = data_size // block['element_size'] * 2
                 else:
                     name = 'single'
-                    n = data_size / block['element_size']
+                    n = data_size // block['element_size']
             data = struct.unpack('f' * n, f.read(data_size))
 
         elif self.is_set(block['data_type'], self.DataType.Double):
             if self.is_set(block['data_type'], self.DataType.Matrix):
                 if self.is_set(block['data_type'], self.DataType.Complex):
                     name = 'double complex matrix'
-                    n = data_size / block['element_size'] * 2 * 4
+                    n = data_size // block['element_size'] * 2 * 4
                 else:
                     name = 'double matrix'
-                    n = data_size / block['element_size'] * 4
+                    n = data_size // block['element_size'] * 4
             else:
                 if self.is_set(block['data_type'], self.DataType.Complex):
                     name = 'double complex'
-                    n = data_size / block['element_size'] * 2
+                    n = data_size // block['element_size'] * 2
                 else:
                     name = 'double'
-                    n = data_size / block['element_size']
+                    n = data_size // block['element_size']
             data = struct.unpack('d ' * n, f.read(data_size))
 
         else:
@@ -191,13 +193,13 @@ class OskarBinary(object):
             # Convert complex data to python complex type
             if self.is_set(block['data_type'], self.DataType.Complex):
                 block['data'] = numpy.array([complex(v[0], v[1]) for v
-                                             in block['data'].reshape(n / 2, 2)
+                                             in block['data'].reshape(n // 2, 2)
                                              ])
                 block['block_length'] = n / 2
             # Wrap matrix data into 2 x 2 blocks.
             if self.is_set(block['data_type'], self.DataType.Matrix):
                 n = block['block_length']
-                block['data'] = block['data'].reshape(n / 4, 2, 2)
+                block['data'] = block['data'].reshape(n // 4, 2, 2)
 
         if block['flag_crc']:
             # TODO(BM) implement CRC check. e.g. http://goo.gl/IfyyOO
@@ -248,12 +250,12 @@ class OskarBinary(object):
                 tag_data = group_data[tag_id]
                 for index in tag_data:
                     block = tag_data[index]
-                    print '[%03i]' % block['number'],
+                    print('[%03i]' % block['number'], end=' ')
                     block_id = '%i.%i.%i' % (group_id, tag_id, index)
-                    print '%-9s' % block_id,
+                    print('%-9s' % block_id, end=' ')
                     if block['flag_crc']:
-                        print 'crc',
-                    print ''
+                        print('crc', end=' ')
+                    print('')
 
 
 class OskarVis(OskarBinary):
@@ -323,7 +325,7 @@ class OskarVis(OskarBinary):
         self.num_times = vis_header[self.VisHeader.NumTimes][0]['data']
         self.num_channels = vis_header[self.VisHeader.NumChannels][0]['data']
         self.num_stations = vis_header[self.VisHeader.NumStations][0]['data']
-        self.num_baselines = self.num_stations * (self.num_stations - 1) / 2
+        self.num_baselines = self.num_stations * (self.num_stations - 1) // 2
         self.num_blocks = int(numpy.ceil(float(self.num_times) /
                                          self.block_length))
         self.pol_type = vis_header[self.VisHeader.PolarisationType][0]['data']
@@ -436,9 +438,9 @@ class OskarVis(OskarBinary):
         return start_freq + channel * freq_inc
 
     def print_summary(self, verbose=False):
-        print 'No. times     : %i' % self.num_times
-        print 'No. channels  : %i' % self.num_channels
-        print 'No. baselines : %i' % self.num_baselines
+        print('No. times     : %i' % self.num_times)
+        print('No. channels  : %i' % self.num_channels)
+        print('No. baselines : %i' % self.num_baselines)
         if verbose:
             for group_id in self.record:
                 group_data = self.record[group_id]
@@ -446,18 +448,18 @@ class OskarVis(OskarBinary):
                     tag_data = group_data[tag_id]
                     for index in tag_data:
                         block = tag_data[index]
-                        print '[%03i]' % block['number'],
+                        print('[%03i]' % block['number'], end=' ')
                         block_id = '%i.%i.%i' % (group_id, tag_id, index)
-                        print '%-9s' % block_id,
+                        print('%-9s' % block_id, end=' ')
                         group_name = ''
                         if group_id == self.Group.VisHeader:
                             group_name = 'VisHeader'
                         if group_id == self.Group.VisBlock:
                             group_name = 'VisBlock'
-                        print '%-15s' % group_name,
+                        print('%-15s' % group_name, end=' ')
                         if block['flag_crc']:
-                            print 'crc',
-                        print ''
+                            print('crc', end=' ')
+                        print('')
 
 
 
