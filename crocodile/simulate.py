@@ -43,6 +43,7 @@ Changes
 
 import numpy
 from astropy.coordinates import SkyCoord, CartesianRepresentation
+from astropy import units
 
 # ---------------------------------------------------------------------------------
 
@@ -213,13 +214,38 @@ def simulate_point(dist_uvw, l, m):
 
 # ---------------------------------------------------------------------------------
 
+def visibility_rotate(uvw, vis, pc, new_pc):
+    """
+    Rotate phase centre visibilities to the given new phase centre.
+
+    :param uvw: :math:`(u,v,w)` distribution of projected baselines (in wavelengths)
+    :param vis: Input visibilities
+    :param dl: Horizontal shift distance as directional cosine
+    :param dm: Vertical shift distance as directional cosine
+    :returns: New visibilities
+    """
+
+    # Rotate UVW. We do not bother to calculate a proper hour angle
+    # here, as the reference point would just cancel out between
+    # uvw_to_xyz and xyz_to_uvw. Note that RA progresses eastwards
+    # whereas HA progresses westwards, that's why we need to negate.
+    xyz = uvw_to_xyz(uvw, -pc.ra.to(units.rad).value, pc.dec.to(units.rad).value)
+    uvw_rotated = xyz_to_uvw(xyz, -new_pc.ra.to(units.rad).value, new_pc.dec.to(units.rad).value)
+
+    # Determine phasor
+    l_p,m_p,n_p = skycoord_to_lmn(pc, new_pc)
+    phasor = simulate_point(uvw_rotated, l_p, m_p)
+    return uvw_rotated, vis * phasor
+
+# ---------------------------------------------------------------------------------
+
 def visibility_shift(uvw, vis, dl, dm):
     """
     Shift visibilities by the given image-space distance. This is
     based on simple FFT laws. It will require kernels to be suitably
     shifted as well to work correctly.
 
-    :param vis: :math:`(u,v,w)` distribution of projected baselines (in wavelengths)
+    :param uvw: :math:`(u,v,w)` distribution of projected baselines (in wavelengths)
     :param vis: Input visibilities
     :param dl: Horizontal shift distance as directional cosine
     :param dm: Vertical shift distance as directional cosine
