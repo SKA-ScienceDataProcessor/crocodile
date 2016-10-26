@@ -138,6 +138,35 @@ def concatenate_visibility(vis1: Visibility, vis2: Visibility, params={}) -> \
     return vis
 
 
+def concatenate_visibility_frequencies(vis1: Visibility, vis2: Visibility) -> Visibility:
+    """
+    Concatentate the data sets in frequency, optionally phase rotating the
+    second to the phasecenter of the first
+
+    :param vis1:
+    :type Visibility: Visibility to be processed
+    :param vis2:
+    :type Visibility: Visibility to be processed
+    :param params: Dictionary containing parameters
+    :returns: Visibility
+    """
+    assert numpy.array_equal(vis1.time, vis2.time), "Visibility: time slots should be the same"
+    assert len(set(vis1.frequency).intersection(vis2.frequency)) == 0, "frequencies should not overlap"
+    log.debug(
+        "visibility.concatenate_frequencies: combining two tables with %d frequencies and %d frequencies"
+        % (vis1.nchan, vis2.nchan))
+    vis2rot = phaserotate_visibility(vis2, vis1.phasecentre)
+    assert numpy.array_equal(vis1.uvw, vis2rot.uvw), "Baseline coordinates should be the same"
+    vis = Visibility(
+        vis1,
+        vis = numpy.hstack([vis1.vis, vis2rot.vis]),
+        weight = numpy.hstack([vis1.data['weight'], vis2rot.data['weight']]),
+        frequency = numpy.hstack([vis1.frequency, vis2.frequency])
+    )
+    log.debug(u"concatenate_visibility_frequency: Created table with {0:d} frequencies".format(vis.nchan))
+    return vis
+
+
 def flag_visibility(vis: Visibility, gt: GainTable = None, params={}) -> Visibility:
     """ Flags a visibility set, optionally using GainTable
 
@@ -155,19 +184,23 @@ def flag_visibility(vis: Visibility, gt: GainTable = None, params={}) -> Visibil
     return vis
 
 
-def filter_visibility(vis: Visibility, params={}) -> Visibility:
+def filter_visibility(vis: Visibility, locs) -> Visibility:
     """ Filter a visibility set
 
     :param vis:
     :type Visibility: Visibility to be processed
-    :param params: Dictionary containing parameters
+    :param filters: Astropy table filters (as passed to 'loc')
     :returns: Visibility
     """
-    # TODO: implement
 
-    log_parameters(params)
-    log.error("filter_visibility: not yet implemented")
-    return vis
+    # Create any indices needed
+    data = vis.data.copy()
+    for column, _ in locs:
+        data.add_index(column)
+    for column, filt in locs:
+        data = data.loc[column, filt]
+
+    return Visibility(vis, data=data)
 
 
 def create_visibility(config: Configuration, times: numpy.array, freq: numpy.array, weight: float,
@@ -234,10 +267,6 @@ def phaserotate_visibility(vis: Visibility, newphasecentre: SkyCoord, params={})
     log.debug('phaserotate_visibility: Relative cartesian representation of direction = (%f, %f, '
               '%f)' % (l, m, n))
     
-    # Copy object and make a new table
-    vis = copy.copy(vis)
-    vis.data = vis.data.copy()
-    
     # No significant change?
     if numpy.abs(l) > 1e-15 or numpy.abs(m) > 1e-15:
         log.debug('phaserotate: Phase rotation from %s to %s' % (vis.phasecentre, newphasecentre))
@@ -291,20 +320,68 @@ def sum_visibility(vis: Visibility, direction: SkyCoord, params={}) -> numpy.arr
     return flux, weight
 
 
-def coalesce_visibility(vis: Visibility, params={}) -> Visibility:
+def coalesce_visibility(vis: Visibility, time_coalesce=1, frequency_coalesce=1) -> Visibility:
     """ Coalesce visibilities in time and frequency according to baseline length
-    
+
     Creates new Visibility by averaging in time and frequency
-    
+
     :param vis: Visibility to be coalesced
     :type Visibility:
+    :param time_coalesce: Time coalescing factor
+    :param frequency_coalesce: Frequency coalescing factor
     :returns: Visibility after coalescing
     """
-    # TODO: implement
 
-    log_parameters(params)
-    log.error("coalesce_visibility: not yet implemented")
-    return vis
+    # Assume that all visibilities have the same baseline (TODO!)
+    assert numpy.all(vis.antenna1 == vis.antenna1[0])
+    assert numpy.all(vis.antenna2 == vis.antenna2[0])
+
+    # Make sure it's sorted
+    assert numpy.array_equal(numpy.argsort(vis.time), numpy.arange(len(vis.time)))
+    assert numpy.array_equal(numpy.argsort(vis.frequency), numpy.arange(vis.nchan))
+
+    # Determine number of averaged time and frequency slots, allocate
+    assert time_coalesce >= 1
+    assert frequency_coalesce >= 1
+    ntslot = int(numpy.ceil(len(vis.time) / time_coalesce))
+    nfslot = int(numpy.ceil(vis.nchan / frequency_coalesce))
+    new_shape = (ntslot, nfslot, vis.npol)
+    new_vis = numpy.ndarray(new_shape, dtype=complex)
+    new_weight = numpy.ndarray(new_shape, dtype=float)
+    new_uvw = numpy.ndarray((ntslot,3), dtype=float)
+    new_time = numpy.ndarray(ntslot, dtype=float)
+
+    # Now calculate average for every slot
+    for t in range(ntslot):
+        t0 = int(t * time_coalesce)
+        t1 = int((t+1) * time_coalesce)
+        new_time[t] = numpy.mean(vis.time[t0:t1], axis=0)
+        new_uvw[t] = numpy.mean(vis.uvw[t0:t1], axis=0)
+        for f in range(nfslot):
+            f0 = int(f * frequency_coalesce)
+            f1 = int((f+1) * frequency_coalesce)
+            v = vis.vis[t0:t1,f0:f1]
+            w = vis.weight[t0:t1,f0:f1]
+            new_vis[t,f], new_weight[t,f] = combine_vis(v, w, axis=(0,1))
+
+    # Average frequencies
+    new_freq = numpy.ndarray((nfslot))
+    for f in range(nfslot):
+        f0 = int(f * frequency_coalesce)
+        f1 = int((f+1) * frequency_coalesce)
+        new_freq[f] = numpy.mean(numpy.array(vis.frequency)[f0:f1])
+
+    # Construct new visibility structure
+    return Visibility(
+        vis,
+        vis = new_vis,
+        weight = new_weight,
+        uvw = new_uvw,
+        time = new_time,
+        frequency = new_freq,
+        antenna1 = ntslot * [vis.antenna1[0]],
+        antenna2 = ntslot * [vis.antenna2[0]],
+    )
 
 
 def de_coalesce_visibility(vis: Visibility, vistemplate: Visibility, params={}) -> Visibility:
