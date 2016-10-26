@@ -15,7 +15,11 @@ import astropy.units as units
 from astropy.coordinates import SkyCoord, ICRS, EarthLocation
 from astropy.table import Table, Column, vstack
 from astropy.wcs import WCS
+from astropy.io.fits import HDUList, PrimaryHDU, BinTableHDU, table_to_hdu
+import astropy.io.fits as fits
 from astropy import units
+
+import h5py
 
 from crocodile.simulate import *
 
@@ -204,11 +208,19 @@ def import_visibility_from_oskar(oskar_file: str, params={}) -> Visibility:
     antxyz = numpy.transpose([oskar_vis.station_x,
                               oskar_vis.station_y,
                               oskar_vis.station_z])
+    name = oskar_vis.telescope_path
+    if name == '':
+        name = 'oskar-import'
     config = Configuration(
-        name     = oskar_vis.telescope_path,
+        name     = name,
         location = location,
         xyz      = antxyz
     )
+
+    # Assume exactly one frequency and polarisation - that is the only
+    # supported case right now.
+    amps = oskar_vis.amplitudes(flatten=True)
+    amps = amps.reshape(list(amps.shape) + [1,1])
 
     # Construct visibilities
     return Visibility(
@@ -219,9 +231,174 @@ def import_visibility_from_oskar(oskar_file: str, params={}) -> Visibility:
         time          = oskar_vis.times(flatten=True),
         antenna1      = a1,
         antenna2      = a2,
-        vis           = oskar_vis.amplitudes(flatten=True),
-        weight        = numpy.ones(a1.shape))
+        vis           = amps,
+        weight        = numpy.ones(amps.shape))
 
+def configuration_to_hdu(configuration : Configuration) -> BinTableHDU:
+
+    # Convert to HDU
+    hdu = table_to_hdu(configuration.data)
+
+    # Save rest of data into header fields (offensively ad-hoc, obviously)
+    hdu.header['NAME'] = configuration.name
+    hdu.header['LOC_LAT'] = configuration.location.latitude.value
+    hdu.header['LOC_LON'] = configuration.location.longitude.value
+    hdu.header['LOC_HGT'] = configuration.location.height.value
+
+    return hdu
+
+def visibility_to_hdu(vis: Visibility) -> BinTableHDU:
+
+    # Convert to HDU
+    hdu = table_to_hdu(vis.data)
+
+    # Save rest of data into header fields (offensively ad-hoc, obviously)
+    pc = vis.phasecentre
+    hdu.header['PC_RA'] = pc.ra.to(units.deg).value
+    hdu.header['PC_DEC'] = pc.dec.to(units.deg).value
+    hdu.header['FREQ'] = ','.join(map(str, vis.frequency))
+    hdu.header['CONFIG'] = vis.configuration.name
+
+    return hdu
+
+def export_visibility_to_fits(vis: Visibility, fits_file: str):
+
+    hdu = HDUList([
+        PrimaryHDU(),
+        configuration_to_hdu(vis.configuration),
+        visibility_to_hdu(vis)
+    ])
+    with open(fits_file, "w") as f:
+        hdu.writeto(f, checksum=True)
+
+def export_configuration_to_hdf5(cfg: Configuration, f: h5py.File, path: str = '/'):
+
+    grp = f.create_group(path)
+    grp.attrs['type'] = 'Configuration'
+    grp.attrs['name'] = cfg.name
+    grp.attrs['location'] = [cfg.location.latitude.value,
+                             cfg.location.longitude.value,
+                             cfg.location.height.value ]
+    for col in cfg.data.columns:
+        c = cfg.data[col]
+        # Unicode wide strings are not supported, convert to ASCII
+        if c.dtype.kind == 'U':
+            c = c.astype("S")
+        grp.create_dataset(col, data=c)
+
+def export_visibility_to_hdf5(vis: Visibility, f: h5py.File, path: str = '/', maxshape={}):
+
+    grp = f.create_group(path)
+    grp.attrs['type'] = 'Visibility'
+    grp.attrs['phasecentre'] = [vis.phasecentre.ra.to(units.deg).value,
+                                vis.phasecentre.dec.to(units.deg).value]
+    grp.attrs['configuration'] = vis.configuration.name
+    freq = numpy.array(vis.frequency)
+    grp.create_dataset('frequency', data=freq, maxshape=maxshape.get('frequency'))
+    for col in vis.data.columns:
+        grp.create_dataset(col, data=vis.data[col], maxshape=maxshape.get(col))
+
+
+def import_configuration_from_hdf5(f: h5py.File, path: str = '/'):
+    """Import telescope configuration from a HDF5 file.
+
+    :param f: Open HDF5 file to import data from
+    :param path: Group name to load data from
+    :returns: Configuration object
+    """
+
+    # Access group, make sure it is the right type
+    grp = f[path]
+    assert grp.attrs['type'] == 'Configuration'
+
+    # Read table columns
+    table = Table()
+    for col in ['names', 'xyz', 'mount']:
+        table[col] = numpy.array(grp[col])
+
+    return Configuration(
+        name = grp.attrs['name'],
+        location = EarthLocation(lat=grp.attrs['location'][0],
+                                 lon=grp.attrs['location'][1],
+                                 height=grp.attrs['location'][2]),
+        data = table
+        )
+
+
+def import_visibility_from_hdf5(f: h5py.File, path: str = '/', cfg: Configuration = None):
+    """Import visibilities from a HDF5 file.
+
+    :param f: Open HDF5 file to import data from
+    :param path: Group name to load data from
+    :param cfg: Configuration to set for visibilities
+    :returns: Visibilities object
+    """
+
+    # Access group, make sure it is the right type
+    grp = f[path]
+    assert grp.attrs['type'] == 'Visibility'
+
+    # Read table columns
+    table = Table()
+    for col in ['uvw', 'time', 'antenna1', 'antenna2', 'vis', 'weight']:
+
+        # Default weights to 1 if they are not found
+        if not col in grp and col == 'weight':
+            table[col] = numpy.ones(table['vis'].shape)
+        else:
+            table[col] = numpy.array(grp[col])
+
+    return Visibility(
+        frequency = grp.attrs['frequency'],
+        phasecentre = SkyCoord(ra=grp.attrs["phasecentre"][0],
+                               dec=grp.attrs["phasecentre"][1],
+                               frame=ICRS, unit=units.deg),
+        data = table
+        )
+
+
+def hdu_to_configuration(hdu: BinTableHDU) -> Configuration:
+
+    lat = hdu.header.get('LOC_LAT')
+    lon = hdu.header.get('LOC_LON')
+    hgt = hdu.header.get('LOC_HGT')
+    loc = None
+    if not lat is None and not lon is None and not hgt is None:
+        loc = EarthLocation(lat=lat, lon=lon, height=hgt)
+    return Configuration(
+        data = Table(hdu.data),
+        name = hdu.header.get('NAME'),
+        location = loc
+        )
+
+def hdu_to_visibility(hdu: BinTableHDU, configuration: Configuration = None) -> Visibility:
+
+    # Decode phase centre, if any
+    pc_ra = hdu.header.get('PC_RA')
+    pc_dec = hdu.header.get('PC_DEC')
+    pc = None
+    if not pc_ra is None and not pc_dec is None:
+        pc = SkyCoord(ra=pc_ra, dec=pc_dec, frame=ICRS, unit=units.deg)
+
+    # Check configuration name (additional security?)
+    if not configuration is None:
+        assert(configuration.name == hdu.header.get('CONFIG'))
+
+    return Visibility(
+        data = Table(hdu.data),
+        frequency = list(map(float, hdu.header['FREQ'].split(','))),
+        phasecentre = pc,
+        configuration = configuration
+    )
+
+def import_visibility_from_fits(fits_file: str) -> Visibility:
+
+    with fits.open(fits_file) as hdulist:
+
+        # TODO: Check that it is the right kind of file...
+
+        config = hdu_to_configuration(hdulist[1])
+        return hdu_to_visibility(hdulist[2], config)
 
 def create_test_image(canonical=True):
     """Create a useful test image
