@@ -349,5 +349,40 @@ class TestSynthesis(unittest.TestCase):
                 # Check peak
                 assert_allclose(img[N//2+yt,N//2+xt], 1)
 
+    def test_hermitian(self):
+        numpy.set_printoptions(precision=2)
+        lam = 100
+        _or = numpy.logical_or
+        _and = numpy.logical_and
+        for N in range(2, 10):
+            # Determine UVW. Deselect zero baseline.
+            uvw = self._uvw(N)*lam
+            non_zero = _or(uvw[:,0] != 0, uvw[:,1] != 0)
+            # Select non-redundant baselines
+            non_red = _or(uvw[:,0] < 0, _and(uvw[:,0] == 0, uvw[:,1] < 0))
+            if N % 2 == 0:
+                # For even grid sizes, all baselines that correspond
+                # to the outermost frequency are non-redundant, as
+                # there is no valid mirrored coordinate.
+                non_red = _or(non_red, _or(uvw[:,0] == -lam/2, uvw[:,1] == -lam/2))
+            # Determine number of "baselines" if we remove redundant entries
+            # Griding the complete set should have the same result as
+            # gridding the non-redundant set followed by making the
+            # grid hermitian.
+            xys = range(-(N//2),(N+1)//2)
+            for x, y in itertools.product(xys, xys):
+                vis = simulate_point(uvw, x/lam, y/lam)
+                # Grid non-zero baselines vanilla
+                a = numpy.zeros((N, N), dtype=complex)
+                grid(a, uvw[non_zero]/lam, vis[non_zero])
+                # Grid non-redundant baselines, then make hermitian
+                a_bl = numpy.zeros((N, N), dtype=complex)
+                grid(a_bl, uvw[non_red]/lam, vis[non_red])
+                a_blh = make_grid_hermitian(a_bl)
+                # The two grids should be identical. We especially
+                # expect the FFT image to be entirely real values.
+                assert_allclose(a, a_blh, rtol=1e-14)
+                assert_allclose(ifft(a).imag, 0, atol=1e-14)
+
 if __name__ == '__main__':
     unittest.main()

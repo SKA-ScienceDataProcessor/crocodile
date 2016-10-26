@@ -622,29 +622,82 @@ def w_cache_predict(theta, lam, p, guv,
     return w_slice_predict(theta, lam, p, guv, 1, kernel_binner, **kwargs)
 
 
-def do_imaging(theta, lam, p, v, imgfn, **kwargs):
+def mirror_uvws(uvw, vis):
+    """Mirror uvw with v<0 such that all visibilities have v>=0.
+
+    The result visibilities will be equivalent, as every baseline
+    `a->b` has a "sister" baseline `b->a` with a complex-conjugate
+    visibility. A dataset typically only contains one of the two, so
+    here we simply choose visibilities that lie in one half of the
+    grid.
+
+    :param uvw: UVWs of visibilities
+    :param vis: Visibilities
+    :returns: new uvw, vis
+
+    """
+
+    # Determine indices with v<1, make copies to update
+    vn = uvw[:,1] < 0
+    uvw = numpy.copy(uvw)
+    vis = numpy.copy(vis)
+
+    # Flip coordinates and conjugate visibilities
+    uvw[vn] = -uvw[vn]
+    vis[vn] = numpy.conj(vis[vn])
+    assert(numpy.all(uvw[:,1]>=0))
+    return uvw, vis
+
+def make_grid_hermitian(guv):
+    """
+    Make a grid "hermitian" by adding it to its own conjugated mirror
+    image.
+
+    Just as baselines can be seen from two sides, the grid is
+    "hermitian": Mirrored coordinates yield complex-conjugate
+    uv-cells. However in practice, it is less computationally
+    intensive to just grid one of each baseline pair, and then restore
+    the hermitian property afterwards.
+
+    :param guv: Input grid
+    :returns: Hermitian grid
+    """
+
+    # Make mirror image, then add its conjugate to the original grid.
+    # Note that this is just "hermitian", because:
+    #  1) Not the same symetry as transposition
+    #  2) We mirror on the zero point, which is off-center if the grid
+    #     size has even size
+    guv = numpy.copy(guv)
+    if guv.shape[0] % 2 == 0:
+        guv[1::,1::] += numpy.conj(guv[:0:-1,:0:-1])
+    else:
+        guv[::,::] += numpy.conj(guv[::-1,::-1])
+    return guv
+
+def do_imaging(theta, lam, uvw, vis, imgfn, **kwargs):
+
     """Do imaging with imaging function (imgfn)
 
     :param theta: Field of view (directional cosines)
     :param lam: UV grid range (wavelenghts)
-    :param p: UVWs of visibilities (wavelengths)
-    :param v: Visibilities to be imaged
+    :param uvw: UVWs of visibilities (wavelengths)
+    :param vis: Visibilities to be imaged
     :param imgfn: imaging function e.g. `simple_imaging`, `conv_imaging`,
       `w_slice_imaging` or `w_cache_imaging`. All keyword parameters
       are passed on to the imaging function.
     :returns: dirty Image, psf
     """
-    # Add the conjugate points
-    p = numpy.vstack([p, p * -1])
-    v = numpy.hstack([v, numpy.conj(v)])
+    # Mirror baselines such that v>0
+    uvw,vis = mirror_uvws(uvw, vis)
     # Determine weights
-    wt = doweight(theta, lam, p, numpy.ones(len(p)))
+    wt = doweight(theta, lam, uvw, numpy.ones(len(uvw)))
     # Make image
-    cdrt = imgfn(theta, lam, p, wt * v, **kwargs)
-    drt = numpy.real(ifft(cdrt))
+    cdrt = imgfn(theta, lam, uvw, wt * vis, **kwargs)
+    drt = numpy.real(ifft(make_grid_hermitian(cdrt)))
     # Make point spread function
-    c = imgfn(theta, lam, p, wt, **kwargs)
-    psf = numpy.real(ifft(c))
+    c = imgfn(theta, lam, uvw, wt, **kwargs)
+    psf = numpy.real(ifft(make_grid_hermitian(c)))
     # Normalise
     pmax = psf.max()
     assert pmax > 0.0
