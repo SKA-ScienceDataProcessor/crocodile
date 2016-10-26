@@ -63,8 +63,12 @@ def coordinateBounds(N):
 
 def coordinates(N):
     """1D array which spans [-.5,.5[ with 0 at position N/2"""
-    low, high = coordinateBounds(N)
-    return numpy.mgrid[low:high:(N * 1j)]
+    N2 = N // 2
+    if N % 2 == 0:
+        return numpy.mgrid[-N2:N2] / N
+    else:
+        return numpy.mgrid[-N2:N2+1] / N
+
 
 def coordinates2(N):
     """Two dimensional grids of coordinates spanning -1 to 1 in each
@@ -72,9 +76,15 @@ def coordinates2(N):
 
     1. a step size of 2/N and
     2. (0,0) at pixel (floor(n/2),floor(n/2))
+
+    :returns: pair (cx,cy) of 2D coordinate arrays
     """
-    low, high = coordinateBounds(N)
-    return numpy.mgrid[low:high:(N * 1j), low:high:(N * 1j)]
+
+    N2 = N // 2
+    if N % 2 == 0:
+        return numpy.mgrid[-N2:N2, -N2:N2][::-1] / N
+    else:
+        return numpy.mgrid[-N2:N2+1, -N2:N2+1][::-1] / N
 
 
 def fft(a):
@@ -191,17 +201,18 @@ def kernel_coordinates(N, theta, dl=0, dm=0, T=None):
     the transformations applied to the visibilities using
     visibility_shift/uvw_transform.
 
-    :param N: Desired far-field size
+    :param N: Desired far-field resolution
+    :param theta: Field of view size (directional cosines)
     :param dl: Pattern horizontal shift (see visibility_shift)
     :param dm: Pattern vertical shift (see visibility_shift)
     :param T: Pattern transformation matrix (see uvw_transform)
     :returns: Pair of (m,l) coordinates
     """
 
-    m, l = coordinates2(N) * theta
+    l,m = coordinates2(N) * theta
     if not T is None:
         l,m = T[0,0]*l+T[1,0]*m, T[0,1]*l+T[1,1]*m
-    return m+dm, l+dl
+    return l+dl, m+dm
 
 
 def w_kernel_function(l, m, w):

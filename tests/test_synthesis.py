@@ -13,22 +13,22 @@ from astropy import units as u
 class TestSynthesis(unittest.TestCase):
 
     def test_coordinates(self):
-        for N in [4,5,6,7,8,9]:
+        for N in [4,5,6,7,8,9,1000,1001,1002,1003]:
             low, high = coordinateBounds(N)
             c = coordinates(N)
-            cy, cx = coordinates2(N)
+            cx, cy = coordinates2(N)
             self.assertAlmostEqual(np.min(c), low)
             self.assertAlmostEqual(np.max(c), high)
             self.assertAlmostEqual(np.min(cx), low)
             self.assertAlmostEqual(np.max(cx), high)
             self.assertAlmostEqual(np.min(cy), low)
             self.assertAlmostEqual(np.max(cy), high)
-            self.assertAlmostEqual(c[N//2], 0)
+            assert c[N//2] == 0
             assert (cx[:,N//2] == 0).all()
             assert (cy[N//2,:] == 0).all()
 
     def _pattern(self, N):
-        return coordinates2(N)[0]+coordinates2(N)[1]*1j
+        return coordinates2(N)[1]+coordinates2(N)[0]*1j
 
     def test_pad_extract(self):
         for N, N2 in [ (1,1), (1,2), (2,3), (3,4), (2,5), (4,6) ]:
