@@ -60,7 +60,7 @@ def create_wcs_from_visibility(vis: Visibility, params={}):
         log.debug("Resetting cellsize %f radians to criticalcellsize %f radians" % (cellsize, criticalcellsize))
         cellsize = criticalcellsize
 
-    npol = 4
+    npol = vis.npol
     # Beware of python indexing order! wcs and the array have opposite ordering
     shape = [len(vis.frequency), npol, npixel, npixel]
     w = wcs.WCS(naxis=4)
