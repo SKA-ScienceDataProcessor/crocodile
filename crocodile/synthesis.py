@@ -622,19 +622,17 @@ def w_cache_predict(theta, lam, p, guv,
     return w_slice_predict(theta, lam, p, guv, 1, kernel_binner, **kwargs)
 
 
-def mirror_uvws(uvw, vis):
-    """Mirror uvw with v<0 such that all visibilities have v>=0.
+def mirror_uvw(uvw, vis):
+    """Mirror uvw with v<0 such that all visibilities have v>=0
 
     The result visibilities will be equivalent, as every baseline
     `a->b` has a "sister" baseline `b->a` with a complex-conjugate
-    visibility. A dataset typically only contains one of the two, so
-    here we simply choose visibilities that lie in one half of the
-    grid.
+    value. A dataset typically only contains one of the two, so here
+    we simply choose visibilities that lie in one half of the grid.
 
     :param uvw: UVWs of visibilities
     :param vis: Visibilities
     :returns: new uvw, vis
-
     """
 
     # Determine indices with v<1, make copies to update
@@ -645,8 +643,8 @@ def mirror_uvws(uvw, vis):
     # Flip coordinates and conjugate visibilities
     uvw[vn] = -uvw[vn]
     vis[vn] = numpy.conj(vis[vn])
-    assert(numpy.all(uvw[:,1]>=0))
     return uvw, vis
+
 
 def make_grid_hermitian(guv):
     """
@@ -667,13 +665,15 @@ def make_grid_hermitian(guv):
     # Note that this is just "hermitian", because:
     #  1) Not the same symetry as transposition
     #  2) We mirror on the zero point, which is off-center if the grid
-    #     size has even size
+    #     has even size
     guv = numpy.copy(guv)
     if guv.shape[0] % 2 == 0:
-        guv[1::,1::] += numpy.conj(guv[:0:-1,:0:-1])
+        guv[1:,1:] += numpy.conj(guv[:0:-1,:0:-1])
+        # Note that we ignore the high frequencies here
     else:
-        guv[::,::] += numpy.conj(guv[::-1,::-1])
+        guv += numpy.conj(guv[::-1,::-1])
     return guv
+
 
 def do_imaging(theta, lam, uvw, vis, imgfn, **kwargs):
 
@@ -689,7 +689,7 @@ def do_imaging(theta, lam, uvw, vis, imgfn, **kwargs):
     :returns: dirty Image, psf
     """
     # Mirror baselines such that v>0
-    uvw,vis = mirror_uvws(uvw, vis)
+    uvw,vis = mirror_uvw(uvw, vis)
     # Determine weights
     wt = doweight(theta, lam, uvw, numpy.ones(len(uvw)))
     # Make image
