@@ -103,21 +103,13 @@ def combine_visibility(vis1: Visibility, vis2: Visibility, w1: float = 1.0, w2: 
     assert len(vis1.frequency) == len(vis2.frequency), "Visibility: frequencies should be the same"
     assert numpy.max(numpy.abs(vis1.frequency - vis2.frequency)) < 1.0, "Visibility: frequencies should be the same"
     assert len(vis1.data['vis']) == len(vis2.data['vis']), 'Length of output data table wrong'
-    
+
     log.debug("visibility.combine: combining tables with %d rows" % (len(vis1.data)))
     log.debug("visibility.combine: weights %f, %f" % (w1, w2))
-    vis = Visibility(vis=w1 * vis1.data['weight'] * vis1.data['vis'] + w2 * vis1.data['weight'] * vis2.data['vis'],
-                     weight=numpy.sqrt((w1 * vis1.data['weight']) ** 2 + (w2 * vis2.data['weight']) ** 2),
-                     uvw=vis1.uvw,
-                     time=vis1.time,
-                     antenna1=vis1.antenna1,
-                     antenna2=vis1.antenna2,
-                     phasecentre=vis1.phasecentre,
-                     frequency=vis1.frequency,
-                     configuration=vis1.configuration)
-    vis.data['vis'][vis.data['weight'] > 0.0] = vis.data['vis'][vis.data['weight'] > 0.0] / \
-                                                vis.data['weight'][vis.data['weight'] > 0.0]
-    vis.data['vis'][vis.data['weight'] <= 0.0] = 0.0
+
+    v,w = combine_vis([vis1.vis, vis2.vis], [w1 * vis1.weight, w2 * vis2.weight])
+    vis = Visibility(vis1, vis=v, weight=w)
+
     log.debug(u"combine_visibility: Created table with {0:d} rows".format(len(vis.data)))
     assert len(vis.data['vis']) == len(vis1.data['vis']), 'Length of output data table wrong'
     return vis
@@ -140,10 +132,7 @@ def concatenate_visibility(vis1: Visibility, vis2: Visibility, params={}) -> \
     log.debug(
         "visibility.concatenate: combining two tables with %d rows and %d rows" % (len(vis1.data), len(vis2.data)))
     fvis2rot = phaserotate_visibility(vis2, vis1.phasecentre)
-    vis = Visibility()
-    vis.data = vstack([vis1.data, fvis2rot.data], join_type='exact')
-    vis.phasecentre = vis1.phasecentre
-    vis.frequency = vis1.frequency
+    vis = Visibility(vis1, data=vstack([vis1.data, fvis2rot.data], join_type='exact'))
     log.debug(u"concatenate_visibility: Created table with {0:d} rows".format(len(vis.data)))
     assert (len(vis.data) == (len(vis1.data) + len(vis2.data))), 'Length of output data table wrong'
     return vis
@@ -254,20 +243,21 @@ def phaserotate_visibility(vis: Visibility, newphasecentre: SkyCoord, params={})
         log.debug('phaserotate: Phase rotation from %s to %s' % (vis.phasecentre, newphasecentre))
         
         # We are going to update in-place, so make a copy
-        vis.data.replace_column('vis', vis.vis.copy())
+        amp = vis.vis.copy()
         for channel in range(vis.nchan):
             uvw = vis.uvw_lambda(channel)
             phasor = simulate_point(uvw, l, m)
             for pol in range(vis.npol):
                 log.debug('phaserotate: Phaserotating visibility for channel %d, polarisation %d' %
                           (channel, pol))
-                vis.vis[:, channel, pol] /= phasor
+                amp[:, channel, pol] /= phasor
         
         # To rotate UVW, rotate into the global XYZ coordinate system and back
-        xyz = uvw_to_xyz(vis.data['uvw'], ha=-vis.phasecentre.ra, dec=vis.phasecentre.dec)
-        vis.data.replace_column('uvw', xyz_to_uvw(xyz, ha=-newphasecentre.ra, dec=newphasecentre.dec))
+        xyz = uvw_to_xyz(vis.uvw, ha=-vis.phasecentre.ra, dec=vis.phasecentre.dec)
+        uvw = xyz_to_uvw(xyz, ha=-newphasecentre.ra, dec=newphasecentre.dec)
     
-    vis.phasecentre = newphasecentre
+        return Visibility(vis, vis=amp, uvw=uvw)
+
     return vis
 
 

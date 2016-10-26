@@ -123,15 +123,40 @@ class Visibility:
 
     The data column has vis:[row,nchan,npol], uvw:[row,3]
     """
-    
-    def __init__(self, data=None, frequency=None, phasecentre=None, configuration=None,
+
+    def __init__(self,
+                 prototype=None, data=None,
+                 frequency=None, phasecentre=None, configuration=None,
                  uvw=None, time=None, antenna1=None, antenna2=None, vis=None, weight=None):
+
+        # Take over defaults from prototype
+        if not prototype is None:
+            if frequency is None:
+                frequency = prototype.frequency
+            if phasecentre is None:
+                phasecentre = prototype.phasecentre
+            if configuration is None:
+                configuration = prototype.configuration
+            if uvw is None:
+                uvw = prototype.uvw
+            if time is None:
+                time = prototype.time
+            if antenna1 is None:
+                antenna1 = prototype.antenna1
+            if antenna2 is None:
+                antenna2 = prototype.antenna2
+            if vis is None:
+                vis = prototype.vis
+            if weight is None:
+                weight = prototype.weight
+
+        # Construct table
         if data is None and not vis is None:
             data = Table({'uvw': uvw, 'time': time,
                           'antenna1': antenna1, 'antenna2': antenna2,
                           'vis': vis, 'weight': weight
                           })
-        
+
         self.data = data  # Astropy.table with columns uvw, time, a1, a2, vis, weight
         self.frequency = frequency  # numpy.array [nchan]
         self.phasecentre = phasecentre  # Phase centre of observation
@@ -144,35 +169,37 @@ class Visibility:
     def npol(self): return self.data['vis'].shape[2]
     
     @property
-    def uvw(self): return self.data['uvw']
+    def uvw(self): return numpy.array(self.data['uvw'])
     
     @property
-    def u(self):   return self.data['uvw'][:, 0]
+    def u(self):   return numpy.array(self.data['uvw'])[:, 0]
     
     @property
-    def v(self):   return self.data['uvw'][:, 1]
+    def v(self):   return numpy.array(self.data['uvw'])[:, 1]
     
     @property
-    def w(self):   return self.data['uvw'][:, 2]
+    def w(self):   return numpy.array(self.data['uvw'])[:, 2]
     
     @property
-    def time(self): return self.data['time']
+    def time(self): return numpy.array(self.data['time'])
     
     @property
-    def antenna1(self): return self.data['antenna1']
+    def antenna1(self): return numpy.array(self.data['antenna1'])
     
     @property
-    def antenna2(self): return self.data['antenna2']
+    def antenna2(self): return numpy.array(self.data['antenna2'])
     
     @property
-    def vis(self): return self.data['vis']
+    def vis(self): return numpy.array(self.data['vis'])
     
     @property
-    def weight(self): return self.data['weight']
+    def weight(self): return numpy.array(self.data['weight'])
     
-    def uvw_lambda(self, channel=0):
+    def uvw_lambda(self, channel=0, frequency=None):
         """ Calculates baseline coordinates in wavelengths. """
-        return self.data['uvw'] * self.frequency[channel] / const.c.value
+        if frequency is None:
+            frequency = self.frequency[channel]
+        return numpy.array(self.data['uvw']) * frequency / const.c.value
 
 
 class QA:

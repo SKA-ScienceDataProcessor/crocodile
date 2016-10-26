@@ -281,6 +281,28 @@ def uvw_transform(uvw, T):
     return numpy.hstack([uv1, uvw[:,2:3]])
 
 
+def combine_vis(viss, weights, axis=0):
+    """Do a weighted linear combination of two visibility sets
+
+    :param viss: Input visibility sets
+    :param weights: Weights for visibility set
+    :returns: pair (vis, weight) with new weighted visibilities
+    """
+
+    viss = numpy.array(viss)
+    weights = numpy.array(weights)
+
+    # Do a weighted sum of visibilities and update error terms
+    vis = numpy.sum(viss * weights, axis=axis)
+    weight = numpy.sqrt(numpy.sum(weights**2, axis=axis))
+
+    # Weight might be zero
+    non_zero = weight > 0.0
+    vis[non_zero] /= numpy.sum(weights, axis=axis)[non_zero]
+    vis[numpy.logical_not(non_zero)] = 0
+
+    return vis, weight
+
 if __name__ == '__main__':
     import tests.test_test_support
     import tests.test_simulate
