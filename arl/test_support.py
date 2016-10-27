@@ -349,12 +349,41 @@ def import_visibility_from_hdf5(f: h5py.File, path: str = '/', cfg: Configuratio
             table[col] = numpy.array(grp[col])
 
     return Visibility(
-        frequency = grp.attrs['frequency'],
+        frequency = grp['frequency'],
         phasecentre = SkyCoord(ra=grp.attrs["phasecentre"][0],
                                dec=grp.attrs["phasecentre"][1],
                                frame=ICRS, unit=units.deg),
         data = table
         )
+
+
+def import_visibility_baselines_from_hdf5(f: h5py.File, cfg: Configuration = None):
+    """Import visibilities for multiple baselines from a HDF5 group. This
+    means that we load every visibility set contained within the given group.
+
+    :param f: Open HDF5 file to import data from
+    :param cfg: Configuration to set for visibilities
+    :returns: Visibilities object
+    """
+
+    # Collect visibilities
+    viss = []
+    for name in f:
+
+        # Get group
+        grp = f[name]
+        if not isinstance(grp, h5py.Group):
+            continue
+
+        # Visibilities?
+        if 'type' in grp.attrs and grp.attrs.get('type', '') == 'Visibility':
+            viss.append(import_visibility_from_hdf5(f, grp.name))
+
+        else:
+            # Otherwise recurse
+            viss += import_visibility_baselines_from_hdf5(grp)
+
+    return viss
 
 
 def hdu_to_configuration(hdu: BinTableHDU) -> Configuration:

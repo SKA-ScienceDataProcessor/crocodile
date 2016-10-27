@@ -9,6 +9,7 @@ import copy
 from astropy import constants as const
 from astropy.coordinates import SkyCoord, CartesianRepresentation
 from astropy.table import Table, vstack
+import astropy.constants as consts
 
 from crocodile.simulate import *
 
@@ -421,3 +422,57 @@ def aq_visibility(vis, params={}):
             data=data,
             context=get_parameter(params, 'context', None))
     return qa
+
+
+def visibility_angles(vis):
+    return numpy.angle(vis.u + 1j * vis.v)
+
+def visibility_range(vis):
+
+    # Angle range
+    angles = visibility_angles(vis)
+    a_min = numpy.min(angles)
+    a_max = numpy.max(angles)
+    if a_max > a_min + numpy.pi:
+        a_min, a_max = a_max, a_min+2*numpy.pi
+
+    # Distance range
+    freqs = vis.frequency
+    f_min = numpy.min(freqs)
+    f_max = numpy.max(freqs)
+    distance = numpy.abs(vis.u + 1j * vis.v)
+    dist_min = numpy.min(distance)
+    dist_max = numpy.max(distance)
+
+    return (a_min, a_max, dist_min*f_min/consts.c.value, dist_max*f_max/consts.c.value)
+
+def visibility_range_diff(range1, range2):
+
+    a0,a1, d0,d1 = range1
+    b0,b1, e0,e1 = range1
+
+    a_mid = (a0 + a1) / 2
+    b_mid = (b0 + b1) / 2
+    d_mid = (d0 + d1) / 2
+    e_mid = (e0 + e1) / 2
+
+    a_diff = max(0, abs(a_mid - b_mid) - (a1 - a0 + b1 - b0) / 2)
+    if a_diff > numpy.pi:
+        a_diff = 2*numpy.pi - a_diff
+    a_diff *= max(d1, e1)
+
+    d_diff = max(0, abs(d_mid - e_mid) - (d1 - d0 + e1 - e0) / 2)
+    return a_diff + d_diff
+
+def bin_visibility_ranges(viss, a_res=0.1, d_res=10):
+
+    vis_map = {}
+    for vis in viss:
+        a0, a1, d0, d1 = visibility_range(vis)
+        for a in range(int(a0 / a_res), int(a1 / a_res)):
+            for d in range(int(d0 / d_res), int(d1 / d_res)):
+                ix = (a*a_res,d*d_res)
+                if not ix in vis_map:
+                    vis_map[ix] = []
+                vis_map[ix].append(vis)
+    return vis_map
