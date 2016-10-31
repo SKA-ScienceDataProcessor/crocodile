@@ -352,6 +352,7 @@ class OskarVis(OskarBinary):
 
     def uvw(self, flatten=False):
         # FIXME(BM) handle channels?
+        assert self.num_channels == 1
         # FIXME(BM) uvw coordinates when auto-correlations are present.
         group = self.Group.VisBlock
         tag_uu = self.VisBlock.UU
