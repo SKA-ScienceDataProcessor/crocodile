@@ -215,22 +215,46 @@ def kernel_coordinates(N, theta, dl=0, dm=0, T=None):
     return l+dl, m+dm
 
 
-def w_kernel_function(l, m, w):
-    """
-    W beam, the fresnel diffraction pattern arising from non-coplanar baselines
+def w_kernel_function(l, m, w, dl=0, dm=0, T=numpy.eye(2)):
+    """W beam, the fresnel diffraction pattern arising from non-coplanar baselines
+
+    For the w-kernel, shifting the kernel pattern happens to also
+    shift the kernel depending on w. To counter this effect, `dl` or
+    `dm` can be passed so that the kernel ends up approximately
+    centered again. This means that kernels will have to be used at an
+    offset to get the same result, use `visibility_recentre` to
+    achieve this.
 
     :param l: Horizontal image coordinates
     :param m: Vertical image coordinates
     :param N: Size of the grid in pixels
     :param w: Baseline distance to the projection plane
+    :param dl: Shift the kernel by `dl w` to re-center it after a pattern shift.
+    :param dm: Shift the kernel by `dm w` to re-center it after a pattern shift.
     :returns: N x N array with the far field
     """
 
     r2 = l**2 + m**2
     assert numpy.all(r2 < 1.0), "Error in image coordinate system: l %s, m %s" % (l, m)
-    ph = w * (1 - numpy.sqrt(1.0 - r2))
-    cp = numpy.exp(2j * numpy.pi * ph)
+    ph = 1 - numpy.sqrt(1.0 - r2) - dl * l - dm * m
+    cp = numpy.exp(2j * numpy.pi * w * ph)
     return cp
+
+
+def visibility_recentre(uvw, dl, dm):
+    """
+    Compensate for kernel re-centering - see `w_kernel_function`.
+
+    :param uvw: Visibility coordinates
+    :param dl: Horizontal shift to compensate for
+    :param dm: Vertical shift to compensate for
+    :returns: Visibility coordinates re-centrered on the peak of their w-kernel
+    """
+
+    u, v, w = numpy.hsplit(uvw, 3)
+    return numpy.hstack([u - w*dl,
+                         v - w*dm,
+                         w])
 
 
 def kernel_oversample(ff, N, Qpx, s):
@@ -348,6 +372,7 @@ def frac_coords(shape, Qpx, p):
     :param p: array of (x,y) coordinates in range [-.5,.5[
     """
     h, w = shape # NB order (height,width) to match numpy!
+    #print("p=", p, "\nN=", w, "\np'=", w//2 + w * p)
     x, xf = frac_coord(w, Qpx, p[:,0])
     y, yf = frac_coord(h, Qpx, p[:,1])
     return x,xf, y,yf

@@ -61,6 +61,22 @@ class TestSynthesis(unittest.TestCase):
         self.assertAlmostEqual(w_kernel_function(*kernel_coordinates(10,0.1),100)[5,5], 1)
         self.assertAlmostEqual(w_kernel_function(*kernel_coordinates(10,0.1),1000)[5,5], 1)
 
+    def test_w_kernel_function_recentre(self):
+        for lam in [4, 1000]:
+         gcf = numpy.conj(w_kernel(1/lam, 0, 1, 1, 1))
+         for N in range(2,6):
+          for w in [0.1, 1, 10]:
+           for dl, dm in [(1,1), (2,0), (1,-3)]:
+               # Generate kernels with one re-centred by (dl,dm).
+               l,m = kernel_coordinates(N, N/lam)
+               kern = ifft(w_kernel_function(l,m,w))
+               kerns = ifft(w_kernel_function(l,m,w, dl*lam/N/w,dm*lam/N/w))
+               # Check that we shifted the kernel appropriately. Note
+               # that for numpy's axes 0 -> Y and 1 -> X.
+               assert_allclose(numpy.roll(numpy.roll(kern, dl, axis=1), dm, axis=0),
+                               kerns,
+                               atol=1e-15)
+
     def test_kernel_oversampled_subgrid(self):
         # Oversampling should produce the same values where sub-grids overlap
         for N in range(3,30):
@@ -280,15 +296,21 @@ class TestSynthesis(unittest.TestCase):
         for uw, vw in [(.5,0),(0,.5),(-1,0),(0,-1)]:
          for N in range(1,6):
           for dl, dm in [(1/lam, 1/lam), (-1/lam, 2/lam), (5/lam, 0)]:
+            theta = N/lam
             uvw_all = self._uvw(N, uw, vw) * lam
             uvw_slices = slice_vis(N, sort_vis_w(uvw_all))
-            gcfs = [ w_kernel(N/lam, numpy.mean(uvw[:,2]), N, N, 1, dl=-dl, dm=-dm)
+            gcfs = [ w_kernel(theta, numpy.mean(uvw[:,2]), N, N, 1, dl=-dl, dm=-dm)
                      for uvw in uvw_slices ]
             xys = range(-(N//2),(N+1)//2)
             for x, y in itertools.product(xys, xys):
                 # Make grid for gridding
                 a = numpy.zeros((2*N, 2*N), dtype=complex)
                 for uvw, gcf in zip(uvw_slices, gcfs):
+                    sl = -dl
+                    sm = -dm
+                    print("before:" , uvw)
+                    uvw = visibility_recentre(uvw, sl, sm)
+                    print("after:" , uvw)
                     vis = simulate_point(uvw, x/lam-dl, y/lam-dm)
                     # Shift. Make sure it is reversible correctly
                     # (This is enough to prove that degridding would
@@ -296,11 +318,19 @@ class TestSynthesis(unittest.TestCase):
                     viss = visibility_shift(uvw, vis, dl, dm)
                     assert_allclose(visibility_shift(uvw, viss, -dl, -dm), vis)
                     # Grid
-                    convgrid(numpy.conj(gcf), a, uvw/lam/2, viss)
+                    theta = N / lam
+                    print("dl=", dl, "  dm=", dm)
+                    print("w=", uvw[:,2])
+                    print(gcf)
+                    uvws = visibility_recentre(uvw, -sl, -sm)
+                    print("after 2:" , uvws)
+                    convgrid(numpy.conj(gcf), a, uvws/lam/2, viss)
                 # FFT halved generated grid
                 a2 = numpy.fft.fftshift(a[:N,:N]+a[:N,N:]+a[N:,:N]+a[N:,N:])
                 img = numpy.real(ifft(a2))
                 # Check peak
+                print(N,x,y, dl,dm)
+                print(img)
                 assert_allclose(img[N//2+y,N//2+x], 1)
 
     def test_grid_transform_shift_w(self):
@@ -350,13 +380,13 @@ class TestSynthesis(unittest.TestCase):
                 assert_allclose(img[N//2+yt,N//2+xt], 1)
 
     def test_hermitian(self):
-        numpy.set_printoptions(precision=2)
         lam = 100
         _or = numpy.logical_or
         _and = numpy.logical_and
-        for N in range(2, 10):
-            # Determine UVW. Deselect zero baseline.
-            uvw = self._uvw(N)*lam
+        for N in range(2, 20):
+            # Determine UVW. Deselect zero baseline. Round to prevent
+            # floating point inaccuracies 
+            uvw = numpy.round(self._uvw(N)*lam)
             non_zero = _or(uvw[:,0] != 0, uvw[:,1] != 0)
             # Select non-redundant baselines
             non_red = _or(uvw[:,0] < 0, _and(uvw[:,0] == 0, uvw[:,1] < 0))
@@ -381,7 +411,7 @@ class TestSynthesis(unittest.TestCase):
                 a_blh = make_grid_hermitian(a_bl)
                 # The two grids should be identical. We especially
                 # expect the FFT image to be entirely real values.
-                assert_allclose(a, a_blh, rtol=1e-14)
+                assert_allclose(a, a_blh, rtol=1e-5, atol=1e-5)
                 assert_allclose(ifft(a).imag, 0, atol=1e-14)
 
 if __name__ == '__main__':
