@@ -292,10 +292,13 @@ def export_visibility_to_hdf5(vis: Visibility, f: h5py.File, path: str = '/', ma
     grp.attrs['type'] = 'Visibility'
     grp.attrs['phasecentre'] = [vis.phasecentre.ra.to(units.deg).value,
                                 vis.phasecentre.dec.to(units.deg).value]
-    grp.attrs['configuration'] = vis.configuration.name
+    if vis.configuration is not None:
+        grp.attrs['configuration'] = vis.configuration.name
     freq = numpy.array(vis.frequency)
     grp.create_dataset('frequency', data=freq, maxshape=maxshape.get('frequency'))
     for col in vis.data.columns:
+        if col == 'weight' and numpy.all(vis.data[col] == 1.0):
+            continue
         grp.create_dataset(col, data=vis.data[col], maxshape=maxshape.get(col))
 
 
