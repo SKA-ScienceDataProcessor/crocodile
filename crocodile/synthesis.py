@@ -32,6 +32,7 @@ from __future__ import division
 import numpy
 import pylru
 import scipy.special
+import scipy.signal
 
 
 def ceil2(x):
@@ -372,7 +373,6 @@ def frac_coords(shape, Qpx, p):
     :param p: array of (x,y) coordinates in range [-.5,.5[
     """
     h, w = shape # NB order (height,width) to match numpy!
-    #print("p=", p, "\nN=", w, "\np'=", w//2 + w * p)
     x, xf = frac_coord(w, Qpx, p[:,0])
     y, yf = frac_coord(h, Qpx, p[:,1])
     return x,xf, y,yf
@@ -418,7 +418,7 @@ def convdegrid(gcf, a, p):
     return numpy.array(vis)
 
 
-def sort_vis_w(p, v=None):
+def sort_vis_w(p, src=None, v=None):
     """Sort visibilities on the w value.
     :param p: uvw coordinates
     :param v: Visibility values (optional)
@@ -430,11 +430,12 @@ def sort_vis_w(p, v=None):
         return p[zs]
 
 
-def slice_vis(step, p, v=None):
+def slice_vis(step, uvw, src=None, v=None):
     """ Slice visibilities into a number of chunks.
 
     :param step: Maximum chunk size
-    :param p: uvw coordinates
+    :param uvw: uvw coordinates
+    :param src: visibility source
     :param v: Visibility values (optional)
     :returns: List of visibility chunk (pairs)
     """
@@ -463,18 +464,20 @@ def doweight(theta, lam, p, v):
     return v
 
 
-def simple_imaging(theta, lam, p, v):
+def simple_imaging(theta, lam, uvw, src, vis):
     """Trivial function for imaging
 
-    Does no convolution but simply puts the visibilities into a grid cell i.e. boxcar gridding"""
+    Does no convolution but simply puts the visibilities into a grid
+    cell i.e. boxcar gridding
+    """
     N = int(round(theta * lam))
     assert N > 1
     guv = numpy.zeros([N, N], dtype=complex)
-    grid(guv, p / lam, v)
+    grid(guv, uvw / lam, vis)
     return guv
 
 
-def simple_predict(guv, theta, lam, p):
+def simple_predict(guv, theta, lam, uvw):
     """Trivial function for degridding
 
     Does no convolution but simply extracts the visibilities from a grid cell i.e. boxcar degridding
@@ -488,28 +491,29 @@ def simple_predict(guv, theta, lam, p):
     """
     N = int(round(theta * lam))
     assert N > 1
-    v = degrid(guv, p / lam)
-    return p, v
+    v = degrid(guv, uvw / lam)
+    return v
 
 
-def conv_imaging(theta, lam, p, v, kv):
+def conv_imaging(theta, lam, uvw, src, vis, kv):
     """Convolve and grid with user-supplied kernels
 
     :param theta: Field of view (directional cosines))
     :param lam: UV grid range
-    :param p: UVWs of visibilities
-    :param v: Visibility values
+    :param uvw: UVWs of visibilities
+    :param src: Visibility source information (ignored)
+    :param vis: Visibility values
     :param kv: Gridding kernel
     :returns: UV grid
     """
     N = int(round(theta * lam))
     assert N > 1
     guv = numpy.zeros([N, N], dtype=complex)
-    convgrid(kv, guv, p / lam, v)
+    convgrid(kv, guv, uvw / lam, vis)
     return guv
 
 
-def w_slice_imaging(theta, lam, p, v,
+def w_slice_imaging(theta, lam, uvw, src, vis,
                     wstep=2000,
                     kernel_fn=w_kernel,
                     **kwargs):
@@ -521,11 +525,12 @@ def w_slice_imaging(theta, lam, p, v,
 
     :param theta: Field of view (directional cosines)
     :param lam: UV grid range (wavelenghts)
-    :param p: UVWs of visibilities
-    :param v: Visibility values
+    :param uvw: UVWs of visibilities (wavelenghts)
+    :param src: Visibility source information
+    :param vis: Visibility values
     :param wstep: Size of w-slices
     :param kernel_fn: Function for generating the kernels. Parameters
-      `(theta, w, **kwargs)`. Default `w_kernel`.
+      `(theta, w, *ant, **kwargs)`. Default `w_kernel`.
     :returns: UV grid
     """
     N = int(round(theta * lam))
@@ -586,14 +591,48 @@ def w_conj_kernel_fn(kernel_fn):
     :returns: Wrapped kernel function
     """
 
-    def fn(theta, w, **kw):
+    def fn(theta, w, *args, **kw):
         if w < 0:
-            return numpy.conj(kernel_fn(theta, -w, **kw))
-        return kernel_fn(theta, w, **kw)
+            return numpy.conj(kernel_fn(theta, -w, *args, **kw))
+        return kernel_fn(theta, w, *args, **kw)
     return fn
 
+def aw_kernel_fn(a_kernel_fn, w_kernel_fn=w_kernel):
+    """
+    Make a kernel function to generate AW kernels.
 
-def w_cache_imaging(theta, lam, p, v,
+    This convolves three kernels for every AW-kernel: Two A-kernels
+    for either antenna and the w-kernel.
+
+    We expect the two first columns of "src" to identify the two
+    antennas involved in a baseline.
+
+    :param akernel_fn: Function to generate A-kernels. Parameters
+      (theta, ant, time, freq)
+    :param wkernel_fn: Function to generate w-kernels. Parameters
+      (theta, w)
+    :returns: Kernel function to generate AW-kernels
+
+    """
+
+    def fn(theta, w, a1, a2, *src):
+
+        # Convolve antenna A-kernels
+        a1kern = a_kernel_fn(theta, a1, *src)
+        a2kern = a_kernel_fn(theta, a2, *src)
+        akern = scipy.signal.convolve2d(a1kern, a2kern, mode='same')
+
+        # Convolve with all oversampling values to obtain Aw-kernel
+        # (note that most oversampling sub-grid values will end up unused!)
+        wkern = w_kernel_fn(theta, w)
+        awkern = [[scipy.signal.convolve2d(akern, wk, mode='same')
+                   for wk in wks]
+                  for wks in wkern]
+        return numpy.array(awkern)
+
+    return fn
+
+def w_cache_imaging(theta, lam, uvw, src, vis,
                     wstep=2000,
                     kernel_cache=None,
                     kernel_fn=w_kernel,
@@ -609,8 +648,9 @@ def w_cache_imaging(theta, lam, p, v,
 
     :param theta: Field of view (directional cosines)
     :param lam: UV grid range (wavelenghts)
-    :param p: UVWs of visibilities (wavelengths)
-    :param v: Visibilites to be imaged
+    :param uvw: UVWs of visibilities (wavelengths)
+    :param src: Visibility source information (various)
+    :param vis: Visibilites to be imaged
     :param wstep: Size of w-bins (wavelengths)
     :param kernel_cache: Kernel cache. If not passed, we fall back
        to `kernel_fn`.
@@ -624,14 +664,17 @@ def w_cache_imaging(theta, lam, p, v,
     # traversed in w-order it only needs to hold the last w-kernel.
     if kernel_cache is None:
         kernel_cache = pylru.FunctionCacheManager(kernel_fn, 1)
-    # Bin w values, then run slice imager with slice size of 1
-    def kernel_binner(theta, w, **kw):
-        wbin = wstep * numpy.round(w / wstep)
-        return kernel_cache(theta, wbin, **kw)
-    return w_slice_imaging(theta, lam, p, v, 1, kernel_binner, **kwargs)
+
+    N = int(round(theta * lam))
+    guv = numpy.zeros([N, N], dtype=complex)
+    for p, s, v in zip(uvw, src, vis):
+        wbin = wstep * numpy.round(p[2] / wstep)
+        wg = numpy.conj(kernel_cache(theta, wbin, *s, **kwargs))
+        convgrid(wg, guv, numpy.array([p / lam]), numpy.array([v]))
+    return guv
 
 
-def w_cache_predict(theta, lam, p, guv,
+def w_cache_predict(theta, lam, uvw, guv,
                     wstep=2000,
                     kernel_cache=None,
                     kernel_fn=w_kernel,
@@ -640,7 +683,7 @@ def w_cache_predict(theta, lam, p, guv,
 
     :param theta: Field of view (directional cosines)
     :param lam: UV grid range (wavelenghts)
-    :param p: UVWs of visibilities  (wavelengths)
+    :param uvw: UVWs of visibilities  (wavelengths)
     :param guv: Input uv grid to de-grid from
     :param wstep: Size of w-bins (wavelengths)
     :param kernel_cache: Kernel cache. If not passed, we fall back
@@ -702,7 +745,6 @@ def make_grid_hermitian(guv):
     #  1) Not the same symetry as transposition
     #  2) We mirror on the zero point, which is off-center if the grid
     #     has even size
-    guv = numpy.copy(guv)
     if guv.shape[0] % 2 == 0:
         guv[1:,1:] += numpy.conj(guv[:0:-1,:0:-1])
         # Note that we ignore the high frequencies here
@@ -711,13 +753,14 @@ def make_grid_hermitian(guv):
     return guv
 
 
-def do_imaging(theta, lam, uvw, vis, imgfn, **kwargs):
+def do_imaging(theta, lam, uvw, src, vis, imgfn, **kwargs):
 
     """Do imaging with imaging function (imgfn)
 
     :param theta: Field of view (directional cosines)
     :param lam: UV grid range (wavelenghts)
     :param uvw: UVWs of visibilities (wavelengths)
+    :param ant: Visibility source information (various)
     :param vis: Visibilities to be imaged
     :param imgfn: imaging function e.g. `simple_imaging`, `conv_imaging`,
       `w_slice_imaging` or `w_cache_imaging`. All keyword parameters
@@ -729,10 +772,10 @@ def do_imaging(theta, lam, uvw, vis, imgfn, **kwargs):
     # Determine weights
     wt = doweight(theta, lam, uvw, numpy.ones(len(uvw)))
     # Make image
-    cdrt = imgfn(theta, lam, uvw, wt * vis, **kwargs)
+    cdrt = imgfn(theta, lam, uvw, src, wt * vis, **kwargs)
     drt = numpy.real(ifft(make_grid_hermitian(cdrt)))
     # Make point spread function
-    c = imgfn(theta, lam, uvw, wt, **kwargs)
+    c = imgfn(theta, lam, uvw, src, wt, **kwargs)
     psf = numpy.real(ifft(make_grid_hermitian(c)))
     # Normalise
     pmax = psf.max()
