@@ -51,10 +51,11 @@ def show_image(img, name, theta, norm=None, extra_dep=None):
         if norm is None: pl.colorbar(shrink=.4,pad=0.025)
     pl.show()
 
-def show_grid(grid, name, lam, norm=None, size=None):
+def show_grid(grid, name, theta, norm=None, size=None):
 
     # Determine size of image. See above.
     size = grid.shape[0]
+    lam = size / theta
     uv_lower, uv_upper = coordinateBounds(size)
     uv_lower = (uv_lower-1./size/2)*lam
     uv_upper = (uv_upper+1./size/2)*lam
