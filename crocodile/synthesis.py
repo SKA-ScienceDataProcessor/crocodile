@@ -35,14 +35,6 @@ import scipy.special
 import scipy.signal
 
 
-def ceil2(x):
-    """Find next greater power of 2
-
-    NOT USED
-    """
-    return 1 << (x - 1).bit_length()
-
-
 def coordinateBounds(N):
     r"""
     Returns lowest and highest coordinates of an image/grid given:
@@ -418,7 +410,7 @@ def convdegrid(gcf, a, p):
     return numpy.array(vis)
 
 
-def sort_vis_w(p, src=None, v=None):
+def sort_vis_w(p, v=None):
     """Sort visibilities on the w value.
     :param p: uvw coordinates
     :param v: Visibility values (optional)
@@ -430,7 +422,7 @@ def sort_vis_w(p, src=None, v=None):
         return p[zs]
 
 
-def slice_vis(step, uvw, src=None, v=None):
+def slice_vis(step, uvw, v=None):
     """ Slice visibilities into a number of chunks.
 
     :param step: Maximum chunk size
@@ -439,12 +431,12 @@ def slice_vis(step, uvw, src=None, v=None):
     :param v: Visibility values (optional)
     :returns: List of visibility chunk (pairs)
     """
-    nv = len(p)
+    nv = len(uvw)
     ii = range(0, nv, step)
     if v is None:
-        return [ p[i:i+step] for i in ii ]
+        return [ uvw[i:i+step] for i in ii ]
     else:
-        return [ (p[i:i+step], v[i:i+step]) for i in ii ]
+        return [ (uvw[i:i+step], v[i:i+step]) for i in ii ]
 
 
 def doweight(theta, lam, p, v):
@@ -544,7 +536,7 @@ def w_slice_imaging(theta, lam, uvw, src, vis,
     return guv
 
 
-def w_slice_predict(theta, lam, p, guv,
+def w_slice_predict(theta, lam, uvw, src, guv,
                     wstep=2000,
                     kernel_fn=w_kernel,
                     **kwargs):
@@ -556,7 +548,8 @@ def w_slice_predict(theta, lam, p, guv,
 
     :param theta: Field of view (directional cosines)
     :param lam: UV grid range (wavelenghts)
-    :param p: UVWs of visiblities
+    :param uvw: UVWs of visiblities
+    :param src: Visibility source information
     :param guv: Input uv grid to de-grid from
     :param wstep: Size of w-slices
     :param kernel_fn: Function for generating the kernels. Parameters
@@ -674,7 +667,7 @@ def w_cache_imaging(theta, lam, uvw, src, vis,
     return guv
 
 
-def w_cache_predict(theta, lam, uvw, guv,
+def w_cache_predict(theta, lam, uvw, src, guv,
                     wstep=2000,
                     kernel_cache=None,
                     kernel_fn=w_kernel,
@@ -698,7 +691,12 @@ def w_cache_predict(theta, lam, uvw, guv,
     def kernel_binner(theta, w, **kw):
         wbin = wstep * numpy.round(w / wstep)
         return kernel_cache(theta, wbin, **kw)
-    return w_slice_predict(theta, lam, p, guv, 1, kernel_binner, **kwargs)
+    v = numpy.ndarray(nv, dtype=complex)
+    for p, s in zip(uvw, src):
+        wbin = wstep * numpy.round(p[2] / wstep)
+        wg = kernel_cache(theta, wbin, *s, **kwargs)
+        v[ixs] = convdegrid(wg, guv, numpy.array([p / lam]))
+    return v
 
 
 def mirror_uvw(uvw, vis):
@@ -767,6 +765,7 @@ def do_imaging(theta, lam, uvw, src, vis, imgfn, **kwargs):
       are passed on to the imaging function.
     :returns: dirty Image, psf
     """
+    if src == None: src = numpy.ndarray((len(vis), 0))
     # Mirror baselines such that v>0
     uvw,vis = mirror_uvw(uvw, vis)
     # Determine weights
@@ -783,17 +782,17 @@ def do_imaging(theta, lam, uvw, src, vis, imgfn, **kwargs):
     return drt / pmax, psf / pmax, pmax
 
 
-def do_predict(theta, lam, p, modelimage, predfn, **kwargs):
+def do_predict(theta, lam, uvw, modelimage, predfn, **kwargs):
     """Predict visibilities for a model Image at the phase centre using the
     specified degridding function.
 
     :param theta: Field of view (directional cosines)
     :param lam: UV grid range (wavelenghts)
-    :param p: UVWs of visiblities (wavelengths)
+    :param uvw: UVWs of visiblities (wavelengths)
     :param modelimage: model image as numpy.array (phase center at Nx/2,Ny/2)
     :param predfn: prediction function e.g. `simple_predict`,
       `w_slice_predict` or `w_cache_predict`.
     :returns: predicted visibilities
     """
     ximage = fft(modelimage.astype(complex))
-    return predfn(theta, lam, p, ximage, **kwargs)
+    return predfn(theta, lam, uvw, src, ximage, **kwargs)

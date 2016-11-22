@@ -306,11 +306,6 @@ class TestSynthesis(unittest.TestCase):
                 # Make grid for gridding
                 a = numpy.zeros((2*N, 2*N), dtype=complex)
                 for uvw, gcf in zip(uvw_slices, gcfs):
-                    sl = -dl
-                    sm = -dm
-                    print("before:" , uvw)
-                    uvw = visibility_recentre(uvw, sl, sm)
-                    print("after:" , uvw)
                     vis = simulate_point(uvw, x/lam-dl, y/lam-dm)
                     # Shift. Make sure it is reversible correctly
                     # (This is enough to prove that degridding would
@@ -318,19 +313,11 @@ class TestSynthesis(unittest.TestCase):
                     viss = visibility_shift(uvw, vis, dl, dm)
                     assert_allclose(visibility_shift(uvw, viss, -dl, -dm), vis)
                     # Grid
-                    theta = N / lam
-                    print("dl=", dl, "  dm=", dm)
-                    print("w=", uvw[:,2])
-                    print(gcf)
-                    uvws = visibility_recentre(uvw, -sl, -sm)
-                    print("after 2:" , uvws)
-                    convgrid(numpy.conj(gcf), a, uvws/lam/2, viss)
+                    convgrid(numpy.conj(gcf), a, uvw/lam/2, viss)
                 # FFT halved generated grid
                 a2 = numpy.fft.fftshift(a[:N,:N]+a[:N,N:]+a[N:,:N]+a[N:,N:])
                 img = numpy.real(ifft(a2))
                 # Check peak
-                print(N,x,y, dl,dm)
-                print(img)
                 assert_allclose(img[N//2+y,N//2+x], 1)
 
     def test_grid_transform_shift_w(self):
