@@ -24,7 +24,6 @@ import h5py
 from crocodile.simulate import *
 
 from arl.data_models import *
-from arl.image_operations import import_image_from_fits, add_wcs_to_image
 from arl.parameters import crocodile_path
 
 from util.read_oskar_vis import OskarVis
@@ -432,6 +431,21 @@ def import_visibility_from_fits(fits_file: str) -> Visibility:
         config = hdu_to_configuration(hdulist[1])
         return hdu_to_visibility(hdulist[2], config)
 
+def import_image_from_fits(fitsfile: str):
+    """ Read an Image from fits
+    
+    :param fitsfile:
+    :type str:
+    :returns: Image
+    """
+    hdulist = fits.open(crocodile_path(fitsfile))
+    fim = Image()
+    fim.data = hdulist[0].data
+    fim.wcs = WCS(crocodile_path(fitsfile))
+    hdulist.close()
+    log.debug("import_image_from_fits: Max, min in %s = %.6f, %.6f" % (fitsfile, fim.data.max(), fim.data.min()))
+    return fim
+
 def create_test_image(canonical=True):
     """Create a useful test image
 
@@ -445,42 +459,3 @@ def create_test_image(canonical=True):
     if canonical:
         im = replicate_image(im)
     return im
-
-
-def replicate_image(im: Image, shape=None, frequency=1.4e9):
-    """ Make a new canonical shape Image, extended along third and fourth axes by replication.
-
-    The order is [chan, pol, dec, ra]
-
-
-    :param im:
-    :type Image:
-    :param shape: Extra axes (only axes 0 and 1 are heeded.
-    :type 4-sequence:
-    :returns: Image
-    """
-    if shape == None:
-        shape = [1, 1, 1, 1]
-    
-    if len(im.data.shape) == 2:
-        fim = Image()
-        
-        newwcs = WCS(naxis=4)
-        
-        newwcs.wcs.crpix = [im.wcs.wcs.crpix[0], im.wcs.wcs.crpix[1], 1.0, 1.0]
-        newwcs.wcs.cdelt = [im.wcs.wcs.cdelt[0], im.wcs.wcs.cdelt[1], 1.0, 1.0]
-        newwcs.wcs.crval = [im.wcs.wcs.crval[0], im.wcs.wcs.crval[1], 1.0, frequency]
-        newwcs.wcs.ctype = [im.wcs.wcs.ctype[0], im.wcs.wcs.ctype[1], 'STOKES', 'FREQ']
-        
-        add_wcs_to_image(fim, newwcs)
-        fshape = [shape[3], shape[2], im.data.shape[1], im.data.shape[0]]
-        fim.data = numpy.zeros(fshape)
-        log.debug("replicate_image: replicating shape %s to %s" % (im.data.shape, fim.data.shape))
-        for i3 in range(shape[3]):
-            for i2 in range(shape[2]):
-                fim.data[i3, i2, :, :] = im.data[:, :]
-    else:
-        fim = im
-    
-    return fim
-
