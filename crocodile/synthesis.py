@@ -739,7 +739,7 @@ def make_grid_hermitian(guv):
     """
 
     # Make mirror image, then add its conjugate to the original grid.
-    # Note that this is just "hermitian", because:
+    # This is not the same concept as hermitian matrices, as:
     #  1) Not the same symetry as transposition
     #  2) We mirror on the zero point, which is off-center if the grid
     #     has even size
