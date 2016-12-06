@@ -56,10 +56,12 @@ class TestSynthesis(unittest.TestCase):
             self.assertAlmostEqual(aaf[shape[0]//2,shape[1]//2], 1)
 
     def test_w_kernel_function(self):
-        assert_allclose(w_kernel_function(*kernel_coordinates(5,0.1),0), 1)
-        self.assertAlmostEqual(w_kernel_function(*kernel_coordinates(5,0.1),100)[2,2], 1)
-        self.assertAlmostEqual(w_kernel_function(*kernel_coordinates(10,0.1),100)[5,5], 1)
-        self.assertAlmostEqual(w_kernel_function(*kernel_coordinates(10,0.1),1000)[5,5], 1)
+        l,m = kernel_coordinates(5,0.1)
+        assert_allclose(w_kernel_function(l,m,0), 1)
+        self.assertAlmostEqual(w_kernel_function(l,m,100)[2,2], 1)
+        l,m = kernel_coordinates(10,0.1)
+        self.assertAlmostEqual(w_kernel_function(l,m,100)[5,5], 1)
+        self.assertAlmostEqual(w_kernel_function(l,m,1000)[5,5], 1)
 
     def test_w_kernel_function_recentre(self):
         for lam in [4, 1000]:
