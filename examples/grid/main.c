@@ -109,16 +109,16 @@ int main(int argc, char *argv[]) {
         }
     }
     if (grid_file) {
-        grid_fd = open(grid_file, O_CREAT | O_RDWR);
+        grid_fd = open(grid_file, O_CREAT | O_TRUNC | O_WRONLY, 0777);
         if (grid_fd == -1) {
             perror("Failed to open grid file");
             return 1;
         }
     }
     if (image_file) {
-        image_fd = open(image_file, O_CREAT | O_RDWR);
+        image_fd = open(image_file, O_CREAT | O_TRUNC | O_WRONLY, 0777);
         if (image_fd == -1) {
-            perror("Failed to open grid file");
+            perror("Failed to open image file");
             return 1;
         }
     }
