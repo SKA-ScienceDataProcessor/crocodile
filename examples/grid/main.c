@@ -1,5 +1,4 @@
 
-#include <fftw3.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +11,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <complex.h>
+#include <fftw3.h>
 
 #include "grid.h"
 
@@ -203,20 +204,27 @@ int main(int argc, char *argv[]) {
     if (image_fd != -1) {
         printf("FFT...\n");
 
+        // First shift zero frequency
+        fft_shift(uvgrid, grid_size);
+
         // Do DFT. Complex-to-complex to keep with numpy (TODO: optimize)
         fftw_plan plan;
-        plan = fftw_plan_dft_2d(grid_size, grid_size, (fftw_complex *)uvgrid, (fftw_complex *)uvgrid, -1, 0);
-        fftw_execute_dft(plan, (fftw_complex *)uvgrid, (fftw_complex *)uvgrid);
+        plan = fftw_plan_dft_2d(grid_size, grid_size, uvgrid, uvgrid, -1, FFTW_ESTIMATE);
+        fftw_execute_dft(plan, uvgrid, uvgrid);
+
+        // Shift zero frequency back into centre
+        fft_shift(uvgrid, grid_size);
 
         // Write real part to disk
         printf("Write image...\n");
         int i;
-        for (i = 0; i < grid_size * grid_size; i++) {
-            double r = creal(uvgrid[i]);
-            write(image_fd, &r, sizeof(double));
-            if(cimag(uvgrid[i]) != 0) {
-                printf("%d %g\n", i, uvgrid[i]);
+        double *row = malloc(sizeof(double) * grid_size);
+        for (i = 0; i < grid_size; i++) {
+            int j;
+            for (j = 0; j < grid_size; j++) {
+                row[j] = creal(uvgrid[i*grid_size+j]);
             }
+            write(image_fd, row, sizeof(double) * grid_size);
         }
         close(image_fd);
     }
