@@ -92,6 +92,7 @@ uint64_t grid_awprojection(double complex *uvgrid, int grid_size, double theta,
                            struct a_kernel_data *akern,
                            int bl_min, int bl_max);
 void make_hermitian(double complex *uvgrid, int grid_size);
+void fft_shift(double complex *uvgrid, int grid_size);
 
 void open_perf_counters(struct perf_counters *counter);
 void enable_perf_counters(struct perf_counters *counter);

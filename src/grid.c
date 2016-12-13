@@ -232,3 +232,21 @@ void make_hermitian(double complex *uvgrid, int grid_size) {
     *p0 += conj(*p0);
 
 }
+
+
+void fft_shift(double complex *uvgrid, int grid_size) {
+
+    // Shift the FFT
+    assert(grid_size % 2 == 0);
+    int x, y;
+    for (y = 0; y < grid_size; y++) {
+        for (x = 0; x < grid_size/2; x++) {
+            int ix0 = y * grid_size + x;
+            int ix1 = (ix0 + (grid_size+1) * (grid_size/2)) % (grid_size*grid_size);
+            double complex temp = uvgrid[ix0];
+            uvgrid[ix0] = uvgrid[ix1];
+            uvgrid[ix1] = temp;
+        }
+    }
+
+}
