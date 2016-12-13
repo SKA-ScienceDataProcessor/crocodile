@@ -5,6 +5,7 @@
 #include <float.h>
 #include <assert.h>
 #include <hdf5.h>
+#include <stdbool.h>
 
 #include "grid.h"
 
@@ -24,6 +25,107 @@ void init_dtype_cpx() {
 
 }
 
+struct bl_stats {
+    uint64_t vis_count, total_vis_count;
+    double u_min, u_max;
+    double v_min, v_max;
+    double w_min, w_max;
+    double t_min, t_max;
+    double f_min, f_max;
+};
+
+static bool load_vis_group(hid_t vis_g, struct bl_data *bl,
+                           int a1, int a2,
+                           double min_len, double max_len,
+                           struct bl_stats *stats) {
+
+    // Read data, verify shape (... quite verbose ...)
+    hid_t freq_ds = H5Dopen(vis_g, "frequency", H5P_DEFAULT);
+    hid_t time_ds = H5Dopen(vis_g, "time", H5P_DEFAULT);
+    hid_t uvw_ds = H5Dopen(vis_g, "uvw", H5P_DEFAULT);
+    hid_t vis_ds = H5Dopen(vis_g, "vis", H5P_DEFAULT);
+    hsize_t freq_dim, time_dim, uvw_dim[2], vis_dim[3];
+    if (!(H5Sget_simple_extent_ndims(H5Dget_space(freq_ds)) == 1 &&
+          H5Tget_size(H5Dget_type(freq_ds)) == sizeof(double) &&
+          H5Sget_simple_extent_dims(H5Dget_space(freq_ds), &freq_dim, NULL) >= 0 &&
+          H5Sget_simple_extent_ndims(H5Dget_space(time_ds)) == 1 &&
+          H5Tget_size(H5Dget_type(time_ds)) == sizeof(double) &&
+          H5Sget_simple_extent_dims(H5Dget_space(time_ds), &time_dim, NULL) >= 0 &&
+          H5Sget_simple_extent_ndims(H5Dget_space(uvw_ds)) == 2 &&
+          H5Tget_size(H5Dget_type(uvw_ds)) == sizeof(double) &&
+          H5Sget_simple_extent_dims(H5Dget_space(uvw_ds), uvw_dim, NULL) >= 0 &&
+          uvw_dim[0] == time_dim && uvw_dim[1] == 3 &&
+          H5Sget_simple_extent_ndims(H5Dget_space(vis_ds)) == 3 &&
+          H5Tget_size(H5Dget_type(vis_ds)) == sizeof(double complex) &&
+          H5Sget_simple_extent_dims(H5Dget_space(vis_ds), vis_dim, NULL) >= 0 &&
+          vis_dim[0] == time_dim && vis_dim[1] == freq_dim && vis_dim[2] == 1)) {
+
+        H5Dclose(freq_ds);
+        H5Dclose(time_ds);
+        H5Dclose(uvw_ds);
+        H5Dclose(vis_ds);
+        return false;
+    }
+
+    // Determine visibility count
+    int vis_c = vis_dim[0] * vis_dim[1] * vis_dim[2];
+    if (stats) { stats->total_vis_count += vis_c; }
+
+    // Use first uvw to decide whether to skip baseline
+    bl->uvw = (double *)malloc(uvw_dim[0] * uvw_dim[1] * sizeof(double));
+    H5Dread(uvw_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->uvw);
+    double len = sqrt(bl->uvw[0] * bl->uvw[0] +
+                      bl->uvw[1] * bl->uvw[1]);
+    if (len < min_len || len >= max_len) {
+        free(bl->uvw);
+        H5Dclose(freq_ds);
+        H5Dclose(time_ds);
+        H5Dclose(uvw_ds);
+        H5Dclose(vis_ds);
+        return false;
+    }
+    if (stats) { stats->vis_count += vis_c; }
+
+    // Read the baseline
+    bl->antenna1 = a1;
+    bl->antenna2 = a2;
+    bl->time_count = time_dim;
+    bl->freq_count = freq_dim;
+    bl->time = (double *)malloc(time_dim * sizeof(double));
+    bl->freq = (double *)malloc(freq_dim * sizeof(double));
+    bl->vis = (double complex *)malloc(vis_c * sizeof(double complex));
+    H5Dread(time_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->time);
+    H5Dread(freq_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->freq);
+    H5Dread(vis_ds, dtype_cpx, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->vis);
+
+    // Close groups
+    H5Dclose(freq_ds);
+    H5Dclose(time_ds);
+    H5Dclose(uvw_ds);
+    H5Dclose(vis_ds);
+
+    // Statistics
+    if (stats) {
+        int j;
+        for (j = 0; j < freq_dim; j++) {
+            if (stats->f_min > bl->freq[j]) { stats->f_min = bl->freq[j]; }
+            if (stats->f_max < bl->freq[j]) { stats->f_max = bl->freq[j]; }
+        }
+        for (j = 0; j < time_dim; j++) {
+            if (stats->t_min > bl->time[j])    { stats->t_min = bl->time[j]; }
+            if (stats->t_max < bl->time[j])    { stats->t_max = bl->time[j]; }
+            if (stats->u_min > bl->uvw[3*j+0]) { stats->u_min = bl->uvw[3*j+0]; }
+            if (stats->u_max < bl->uvw[3*j+0]) { stats->u_max = bl->uvw[3*j+0]; }
+            if (stats->v_min > bl->uvw[3*j+1]) { stats->v_min = bl->uvw[3*j+1]; }
+            if (stats->v_max < bl->uvw[3*j+1]) { stats->v_max = bl->uvw[3*j+1]; }
+            if (stats->w_min > bl->uvw[3*j+2]) { stats->w_min = bl->uvw[3*j+2]; }
+            if (stats->w_max < bl->uvw[3*j+2]) { stats->w_max = bl->uvw[3*j+2]; }
+        }
+    }
+
+    return true;
+}
+
 int load_vis(const char *filename, struct vis_data *vis,
              double min_len, double max_len) {
 
@@ -40,141 +142,176 @@ int load_vis(const char *filename, struct vis_data *vis,
         return 1;
     }
 
-    // Read number of baselines
-    hsize_t nobjs = 0;
-    H5Gget_num_objs(vis_g, &nobjs);
-    vis->antenna_count = nobjs+1;
-    if (vis->antenna_count == 0) {
-        fprintf(stderr, "Found no antenna data in visibility file %s!\n", filename);
-        H5Gclose(vis_g);
-        H5Fclose(vis_f);
-        return 1;
-    }
-    vis->bl_count = vis->antenna_count * (vis->antenna_count - 1) / 2;
+    // Set up statistics
+    struct bl_stats stats;
+    stats.vis_count = stats.total_vis_count = 0;
+    stats.u_min = DBL_MAX; stats.u_max = DBL_MIN;
+    stats.v_min = DBL_MAX; stats.v_max = DBL_MIN;
+    stats.w_min = DBL_MAX; stats.w_max = DBL_MIN;
+    stats.t_min = DBL_MAX; stats.t_max = DBL_MIN;
+    stats.f_min = DBL_MAX; stats.f_max = DBL_MIN;
 
-    // Read baselines
-    vis->bl = (struct bl_data *)calloc(vis->bl_count, sizeof(struct bl_data));
-    int a1, bl = 0, vis_count = 0, total_vis_count = 0;
-    double u_min = DBL_MAX, u_max = DBL_MIN;
-    double v_min = DBL_MAX, v_max = DBL_MIN;
-    double w_min = DBL_MAX, w_max = DBL_MIN;
-    double t_min = DBL_MAX, t_max = DBL_MIN;
-    double f_min = DBL_MAX, f_max = DBL_MIN;
-    for (a1 = 0; a1 < vis->antenna_count-1; a1++) {
-        char a1_name[64];
-        sprintf(a1_name, "%d", a1);
-        hid_t a1_g = H5Gopen(vis_g, a1_name, H5P_DEFAULT);
-        if (a1_g < 0) {
-            fprintf(stderr, "Antenna1 %s not found!", a1_name);
-            continue;
+    // Check whether "vis" a flat visibility group (legacy - should
+    // not have made a data set in this format in the first place.)
+    hid_t type_a; char *type_str;
+    int bl = 0;
+    if (H5Aexists(vis_g, "type") &&
+        (type_a = H5Aopen(vis_g, "type", H5P_DEFAULT)) >= 0 &&
+        H5Tget_class(H5Aget_type(type_a)) == H5T_STRING &&
+        H5Aread(type_a, H5Aget_type(type_a), &type_str) >= 0 &&
+        strcmp(type_str, "Visibility") == 0) {
+
+        // Read visibilities
+        struct bl_data data;
+        if (!load_vis_group(vis_g, &data, 0, 0, DBL_MIN, DBL_MAX, &stats)) {
+            H5Gclose(vis_g);
+            H5Fclose(vis_f);
+            return 1;
         }
 
-        int a2;
-        for (a2 = a1+1; a2 < vis->antenna_count; a2++) {
-            char a2_name[64];
-            sprintf(a2_name, "%d", a2);
-            hid_t a2_g = H5Gopen(a1_g, a2_name, H5P_DEFAULT);
-            if (a2_g < 0) {
-                fprintf(stderr, "Antenna2 %s/%s not found!", a1_name, a2_name);
+        // Read antenna datasets
+        hid_t a1_ds = H5Dopen(vis_g, "antenna1", H5P_DEFAULT);
+        hid_t a2_ds = H5Dopen(vis_g, "antenna2", H5P_DEFAULT);
+        hsize_t a1_dim, a2_dim;
+        if (!(H5Sget_simple_extent_ndims(H5Dget_space(a1_ds)) == 1 &&
+              H5Tget_size(H5Dget_type(a1_ds)) == sizeof(int64_t) &&
+              H5Sget_simple_extent_dims(H5Dget_space(a1_ds), &a1_dim, NULL) >= 0 &&
+              a1_dim == data.time_count &&
+              H5Sget_simple_extent_ndims(H5Dget_space(a2_ds)) == 1 &&
+              H5Tget_size(H5Dget_type(a2_ds)) == sizeof(int64_t) &&
+              H5Sget_simple_extent_dims(H5Dget_space(a2_ds), &a2_dim, NULL) >= 0 &&
+              a2_dim == data.time_count)) {
+
+            free(data.uvw);
+            free(data.time);
+            free(data.freq);
+            free(data.vis);
+            H5Gclose(vis_g);
+            H5Fclose(vis_f);
+            return 1;
+
+        }
+
+        // Read antenna arrays
+        int64_t *a1 = (int64_t *)malloc(a1_dim * sizeof(int64_t));
+        int64_t *a2 = (int64_t *)malloc(a1_dim * sizeof(int64_t));
+        H5Dread(a1_ds, H5T_STD_I64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, a1);
+        H5Dread(a2_ds, H5T_STD_I64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, a2);
+        H5Dclose(a1_ds);
+        H5Dclose(a2_ds);
+
+        // Split by baseline. We assume every visibility needs its own baseline.
+        vis->bl_count = data.time_count;
+        vis->bl = (struct bl_data *)calloc(vis->bl_count, sizeof(struct bl_data));
+        stats.vis_count = 0;
+        int i;
+        for (i = 0; i < data.time_count; i++) {
+
+            // Calculate baseline length (same check as in load_vis_group)
+            double len = sqrt(data.uvw[3*i+0] * data.uvw[3*i+0] +
+                              data.uvw[3*i+1] * data.uvw[3*i+1]);
+            if (len < min_len || len >= max_len) {
+                printf("asd %g\n", len);
                 continue;
             }
 
-            // Read data, verify shape (... quite verbose ...)
-            hid_t freq_ds = H5Dopen(a2_g, "frequency", H5P_DEFAULT);
-            hid_t time_ds = H5Dopen(a2_g, "time", H5P_DEFAULT);
-            hid_t uvw_ds = H5Dopen(a2_g, "uvw", H5P_DEFAULT);
-            hid_t vis_ds = H5Dopen(a2_g, "vis", H5P_DEFAULT);
-            hsize_t freq_dim, time_dim, uvw_dim[2], vis_dim[3];
-            if (H5Sget_simple_extent_ndims(H5Dget_space(freq_ds)) == 1 &&
-                H5Tget_size(H5Dget_type(freq_ds)) == sizeof(double) &&
-                H5Sget_simple_extent_dims(H5Dget_space(freq_ds), &freq_dim, NULL) >= 0 &&
-                H5Sget_simple_extent_ndims(H5Dget_space(time_ds)) == 1 &&
-                H5Tget_size(H5Dget_type(time_ds)) == sizeof(double) &&
-                H5Sget_simple_extent_dims(H5Dget_space(time_ds), &time_dim, NULL) >= 0 &&
-                H5Sget_simple_extent_ndims(H5Dget_space(uvw_ds)) == 2 &&
-                H5Tget_size(H5Dget_type(uvw_ds)) == sizeof(double) &&
-                H5Sget_simple_extent_dims(H5Dget_space(uvw_ds), uvw_dim, NULL) >= 0 &&
-                uvw_dim[0] == time_dim && uvw_dim[1] == 3 &&
-                H5Sget_simple_extent_ndims(H5Dget_space(vis_ds)) == 3 &&
-                H5Tget_size(H5Dget_type(vis_ds)) == sizeof(double complex) &&
-                H5Sget_simple_extent_dims(H5Dget_space(vis_ds), vis_dim, NULL) >= 0 &&
-                vis_dim[0] == time_dim && vis_dim[1] == freq_dim && vis_dim[2] == 1) {
+            // Create 1-visibility baseline
+            vis->bl[bl].antenna1 = a1[i];
+            vis->bl[bl].antenna2 = a2[i];
+            vis->bl[bl].time_count = 1;
+            vis->bl[bl].freq_count = data.freq_count;
+            vis->bl[bl].uvw = (double *)malloc(3 * sizeof(double));
+            vis->bl[bl].time = (double *)malloc(sizeof(double));
+            vis->bl[bl].freq = (double *)malloc(data.freq_count * sizeof(double));
+            vis->bl[bl].vis = (double complex *)malloc(data.freq_count * sizeof(double complex));
+            vis->bl[bl].time[0] = data.time[i];
+            vis->bl[bl].uvw[0] = data.uvw[i*3+0];
+            vis->bl[bl].uvw[1] = data.uvw[i*3+1];
+            vis->bl[bl].uvw[2] = data.uvw[i*3+2];
+            int j;
+            for (j = 0; j < data.freq_count; j++) {
+                vis->bl[bl].freq[j] = data.freq[j];
+                vis->bl[bl].vis[j] = data.vis[i*data.freq_count+j];
+            }
 
-                // Determine visibility count
-                int vis_c = vis_dim[0] * vis_dim[1] * vis_dim[2];
-                total_vis_count += vis_c;
+            if (a1[i] > vis->antenna_count) { vis->antenna_count = a1[i]; }
+            if (a2[i] > vis->antenna_count) { vis->antenna_count = a2[i]; }
+            stats.vis_count++;
+            bl++;
+        }
 
-                // Use first uvw to decide whether to skip baseline
-                vis->bl[bl].uvw = (double *)malloc(uvw_dim[0] * uvw_dim[1] * sizeof(double));
-                H5Dread(uvw_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vis->bl[bl].uvw);
-                double len = sqrt(vis->bl[bl].uvw[0] * vis->bl[bl].uvw[0] +
-                                  vis->bl[bl].uvw[1] * vis->bl[bl].uvw[1]);
-                if (len < min_len || len >= max_len) {
-                    free(vis->bl[bl].uvw);
-                } else {
-                    vis_count += vis_c;
+        // Finish
+        free(data.uvw);
+        free(data.time);
+        free(data.freq);
+        free(data.vis);
+        vis->bl_count = bl;
 
-                    // Read the baseline
-                    vis->bl[bl].antenna1 = a1;
-                    vis->bl[bl].antenna2 = a2;
-                    vis->bl[bl].time_count = time_dim;
-                    vis->bl[bl].freq_count = freq_dim;
-                    vis->bl[bl].time = (double *)malloc(time_dim * sizeof(double));
-                    vis->bl[bl].freq = (double *)malloc(freq_dim * sizeof(double));
-                    vis->bl[bl].vis = (double complex *)malloc(vis_c * sizeof(double complex));
-                    H5Dread(time_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vis->bl[bl].time);
-                    H5Dread(freq_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vis->bl[bl].freq);
-                    H5Dread(vis_ds, dtype_cpx, H5S_ALL, H5S_ALL, H5P_DEFAULT, vis->bl[bl].vis);
+    } else {
 
-                    // Statistics
-                    int j;
-                    for (j = 0; j < freq_dim; j++) {
-                        if (f_min > vis->bl[bl].freq[j]) { f_min = vis->bl[bl].freq[j]; }
-                        if (f_max < vis->bl[bl].freq[j]) { f_max = vis->bl[bl].freq[j]; }
-                    }
-                    for (j = 0; j < time_dim; j++) {
-                        if (t_min > vis->bl[bl].time[j]) { t_min = vis->bl[bl].time[j]; }
-                        if (t_max < vis->bl[bl].time[j]) { t_max = vis->bl[bl].time[j]; }
-                        if (u_min > vis->bl[bl].uvw[3*j+0]) { u_min = vis->bl[bl].uvw[3*j+0]; }
-                        if (u_max < vis->bl[bl].uvw[3*j+0]) { u_max = vis->bl[bl].uvw[3*j+0]; }
-                        if (v_min > vis->bl[bl].uvw[3*j+1]) { v_min = vis->bl[bl].uvw[3*j+1]; }
-                        if (v_max < vis->bl[bl].uvw[3*j+1]) { v_max = vis->bl[bl].uvw[3*j+1]; }
-                        if (w_min > vis->bl[bl].uvw[3*j+2]) { w_min = vis->bl[bl].uvw[3*j+2]; }
-                        if (w_max < vis->bl[bl].uvw[3*j+2]) { w_max = vis->bl[bl].uvw[3*j+2]; }
-                    }
+        // Read number of baselines
+        hsize_t nobjs = 0;
+        H5Gget_num_objs(vis_g, &nobjs);
+        vis->antenna_count = nobjs+1;
+        if (vis->antenna_count == 0) {
+            fprintf(stderr, "Found no antenna data in visibility file %s!\n", filename);
+            H5Gclose(vis_g);
+            H5Fclose(vis_f);
+            return 1;
+        }
+        vis->bl_count = vis->antenna_count * (vis->antenna_count - 1) / 2;
 
+        // Read baselines
+        vis->bl = (struct bl_data *)calloc(vis->bl_count, sizeof(struct bl_data));
+        int a1, bl = 0;
+        for (a1 = 0; a1 < vis->antenna_count-1; a1++) {
+            char a1_name[64];
+            sprintf(a1_name, "%d", a1);
+            hid_t a1_g = H5Gopen(vis_g, a1_name, H5P_DEFAULT);
+            if (a1_g < 0) {
+                fprintf(stderr, "Antenna1 %s not found!", a1_name);
+                continue;
+            }
+
+            int a2;
+            for (a2 = a1+1; a2 < vis->antenna_count; a2++) {
+                char a2_name[64];
+                sprintf(a2_name, "%d", a2);
+                hid_t a2_g = H5Gopen(a1_g, a2_name, H5P_DEFAULT);
+                if (a2_g < 0) {
+                    fprintf(stderr, "Antenna2 %s/%s not found!", a1_name, a2_name);
+                    continue;
+                }
+
+                // Read group data
+                if (load_vis_group(a2_g, &vis->bl[bl], a1, a2, min_len, max_len, &stats)) {
+
+                    // Next baseline!
                     bl++;
                 }
 
-            } else {
-                fprintf(stderr, "Baseline %s/%s has not the expected format!", a1_name, a2_name);
+                H5Gclose(a2_g);
             }
-
-            H5Dclose(freq_ds);
-            H5Dclose(time_ds);
-            H5Dclose(uvw_ds);
-            H5Dclose(vis_ds);
-            H5Gclose(a2_g);
+            H5Gclose(a1_g);
         }
-        H5Gclose(a1_g);
+        vis->bl_count = bl;
     }
-    vis->bl_count = bl;
 
     H5Gclose(vis_g);
     H5Fclose(vis_f);
 
     printf("\n");
-    if (vis_count < total_vis_count) {
-        printf("Have %d visibilities (%d total)\n", vis_count, total_vis_count);
+    if (stats.vis_count < stats.total_vis_count) {
+        printf("Have %d baselines and %d visibilities (%d total)\n", vis->bl_count, stats.vis_count, stats.total_vis_count);
     } else {
-        printf("Have %d visibilities\n", vis_count);
+        printf("Have %d baselines and %d visibilities\n", vis->bl_count, stats.vis_count);
     }
-    printf("u range:     %.2f - %.2f lambda\n", u_min*f_max/c, u_max*f_max/c);
-    printf("v range:     %.2f - %.2f lambda\n", v_min*f_max/c, v_max*f_max/c);
-    printf("w range:     %.2f - %.2f lambda\n", w_min*f_max/c, w_max*f_max/c);
+    printf("u range:     %.2f - %.2f lambda\n", stats.u_min*stats.f_max/c, stats.u_max*stats.f_max/c);
+    printf("v range:     %.2f - %.2f lambda\n", stats.v_min*stats.f_max/c, stats.v_max*stats.f_max/c);
+    printf("w range:     %.2f - %.2f lambda\n", stats.w_min*stats.f_max/c, stats.w_max*stats.f_max/c);
     printf("Antennas:    %d - %d\n"           , 0, vis->antenna_count);
-    printf("t range:     %.6f - %.6f MJD UTC\n", t_min, t_max);
-    printf("f range:     %.2f - %.2f MHz\n"    , f_min/1e6, f_max/1e6);
+    printf("t range:     %.6f - %.6f MJD UTC\n", stats.t_min, stats.t_max);
+    printf("f range:     %.2f - %.2f MHz\n"    , stats.f_min/1e6, stats.f_max/1e6);
 
     return 0;
 }
