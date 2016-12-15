@@ -57,6 +57,7 @@ void weight(unsigned int *wgrid, int grid_size, double theta,
 
     // Simple uniform weighting
     int bl, time, freq;
+    memset(wgrid, 0, grid_size * grid_size * sizeof(unsigned int));
     for (bl = 0; bl < vis->bl_count; bl++) {
         for (time = 0; time < vis->bl[bl].time_count; time++) {
             for (freq = 0; freq < vis->bl[bl].freq_count; freq++) {
@@ -109,14 +110,15 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
                 // Determine w-kernel to use
                 double w = uvw_lambda(&vis->bl[bl], time, freq, 2);
                 int w_plane = (int)floor((w - wkern->w_min) / wkern->w_step + .5);
-                double complex *wk = wkern->kern[w_plane].data;
+                double complex *wk = wkern->kern_by_w[w_plane].data;
+                // Get visibility
+                double complex v = vis->bl[bl].vis[time*vis->bl[bl].freq_count+freq];
                 // Copy kernel
                 int x, y;
                 for (y = 0; y < wkern->size_y; y++) {
                     for (x = 0; x < wkern->size_x; x++) {
                         uvgrid[grid_offset + y*grid_size + x]
-                            += vis->bl[bl].vis[time*vis->bl[bl].freq_count+freq] *
-                               wk[sub_offset + y*wkern->size_x + x];
+                            += v * conj(wk[sub_offset + y*wkern->size_x + x]);
                     }
                 }
                 flops += 8 * wkern->size_x * wkern->size_y;
@@ -192,12 +194,13 @@ uint64_t grid_awprojection(double complex *uvgrid, int grid_size, double theta,
                                        / akern->f_step + .5);
                 double complex *awk = &pbl->awkern[
                      (time * akern->freq_count + afreq) * awkern_size];
+                // Get visibility
+                double complex v = vis->bl[bl].vis[time*vis->bl[bl].freq_count+freq];
                 int x, y;
                 for (y = 0; y < wkern->size_y; y++) {
                     for (x = 0; x < wkern->size_x; x++) {
                         uvgrid[grid_offset + y*grid_size + x]
-                            += pbl->vis[time*pbl->freq_count+freq] *
-                               awk[sub_offset + y*wkern->size_x + x];
+                            += v * conj(awk[sub_offset + y*wkern->size_x + x]);
                     }
                 }
                 flops += 8 * wkern->size_x * wkern->size_y;
