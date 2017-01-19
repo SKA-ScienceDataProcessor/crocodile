@@ -18,7 +18,7 @@ from arl.parameters import *
 
 import logging
 
-log = logging.getLogger("arl.visibility_operations")
+log = logging.getLogger(__name__)
 
 
 def filter_gaintable(fg: GainTable, params={}):

@@ -29,7 +29,7 @@ from arl.parameters import crocodile_path
 from util.read_oskar_vis import OskarVis
 
 import logging
-log = logging.getLogger("arl.test_support")
+log = logging.getLogger(__name__)
 
 def filter_configuration(fc: Configuration, params={}):
     """ Filter a configuration e.g. remove certain antennas

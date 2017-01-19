@@ -7,7 +7,7 @@ import sys
 import os
 
 import logging
-log = logging.getLogger( "arl.parameters" )
+log = logging.getLogger(__name__)
 
 def crocodile_path(path):
     """
