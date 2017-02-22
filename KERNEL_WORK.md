@@ -26,47 +26,55 @@ We separate the work that should be undertaken into the following sections:
 At core, radio interferometry imaging is a Fourier transform
 operation, with most relevant effects mapping to simple multipliers at
 various stages. Data is gathered from the interference patterns
-(visibilities) of antenna pairs (baselines) which yields information
-about the sky brightness:
+(visibilities) of antenna pairs (baselines):
 
-... TODO: Add formula ...
+<img src="data/images/visibility_equation1.png?raw=true" width="70%">
 
-Here `V` are the input visibilities, which is a sum of delta
-functions, non-zero for every time and frequency when the `u,v,w`
-combination represents a baseline. In fact, the baseline coordinates
-are known in advance, as they are the coordinates of a line between
-the antennas, measured in wavelengths. Due to this definition and the
-earth’s rotation this makes `u,v,w` a function of the involved
-antennas, time and frequency.
-
-The Fourier transform of the visibility function of a single baseline
-yields the sky brightness pattern that corresponds to that single
-visibility. To bring all visibility contributions into a common image
-plane we further multiply by Gwto correct for baseline non-coplanarity
+To bring all visibility contributions into a common image plane we
+further multiply by `G_w` to correct for baseline non-coplanarity
 effects and by antenna weights `A_a,t,f` to correct for non-uniform
-antenna reception patterns.
+antenna reception patterns. This yields us a definition for
+visibilities `V` as a contiuous function that contains complete
+information about the sky.
 
-To implement this efficiently, we would like to use fast Fourier
+However, in reality we can only sample this function at discrete
+points given by the antenna positions at the given time. So for radio
+astronomy, our input visibilities `V` is instead a sum of delta
+functions, which is only non-zero where and when we have data. The
+concrete points depend on the telescope layout, earth's curvature,
+earth's rotation, as well as the concrete involved antennas, and the
+time and frequency we took the measurements for.
+
+Radio astronomy spends a lot of effort to compensate for this imperfect
+and irregular sampling (weighting and deconvolution), but for the
+purpose of this excerise let us pretend that we can actually inverse
+the above equation using an inverse Fourier transform even if our
+visibility function `V` is incomplete:
+
+<img src="data/images/visibility_equation2.png?raw=true" width="70%">
+
+To determine `I` efficiently, we would like to use fast Fourier
 transforms. However, we would not want to do repeat the FFTs twice as
 the formula above suggests. Fortunately, multiplication in image space
 is equivalent to convolution in frequency space, so we re-express the
 above equation as:
 
-... TODO: Add formula ...
+<img src="data/images/visibility_equation3.png?raw=true" width="70%">
 
 Where `A_a,t,f` and `G_w`a re the Fourier transforms of the original
-functions. It can be shown that both functions quickly tend to zero
-for nonzero `(u,v)`, which means that every visibility only
-contributes to a very small portion of the frequency plane. After
-summing up all these contributions, we only need to perform a single
-FFT to collect all visibility information into a single picture.
+functions, which together form the grid convolution function (GCF). It
+can be shown that both functions quickly tend to zero for nonzero
+`(u,v)`, which means that every visibility only contributes to a very
+small portion of the frequency plane. After summing up all these
+contributions, we only need to perform a single FFT to collect all
+visibility information into a single picture.
 
 ## Example Code
 
 We can easily implement imaging in just a few lines of Python using
-numpy. Note that for clarity this version is slightly
-simplified. Check the reference code for the full details including
-sub-grid coordinates.
+`numpy`. Note that for clarity this version is slightly
+simplified. Check the [reference code](crocodile/synthesis.py) for the
+full details including sub-grid coordinates.
 
 ### GCF convolution
 
@@ -133,29 +141,31 @@ and its representation is involved and will affect the performance.
 Data properties influence the computation in many ways.  The
 concurrency in computing the uv-grid should be apparent in the code
 shown above.  The pattern baselines in the UVW grid is sparse,
-irregular, but computable.  When `V~` is computed for a particular time
-and frequency the result `V~` may be nonzero on a sparse subset of the
-UV grid.  When averaging `V~` over frequencies (so called continuum
-imaging) and time, the support of `V~` may not be sparse.
+irregular, but computable.  When `V` is computed for a particular time
+and frequency the result `V` may be nonzero on a sparse subset of the
+UV grid.  When averaging `V` over frequencies (so called continuum
+imaging) and time, the support of `V` may not be sparse.
 
-Figure 1: uv-grid coverage
+<img src="data/images/uvw_coverage.png?raw=true" width="70%">
+
+**Figure 1: uv-grid coverage**
 
 The following considerations have not been studied in sufficient
 detail, and leave room to modify algorithms currently in use:
 
-1. Data Layout.  The visibility data at any given time are nonzero on
+1. **Data Layout:**  The visibility data at any given time are nonzero on
    a sparse subset of the u,v plane, with greatly varying density of
    samples when mapped to the `u,v,w` grid.  Figure 1 shows the
    distribution that can be expected: A lot of empty space, a densely
    filled (but computationally comparatively cheap) center region and
    multiple “arms” for longer baselines. Note that longer baselines
    have larger w-values due to the earth’s curvature.
-2. Visibilities belonging to the same baseline snapshot cluster
+2. **Binning:** Visibilities belonging to the same baseline snapshot cluster
    together closely, and can be seen on the left of Figure 1 as small
    lines. Creating appropriate “buckets” of visibility data exhibiting
    locality might help with caching.  The resulting function on the
    u,v grid may be sufficiently sparse to warrant a sparse encoding.
-3. Concurrency.  Visibilities from different baselines may contribute
+3. **Concurrency:**  Visibilities from different baselines may contribute
    to non-zero values of the gridded visibility at the same u,v grid
    points, and when they do so, the value at this gridpoint becomes
    data on which concurrency must be considered.  Handling this
@@ -164,18 +174,19 @@ detail, and leave room to modify algorithms currently in use:
    either by exploiting locality properties within the data
    (e.g. baseline, time and frequency) using the natural baseline
    structure of the data or using a checkerboard pattern of buckets.
-4. Sparseness.  The results from the gridding operation at a
+4. **Sparseness:**  The results from the gridding operation at a
    particular time are nonzero only on a sparse subset of the u,v
    grid.  Appropriate data representation might lead to a smaller
    memory footprint.
-5. GCF locality.  Many different GCF’s will be used as the w-value,
-   frequency channels, time and baseline vary. However, the usage
-   scope of a kernel in the uv-grid is generally fairly local, which
-   suggests that convolving them on-the-fly might be good idea. A
-   model that relates the observed required memory capacity, cache
-   misses associated with changing GCF, and recomputation costs to the
-   values found in the parametric model is valuable.
-6. Conjugated Visibilities. Every visibility has an associated
+5. **GCF locality:** Many different grid convolution functions will be
+   used as the w-value, frequency channels, time and baseline
+   vary. However, the usage scope of a kernel in the uv-grid is
+   generally fairly local, which suggests that convolving them
+   on-the-fly might be good idea. A model that relates the observed
+   required memory capacity, cache misses associated with changing
+   GCF, and recomputation costs to the values found in the parametric
+   model is valuable.
+6. **Hermitian Properties:** Every visibility has an associated
    conjugated visibility with negative u,v,w coordinates. For this
    reason visibility data only contains one of them, and the hermitian
    property is restored before or in the FFT step. This means that the
@@ -183,7 +194,9 @@ detail, and leave room to modify algorithms currently in use:
    conjugated visibility, which can be used to increase or decrease
    locality as appropriate.
 
-## Test Data The visibility data reflects what a typical SKA1 Low
+## Test Data
+
+The visibility data reflects what a typical SKA1 Low
 snapshot will look like from the point of view of a gridding
 kernel. Visibility data and kernels will have the following
 characteristics:
@@ -202,50 +215,59 @@ Furthermore, we assume the following gridding configuration:
 - Grid resolution: 0.08 * 300000 = 24000 uv-cells on each side
 
 ### Visibilies
-http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/vis.h5.gz
-[1.4GB, 43930418 visibilities]
-http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/quick.h5.gz
-[9MB, 130816 visibilities]
 
+* [data/vis/SKA1_Low_vis.h5](data/vis/SKA1_Low_vis.h5) [1.4GB, 43,930,418 visibilities]
+* [data/vis/SKA1_Low_quick.h5](data/vis/SKA1_Low_quick.h5) [9MB, 130,816 visibilities]
 
 Visibility data is packaged as an HDF5 file. The full data set
 contains a group “`vis/[a1]/[a2]`” for every antenna pair (and therefore
 baseline), whereas the quick dataset only contains one group of
 visibilities. Each visibility group is laid out as follows:
-- `frequency {nfreq}`: List of frequencies (double, Hz)
-- `time {ntime}`: List of timeslots (double, UTC MJD)
-- `uvw {ntime x 3}`: List of baseline coordinates (double, in metres)
-- `vis {ntime x nfreq x npol}`: Visibility data (complex double)
+
+- `frequency {nfreq}`: List of frequencies (`double`, Hz)
+- `time {ntime}`: List of timeslots (`double`, UTC MJD)
+- `uvw {ntime x 3}`: List of baseline coordinates (`double`, in metres)
+- `vis {ntime x nfreq x npol}`: Visibility data (`complex double`)
+
 Baseline coordinates in wavelengths can be calculated by multiplying
 by frequency and dividing by the speed of light.
 
 ### W-kernels
-W-kernels [60MB, 268 w-planes, 1.5 lambda spacing]
 
+* [data/kernels/SKA1_Low_wkern.h5](data/kernels/SKA1_Low_wkern.h5) [60MB, 268 w-planes, 1.5 lambda spacing]
 
 W-kernels are similarly grouped in an HDF5 file. There will be groups
 “wkern/[theta]/[w]” for kernels suitable for gridding a certain field
 of view at a given w-value. Each group will contain the data set:
-- kern {nover x nover x nsupport x nsupport}: Kernel data (complex double)
-The w-kernel to apply to a visibility is the one with the closest w-value present in the kernel set.
+
+- `kern {nover x nover x nsupport x nsupport}`: Kernel data (`complex double`)
+
+The w-kernel to apply to a visibility is the one with the closest
+w-value present in the kernel set.
 
 ### A-kernels
-A-kernels [247MB, 512 antennas, 10s, 0.9 MHz]
+
+* [data/kernels/SKA1_Low_akern.h5](data/kernels/SKA1_Low_akern.h5) [247MB, 512 antennas, 10s, 0.9 MHz]
 
 For A-kernels we will have groups “`akern/[theta]/[a]/[t]/[f]`” for
 A-kernels suitable for a certain antenna, time and frequency. Again
 there will be just the kernel data set:
-- `kern {nsupport x nsupport}`: Kernel data (complex double)
-When in doubt, the kernel with the closest time and frequency should be selected.
+
+- `kern {nsupport x nsupport}`: Kernel data (`complex double`)
+
+When in doubt, the kernel with the closest time and frequency should
+be selected.
 
 ## Reference Code
 
-The reference implementation is going to be the ARL (aka
-crocodile). The goal is to implement a more efficient version of
-gridding (`w_cache_imaging`). This includes all functions called from
-this function, including the callbacks to cache Aw-kernel convolution
-and cache functions. All of these should be considered relevant for
-performance and should be benchmarked together appropriately.
+The reference implementation is going to be the `crocodile`
+repository. The goal is to implement a more efficient version of
+gridding (`w_cache_imaging`) as invoked from the
+[scripts/image_dataset.py](scripts/image_dataset.py) script (see below
+for example). This includes all functions called from this function,
+including the callbacks to cache Aw-kernel convolution and cache
+functions. All of these should be considered relevant for performance
+and should be benchmarked together appropriately.
 
 Input data can be pre-processed as much as necessary to achieve an
 efficient implementation, but the overhead of doing so will need to be
@@ -272,30 +294,34 @@ Quickest - quick data set, simple imaging:
 
 Full data set, using only w-kernels:
 ```bash
- scripts/image_dataset.py --theta 0.08 --lambda 300000 
+ scripts/image_dataset.py --theta 0.08 --lambda 300000
                           --grid out.grid --image out.img
                           --wkern wkern.h5 vis.h5
 ```
 
 Full data set with Aw-kernels:
 ```bash
- scripts/image_dataset.py --theta 0.08 --lambda 300000 
+ scripts/image_dataset.py --theta 0.08 --lambda 300000
                           --grid out.grid --image out.img
                           --wkern wkern.h5 --akern akern.h5
                           vis.h5
 ```
 
-###Expected Results
+### Expected Results
 
 The image result will look very similar irrespective of gridding
 method, as visibilities have very low w-values, and for the purpose of
 this test the A-kernels only adds noise.
 
+<img src="data/images/wproject.img.quick.png" width="40%">
+<img src="data/images/wproject.img.quick.detail.png" width="40%">
 
-Figure 2: Image result for w-projection of the “quick” visibility set
+**Figure 2: Image result for w-projection of the “quick” visibility set**
 
+<img src="data/images/wproject.img.png" width="40%">
+<img src="data/images/wproject.img.detail.png" width="40%">
 
-Figure 3: Image result for w-projection of the full visibility set
+**Figure 3: Image result for w-projection of the full visibility set**
 
 For both data sets a grid of points should be visible, with points 0.5
 degrees (0.008726 radians, 2618 pixels) apart. Note that while the
@@ -305,7 +331,18 @@ the right-side pictures show.
 
 Reference data results can be obtained here:
 
-... TODO ...
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/simple.quick.grid.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/simple.quick.img.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/wproject.quick.grid.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/wproject.quick.img.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/awproject.quick.grid.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/awproject.quick.img.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/simple.grid.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/simple.img.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/wproject.grid.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/wproject.img.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/awproject.grid.gz
+* http://www.mrao.cam.ac.uk/~pw410/crocodile/SKA1-LOW_v6_snapshot_vis_hi/awproject.img.gz
 
 All grid and image files are 24000 x 24000 arrays of double-precision
 complex numbers and double-precision real numbers respectively, in
@@ -346,7 +383,8 @@ developed we would like to understand:
 - Document and explain the dependency on non-numerical parameters, e.g.:
   1. Different sorting and grouping of visibility data
   2. Programming models employed (MPI, vs OpenMP, CUDA, others)
-  3. Different data representations (e.g. float vs double, compressed, utilizing lookup tables)
+  3. Different data representations (e.g. float vs double, compressed,
+     utilizing lookup tables)
 
 ## Deliverables
 The following deliverables exist in connection with a prototype kernel:
@@ -370,3 +408,113 @@ The following deliverables exist in connection with a prototype kernel:
 We recommend that a shared SDP kernel performance study document must
 be maintained summarizing important conclusions with references to
 deliverables.
+
+# FAQ
+
+A collection of clarifications to the work description
+
+## What is the role of gridding in the pipeline?
+
+Gridding is currently projected to be one of the most expensive
+operations. We estimate that at least ~2-4 Pflop/s of the SDP's
+compute capacity will have to be spent on gridding. What makes
+gridding especially interesting for the current pipeline planning is
+that it will become more important the more the telescope is scaled
+up, as naive scaling will lead to `O(n^4)` complexity in gridding and
+kernels. There will obviously be other factors, but it looks like a
+pretty safe bet that sooner or later gridding performance will become
+very important.
+
+Where does this much compute come from? To give a sense of scale, a
+data set described above reflects:
+
+ * 45 seconds (x480 for 6 hours)
+ * 1 polarisation (x16 for all Mueller matrix terms)
+ * 7.5 MHz (x40 for full Low band)
+ * 1 facet (x25 for full FoV coverage to third null of antenna reception)
+ * 1 taylor term (x5 for recovering frequency dependence)
+ * 1 major loop (x10 for 10 self-calibration iterations)
+
+So we need to process a data set like this roughly 384 million times
+before a full observation is processed. The data sets will vary in
+terms of visibilities and w/A-kernels, but the uv-grid distribution
+will mostly stay the same.
+
+## What about weighting and deconvolution?
+
+You might see these pop up in the reference implementation, but it is
+expected that those will not be relevant.
+
+## Kernels switch fast. Do they have to be loaded from memory?
+
+Visibility count per kernel depends on the baseline, and note that
+generally baselines with many visibilities switch kernels more slowly.
+However, it is correct that (A-)kernels get switched extremely
+fast. After all, they depend not only on baseline, but also on time
+and frequency, so we get at minimum ~40 kernel switches per baseline
+even ignoring w-kernels.
+
+It seems highly desirable for this reason to do convolution on-the-fly
+at minimum. As argued in
+[SDP Memo 028](data/docs/sdp-gridding-computational.pdf), this should
+be enough to ensure that the kernel is not memory-limited on kernels
+in most situations. There are also more advanced algorithms which
+might have advantages in special situations, but this should be a good
+starting point.
+
+Generating w/A-kernels on-the-fly would be possible as well. However,
+note that generation is generally not *that* expensive in the grand
+scheme of things: It only needs to be done per individual
+antenna/w-value, whereas convolution needs to be done for every
+antenna-pair/w-value *combination*. For example, the A-kernel and
+w-kernel sets are roughly 300 MB combined here, but all required
+kernel combinations would be ~4TB!
+
+## There is a C example that seems to implement gridding? What is the
+    purpose of that?
+
+[examples/grid](examples/grid)
+
+This code was written as a test-run to see how hard it would be to
+work with the HDF5 data set from a C-like environment. The data access
+code has been tested and should be correct.
+
+However, while the gridding portions has been used for benchmarks, it
+has not been tested as thoroughly. We have verified that the results
+are correct for simple and w-projection imaging, but for Aw-projection
+the program is missing actual convolution. So these portions of the
+program should be interpreted as illustrations, not as a reference.
+
+## How can convolution be implemented using FFTs?
+
+If you look at the definition of `aw_kernel_fn`, you will notice that
+it is implemented as follows:
+
+```python
+    akern = scipy.signal.convolve2d(a1kern, a2kern, mode='same')
+```
+
+Where `concolve2d` implements a "naive" convolution
+algorithm. However, using FFT laws we can replace this by Fourier
+transformation. If we want to implement the original convolution
+exactly this would boil down to:
+
+```python
+    awkern = extract_mid(
+        numpy.fft.fftshift(numpy.fft.fft2(
+            numpy.fft.ifft2(numpy.fft.ifftshift(pad_mid(a1kern,29))) *
+            numpy.fft.ifft2(numpy.fft.ifftshift(pad_mid(a2kern,29))) )),
+        15)
+```
+
+Note that we need to pad the kernels to get the right border
+behaviour. However, the kernels for Aw-gridding will normally be
+chosen to /not/ overflow the borders (e.g. padding should have
+happened when the kernels get generated). Therefore, the
+computationally simpler "wrapping" approach is permitted as well:
+
+```python
+    awkern = numpy.fft.fftshift(numpy.fft.fft2(
+                 numpy.fft.ifft2(numpy.fft.ifftshift(a1kern)) *
+                 numpy.fft.ifft2(numpy.fft.ifftshift(a2kern)) ))
+```
