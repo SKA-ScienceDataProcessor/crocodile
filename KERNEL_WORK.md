@@ -8,7 +8,7 @@ architectures.
 ## Introduction
 
 The kernel we have selected is gridding, because:
-- The memory bandwidth and processing gridding requires is very demanding
+- The memory bandwidth and processing requirements are very demanding
 - The data processed has domain specific characteristics
 - It is affected by numerous parameters
 
@@ -470,10 +470,7 @@ antenna-pair/w-value *combination*. For example, the A-kernel and
 w-kernel sets are roughly 300 MB combined here, but all required
 kernel combinations would be ~4TB!
 
-## There is a C example that seems to implement gridding? What is the
-    purpose of that?
-
-[examples/grid](examples/grid)
+## What is the purpose of the C gridding code in [examples/grid](examples/grid)?
 
 This code was written as a test-run to see how hard it would be to
 work with the HDF5 data set from a C-like environment. The data access
@@ -500,7 +497,7 @@ transformation. If we want to implement the original convolution
 exactly this would boil down to:
 
 ```python
-    awkern = extract_mid(
+    awkern = 29*29*extract_mid(
         numpy.fft.fftshift(numpy.fft.fft2(
             numpy.fft.ifft2(numpy.fft.ifftshift(pad_mid(a1kern,29))) *
             numpy.fft.ifft2(numpy.fft.ifftshift(pad_mid(a2kern,29))) )),
@@ -514,7 +511,10 @@ happened when the kernels get generated). Therefore, the
 computationally simpler "wrapping" approach is permitted as well:
 
 ```python
-    awkern = numpy.fft.fftshift(numpy.fft.fft2(
+    awkern = 15*15*numpy.fft.fftshift(numpy.fft.fft2(
                  numpy.fft.ifft2(numpy.fft.ifftshift(a1kern)) *
                  numpy.fft.ifft2(numpy.fft.ifftshift(a2kern)) ))
 ```
+
+Note that the inner FFTs of the input kernels are repeated quite
+often, and should be shared as much as possible to reduce computation.

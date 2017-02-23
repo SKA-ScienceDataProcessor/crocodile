@@ -3,18 +3,15 @@ Crocodile -- Interferometry Imaging Algorithm Reference Library
 ===============================================================
 
 This is a project to create a reference code in NumPy for somewhat
-simplified aperture synthesis imaging.
+simplified aperture synthesis imaging. Check the
+[AW-gridding kernel work description](KERNEL_WORK.md) for information
+about kernel prototyping efforts based on this repository.
 
 Warning: The current code is an experimental proof-of-concept. More
 here soon.
 
 Motivation
 ----------
-
-In many software packages, the only function specification is the
-application code itself. Although the underlying algorithm may be
-documented (e.g. published), the implementation tends to diverge
-overtime, making this method of documentation less effective.
 
 The Crocodile algorithm reference library is designed to present
 imaging algorithms in a simple Python-based form. This is so that the
@@ -40,18 +37,18 @@ your package manager of choice or using `pip`:
 Acquiring data
 --------------
 
-The `data` directory should hold various test data that can be used to
-test the functions of this library. However, this is not currently
-included in the repository, and must be downloaded and extracted
-separately.
+We are using GitHub's
+[large file storage](https://git-lfs.github.com/) (LFS) to store data
+files. To pupluate the `data/` directory you will need to have it
+installed and activated for this repository. So for example:
 
-You can either have this done automatically:
+```bash
+    $ git lfs install
+    $ git lfs pull
+```
 
-    $ make -C data
-
-or extract the package found at
-http://www.mrao.cam.ac.uk/~pw410/crocodile/data.tar.gz manually into
-the `data` folder.
+After `git-lfs` has finished downloading, the required files should
+now appear in the `data/` directory.
 
 Orientation
 -----------
