@@ -327,7 +327,7 @@ def import_configuration_from_hdf5(f: h5py.File, path: str = '/'):
         )
 
 
-def import_visibility_from_hdf5(f: h5py.File, path: str = '/', cfg: Configuration = None):
+def import_visibility_from_hdf5(f: h5py.File, path: str = '/', cfg: Configuration = None, cols = None):
     """Import visibilities from a HDF5 file.
 
     :param f: Open HDF5 file to import data from
@@ -342,7 +342,9 @@ def import_visibility_from_hdf5(f: h5py.File, path: str = '/', cfg: Configuratio
 
     # Read table columns
     table = Table()
-    for col in ['uvw', 'time', 'antenna1', 'antenna2', 'vis', 'weight']:
+    if cols is None:
+        cols = ['uvw', 'time', 'antenna1', 'antenna2', 'vis', 'weight']
+    for col in cols:
 
         # Default weights to 1 if they are not found
         if not col in grp and col == 'weight':
@@ -359,7 +361,7 @@ def import_visibility_from_hdf5(f: h5py.File, path: str = '/', cfg: Configuratio
         )
 
 
-def import_visibility_baselines_from_hdf5(f: h5py.File, cfg: Configuration = None):
+def import_visibility_baselines_from_hdf5(f: h5py.File, cfg: Configuration = None, cols = None):
     """Import visibilities for multiple baselines from a HDF5 group. This
     means that we load every visibility set contained within the given group.
 
@@ -379,11 +381,12 @@ def import_visibility_baselines_from_hdf5(f: h5py.File, cfg: Configuration = Non
 
         # Visibilities?
         if 'type' in grp.attrs and grp.attrs.get('type', '') == 'Visibility':
-            viss.append(import_visibility_from_hdf5(f, grp.name))
+            viss.append(import_visibility_from_hdf5(f, grp.name, cols))
+            print('.', end='', flush=True)
 
         else:
             # Otherwise recurse
-            viss += import_visibility_baselines_from_hdf5(grp)
+            viss += import_visibility_baselines_from_hdf5(grp, cols)
 
     return viss
 

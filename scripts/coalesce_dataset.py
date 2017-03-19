@@ -11,33 +11,30 @@ import astropy.units as units
 from astropy.coordinates import SkyCoord
 import numpy
 import numpy.linalg
-import h5py
 
-from arl.test_support import *
+from arl.test_support import import_visibility_from_oskar, export_visibility_to_fits
 from arl.visibility_operations import *
 
 # Parse arguments
 parser = argparse.ArgumentParser(description='Coalesce binned visibilities.')
 parser.add_argument('input', metavar='dirs',
-                    nargs='*', type=argparse.FileType('r'),
-                    help='input HDF5 files')
+                    nargs='*',
+                    help='input directories with raw baseline-binned visibility data')
 parser.add_argument('--oskar', dest='oskar', metavar='VIS',
                     type=argparse.FileType('r'), required=True,
                     help='oskar visibility file for frequency 0')
-parser.add_argument('--out-raw', dest='output_raw', metavar='VIS',
-                    type=str,
-                    help='oskar visibility file for frequency 0')
-parser.add_argument('--out', dest='output', metavar='VIS',
-                    type=str, required=True,
-                    help='oskar visibility file for frequency 0')
+parser.add_argument('--bin-freqs', dest='bin_freqs', metavar='N', required=True, type=int,
+                    help='Number of frequencies in every bin')
+parser.add_argument('--df', dest='df', metavar='DF', type=float, required=True,
+                    help='frequency difference between two channels')
 parser.add_argument('--ra', dest='ra', metavar='RA', type=float,
                     help='phase centre right ascension (degrees)')
 parser.add_argument('--dec', dest='dec', metavar='DC', type=float,
                     help='phase centre declination (degrees)')
-parser.add_argument('--a-min', dest='a_min', metavar='A1', type=int, default=0,
-                    help='first antenna1 to collect')
-parser.add_argument('--a-max', dest='a_max', metavar='A1', type=int, default=65536,
-                    help='last antenna1 to collect')
+#parser.add_argument('--bl', dest='baselines', metavar='DC', type=str, action='append',
+#                    help='baselines to gather (antenna pairs, as in "A1-A2")')
+parser.add_argument('--a1', dest='a1', metavar='A1', type=int, action='append',
+                    help='antenna1 to collect for')
 parser.add_argument('--theta', dest='theta', metavar='theta', type=float, required=True,
                     help='Field of view to average for (used to compute cell size)')
 parser.add_argument('--step', dest='step', metavar='step', type=float, required=True,
@@ -48,21 +45,13 @@ parser.add_argument('--max-coal-f', dest='maxf', metavar='maxf', type=float, req
                     help='Maximum averaging in frequency [MHz]')
 args = parser.parse_args()
 
-# Open output file
-output = h5py.File(args.output, "a")
-output_raw = None
-if args.output_raw is not None:
-    output_raw = h5py.File(args.output_raw, "a")
-
-# Open visibility files
-inputs = []
-for input in args.input:
-    print("Opening", input.name, "...")
-    inputs.append(h5py.File(input.name, "r", driver="core"))
-
 # Read oskar file
 print("Reading", args.oskar.name, "...")
 vis = import_visibility_from_oskar(args.oskar.name)
+
+# Parse baselines
+#baselines = list(map(lambda b: list(map(int, b.split('-'))), args.baselines))
+#assert numpy.all(map(lambda b: len(b) == 2, baselines))
 
 # Print phase centre
 mean_time = astropy.time.Time(numpy.mean(vis.time), format='mjd')
@@ -109,13 +98,15 @@ else:
 print("New Centre:   RA %.14f DEC %.14f" %
       (new_pc.ra.to(units.deg).value, new_pc.dec.to(units.deg).value))
 
+frequency0 = vis.frequency[0]
+
 # Group frequencies
 print("Grouping...")
 data_by_antenna = vis.data.group_by(['antenna1', 'antenna2'])
 for j, key in enumerate(data_by_antenna.groups.keys):
     a1 = key['antenna1']
     a2 = key['antenna2']
-    if a1 < args.a_min or a1 > args.a_max:
+    if a1 not in args.a1:
         continue
     gdata = data_by_antenna.groups[j]
 
@@ -124,36 +115,41 @@ for j, key in enumerate(data_by_antenna.groups.keys):
 
     # Read baseline from input directories
     v = numpy.ndarray((ntime, 0, 1), dtype=complex)
-    freqs = []
-    viss = []
-    for f in inputs:
-        grp = f['vis/%d/%d' % (a1, a2)]
-        freqs.append(numpy.array(grp['frequency']))
-        viss.append(numpy.array(grp['vis']))
+    for input_dir in args.input:
+        input_file = os.path.join(input_dir, "%d-%d.bin" % (a1, a2))
+        with open(input_file, "r") as f:
 
-    # Sort
-    frequency = numpy.hstack(freqs)
-    vis_data = numpy.hstack(viss)
+            # Read visibilities
+            v_chunk = numpy.fromfile(f, dtype=complex)
+
+            # We expect the appropriate number of visibilities. Skip
+            # head where required (this can happen if restart a
+            # visibility binning process while it is processing)
+            expected_vis = args.bin_freqs * ntime
+            if len(v_chunk) != expected_vis:
+                print("Warning: %s has %d visibilities, expected %d!" % (input_file, len(v_chunk), expected_vis))
+                v_chunk = v_chunk[-expected_vis:]
+
+            # Reshape & append
+            v_chunk = v_chunk.reshape((1, args.bin_freqs, ntime))
+            v = numpy.hstack([v, numpy.transpose(v_chunk)])
 
     # Make visibilities
-    print("Baseline %d-%d: Got %s visibilities" % (a1, a2, str(vis_data.shape)))
+    print("Baseline %d-%d: Got %s visibilities" % (a1, a2, str(v.shape)))
     bl_vis = Visibility(
         vis,
-        frequency = frequency,
-        vis = vis_data,
+        frequency = frequency0 + args.df * numpy.arange(v.shape[1]),
+        vis = v,
         time = gdata['time'],
         uvw = gdata['uvw'],
-        weight = numpy.ones((vis_data.shape)),
+        weight = numpy.ones((v.shape)),
         antenna1 = gdata['antenna1'],
         antenna2 = gdata['antenna2']
     )
     bl_vis.data.sort("time")
 
     # Write data
-    if output_raw is not None:
-        if "vis/%d/%d" % (a1, a2) in output_raw:
-            del output_raw["vis/%d/%d" % (a1, a2)]
-        export_visibility_to_hdf5(bl_vis, output_raw, "vis/%d/%d" % (a1, a2))
+    export_visibility_to_fits(bl_vis, "v%d-%d.fits" % (a1, a2))
 
     # Phase rotate
     bl_vis = phaserotate_visibility(bl_vis, new_pc)
@@ -178,8 +174,33 @@ for j, key in enumerate(data_by_antenna.groups.keys):
 
     print(" -> Coalescing %d x %d" % (int(time_coalesce), int(frequency_coalesce)))
     cbl_vis = coalesce_visibility(bl_vis, int(time_coalesce), int(frequency_coalesce))
+    export_visibility_to_fits(cbl_vis, "c%d-%d.fits" % (a1, a2))
 
-    # Write data
-    if "vis/%d/%d" % (a1, a2) in output:
-        del output["vis/%d/%d" % (a1, a2)]
-    export_visibility_to_hdf5(cbl_vis, output, "vis/%d/%d" % (a1, a2))
+exit(0)
+
+for (a1, a2), vis in bl_table.items():
+
+    # Sort by time
+    vis.data.sort('time')
+
+    # Determine UVW distance in time at maximum frequency
+    max_chan = numpy.argmax(vis.frequency)
+    uvw = vis.uvw_lambda(max_chan)
+    distance_t = numpy.linalg.norm(uvw[0] - uvw[-1]) * args.theta
+
+    # ... same for frequency
+    min_chan = numpy.argmin(vis.frequency)
+    uvw2 = vis.uvw_lambda(min_chan)
+    distance_f = numpy.linalg.norm(uvw[0] - uvw2[0]) * args.theta
+
+    print("Baseline %d-%d: Distance %f x %f" % (a1, a2, distance_t, distance_f))
+
+    # Decide amount of averaging
+    max_time_coal = args.maxt / (24 * 3600 * (numpy.max(vis.time) - numpy.min(vis.time)) / vis.ntime)
+    time_coalesce = min(max_time_coal, vis.ntime, vis.ntime / (distance_t / args.step))
+    max_freq_coal = args.maxf * 1000000 / ((numpy.max(vis.frequency) - numpy.min(vis.frequency)) / vis.nchan)
+    frequency_coalesce = min(max_freq_coal, vis.nchan, vis.nchan / (distance_f / args.step))
+
+    print(" -> Coalescing %d x %d" % (int(time_coalesce), int(frequency_coalesce)))
+    cvis = coalesce_visibility(vis, int(time_coalesce), int(frequency_coalesce))
+    export_visibility_to_fits(cvis, "c%d-%d.fits" % (a1, a2))

@@ -1,0 +1,163 @@
+#!/bin/env python3
+
+import sys
+import os
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(project_root)
+
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+import argparse
+import h5py
+import itertools
+import numpy
+import random
+import time
+import cProfile, pstats, io
+
+import arl.test_support
+from crocodile.bins import *
+from crocodile.synthesis import *
+import util.visualize
+
+# Parse arguments
+parser = argparse.ArgumentParser(description='Grid a data set')
+parser.add_argument('density', metavar='density',
+                    type=argparse.FileType('r'),
+                    help='input grid density bins')
+parser.add_argument('--theta', dest='theta', type=float, default=0.08,
+                    help='Field of view size (l/m range)')
+parser.add_argument('--lambda', dest='lam', type=float, default=300000,
+                    help='Grid size (u/v range)')
+parser.add_argument('--wmax', dest='wmax', type=float, default=1300,
+                    help='Maximum w value')
+parser.add_argument('--wstep', dest='wstep', type=float, default=1.5,
+                    help='Step length for w coordinates')
+parser.add_argument('--du', dest='du', type=float, default=100,
+                    help='u/v bin size (cells)')
+parser.add_argument('--dw', dest='dw', type=float, default=10,
+                    help='w bin size (steps)')
+parser.add_argument('--epsw', dest='epsw', type=float, default=0.01,
+                    help='W-kernel accuracy')
+parser.add_argument('--asize', dest='asize', type=int, default=9,
+                    help='A-kernel size (cells)')
+parser.add_argument('--scalew', dest='scalew', type=float, default=1,
+                    help='Scale problem up by given factor in w direction (larger snapshot, roughly)')
+parser.add_argument('--savefig', dest='savefig', type=argparse.FileType('w'),
+                    help='Save image of end state')
+parser.add_argument('--showfig', dest='showfig', action='store_true',
+                    help='Show image of end state')
+parser.add_argument('--profile', dest='profile', action='store_true',
+                    help='Use cProfile to produce a profiling report')
+parser.add_argument('--tmax', dest='tmax', type=float, default=0.5,
+                    help='Start temperature for simulated annealing')
+parser.add_argument('--tmin', dest='tmin', type=float, default=0.0001,
+                    help='End temperature for simulated annealing')
+parser.add_argument('--steps', dest='steps', type=int, default=200000,
+                    help='Number of simulated annealing steps')
+parser.add_argument('--updates', dest='updates', type=int, default=100,
+                    help='Number of progress updates to show')
+
+args = parser.parse_args()
+
+# Determine bin dimensions
+wmax = args.wmax*args.scalew
+umax = args.lam/2
+args.wstep = wstep = args.wstep*args.scalew
+args.ustep = ustep = 1/args.theta
+wsize = 2*numpy.round(wmax / wstep)
+usize = 2*numpy.round(umax / ustep)
+print("Grid size:   %d x %d x %d" % (usize, usize, wsize))
+print("Bin size:    %d x %d x %d" % (args.du, args.du, args.dw))
+
+ucount = 2*int(numpy.round(usize / 2 / args.du))+1
+wcount = 2*int(numpy.round(wsize / 2 / args.dw))+1
+print("Bin count:   %d x %d x %d (%d MB)" % (ucount, ucount, wcount,
+                                             numpy.dtype('int').itemsize*ucount*ucount*wcount/1000000))
+print()
+
+# Coordinate translations
+counts = numpy.array([ucount-1, ucount-1, wcount-1])
+step_sizes = numpy.array([ustep*usize,ustep*usize,wstep*wsize])
+mids = numpy.array([ucount/2,ucount/2,wcount/2],dtype=int)
+def bin_to_uvw(iuvw, coords=slice(0,3)):
+    return (iuvw - mids[coords]) / counts[coords] * step_sizes[coords]
+def uvw_to_bin(uvw):
+    return numpy.round(counts * uvw / step_sizes).astype(int) + mids
+
+# Read densities
+density = args.scalew * numpy.load(args.density.name)
+assert density.shape == (wcount, ucount, ucount), \
+    "Density bins have wrong shape: Got %s, but expected %s!" % (density.shape, (wcount, ucount, ucount))
+
+# Calculate cost for FFT and Reprojection
+c_FFT = 5 * numpy.ceil(numpy.log(usize*usize)/numpy.log(2))*usize*usize
+c_Reproject = 50 * (usize*usize)
+
+# Create initial bin
+bs = BinSet(bin_to_uvw, args, density, [(0, ucount, 0, ucount, 0, wcount)],
+            add_cost = c_FFT+c_Reproject)
+b = bs.bins[0]
+print("Start:        %s" % b)
+print("Visibilities: %d" % b.nvis)
+print("Gridding:     %.2f Gflop" % (b.cost_direct / 1000000000))
+if b.wplanes > 0:
+    print("  w-stacking: %.2f Gflop (%d u-chunks, %d v-chunks, %d w-planes)" % (
+        b.cost / 1000000000, b.uchunks, b.vchunks, b.wplanes))
+print("FFT:          %.2f Gflop" % (c_FFT  / 1000000000))
+print("Reproject:    %.2f Gflop" % (c_Reproject / 1000000000))
+print()
+print("Efficiency:   %.2f flop/vis" % ((c_FFT + c_Reproject + b.cost_direct) / b.nvis))
+if b.wplanes > 0:
+    print("  w-stacking: %.2f flop/vis" % ((c_FFT + c_Reproject + b.cost) / b.nvis))
+print()
+
+# Set parameters
+bs.Tmax = args.tmax
+bs.Tmin = args.tmin
+bs.steps = args.steps
+bs.updates = args.updates
+
+if args.profile:
+    # Start profile
+    pr = cProfile.Profile()
+    pr.enable()
+
+# Do simulated annealing
+result_bins, energy = bs.anneal()
+
+if args.profile:
+    # Show profile
+    pr.disable()
+    s = io.StringIO()
+    sortby = 'cumulative'
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    ps.print_stats(5)
+    print("Profile:")
+    print(s.getvalue())
+
+print("Resultin bins:")
+for b in sorted(result_bins, key=lambda b: b.cost):
+    u0, v0, w0 = bin_to_uvw(numpy.array([b.iu0, b.iv0, b.iw0]))
+    u1, v1, w1 = bin_to_uvw(numpy.array([b.iu1, b.iv1, b.iw1]))
+
+    print("u %+d:%+d, v %+d:%+d, w %+d:%+d, %d vis, " % (
+        u0, u1, v0, v1, w0, w1, b.nvis), end='')
+
+    if b.wplanes == 0:
+        print("direct ", end='')
+    else:
+        if b.uchunks > 1:
+            print("%d u-chunks, " % b.uchunks, end='')
+        if b.vchunks > 1:
+            print("%d v-chunks, " % b.vchunks, end='')
+        print("%d w-planes " % b.wplanes, end='')
+
+    print(" -> %.1f Gflops, %.1f flops/vis" % (b.cost / 1000000000, b.cost / b.nvis))
+
+if args.savefig is not None or args.showfig is not None:
+    bs.visualize("Finished, energy = %.f flops/vis" % bs.energy(),
+                 save=args.savefig.name if args.savefig is not None else None)
