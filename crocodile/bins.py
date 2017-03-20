@@ -33,6 +33,7 @@ class Bin:
             self.iu1 = self.iu0
             self.nvis = 0
             self.cost = 0
+            self.cost_direct = 0
         else:
             uvw = bins.bin_to_uvw(numpy.arange(self.iw0, self.iw1), coords=2)
             wsum = self._calc_nvis(bins.density,(1,2))
@@ -355,10 +356,12 @@ class BinSet(Annealer):
         self.max_merge_distance = max_merge_distance
         self.max_bins = max_bins
         self.progress_image = progress_image
+        self.extra_energy_per_bin = 0.01
 
         # Make bins
         if initial_state is not None:
             initial_state = [Bin(*coords, bins=self) for coords in initial_state]
+            initial_state = list(filter(lambda b: b.nvis > 0, initial_state))
         super(BinSet, self).__init__(initial_state=initial_state, **kwargs)
         self.copy_strategy = 'method'
 
@@ -395,7 +398,7 @@ class BinSet(Annealer):
     def move(self):
         """ Make a random move """
 
-        op = random.randint(0,3+self.merge_prop+len(self.state)//self.max_bins)
+        op = random.randint(0,6)
         e = self.energy()
         if op == 0:
             b = self.pop_bin()
@@ -438,7 +441,7 @@ class BinSet(Annealer):
 
     def energy(self):
         return (self.add_cost + sum(b.cost for b in self.state)
-                ) / self.nvis0 + len(self.state)/10
+                ) / self.nvis0 + self.extra_energy_per_bin * len(self.state)
 
     def update(self, step, T, E, acceptance, improvement):
 
@@ -459,7 +462,8 @@ class BinSet(Annealer):
             elapsed = time.time() - self.start
             remain = (self.steps - step) * (elapsed / step)
             title = ('T=%.5f E=%.2f Bins=%.d Acc=%.2f%% Imp=%.2f%% Time=%s/%s' %
-                     (T, E-len(self.state)/10, len(self.state), 100.0 * acceptance, 100.0 * improvement,
+                     (T, E-self.extra_energy_per_bin * len(self.state),
+                      len(self.state), 100.0 * acceptance, 100.0 * improvement,
                       time_string(elapsed), time_string(elapsed+remain)))
 
             print('\r'+title, file=sys.stderr, end='\r')

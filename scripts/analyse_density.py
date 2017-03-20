@@ -6,7 +6,6 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
 import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -85,8 +84,8 @@ step_sizes = numpy.array([ustep*usize,ustep*usize,wstep*wsize])
 mids = numpy.array([ucount/2,ucount/2,wcount/2],dtype=int)
 def bin_to_uvw(iuvw, coords=slice(0,3)):
     return (iuvw - mids[coords]) / counts[coords] * step_sizes[coords]
-def uvw_to_bin(uvw):
-    return numpy.round(counts * uvw / step_sizes).astype(int) + mids
+def uvw_to_bin(uvw, coords=slice(0,3)):
+    return numpy.round(counts[coords] * uvw / step_sizes[coords]).astype(int) + mids[coords]
 
 # Read densities
 density = args.scalew * numpy.load(args.density.name)
@@ -97,22 +96,40 @@ assert density.shape == (wcount, ucount, ucount), \
 c_FFT = 5 * numpy.ceil(numpy.log(usize*usize)/numpy.log(2))*usize*usize
 c_Reproject = 50 * (usize*usize)
 
+# Create grid bins
+initial_bins = []
+bin_grid_size = 5000
+bins_grid = int( (umax+bin_grid_size-1) // bin_grid_size )
+for iu in range(-bins_grid, bins_grid):
+    for iv in range(-bins_grid, bins_grid):
+        u0,v0 = uvw_to_bin(numpy.array([iu * bin_grid_size, iv * bin_grid_size]), coords=slice(0,2))
+        u1,v1 = uvw_to_bin(numpy.array([(iu+1) * bin_grid_size, (iv+1) * bin_grid_size]), coords=slice(0,2))
+        initial_bins += [(max(0, u0), min(ucount, u1), max(0, v0), min(v1, ucount), 0, wcount)]
+
 # Create initial bin
-bs = BinSet(bin_to_uvw, args, density, [(0, ucount, 0, ucount, 0, wcount)],
+bs1 = BinSet(bin_to_uvw, args, density, [(0, ucount, 0, ucount, 0, wcount)],
+             add_cost = c_FFT+c_Reproject)
+bs = BinSet(bin_to_uvw, args, density, initial_bins,
             add_cost = c_FFT+c_Reproject)
-b = bs.bins[0]
-print("Start:        %s" % b)
-print("Visibilities: %d" % b.nvis)
+assert bs.nvis0 == bs1.nvis0, "%d %d" % (bs.nvis0, bs1.nvis0)
+b = bs1.bins[0]
+print("Start:        %s" % bs.state)
+print("Visibilities: %d" % bs.nvis0)
 print("Gridding:     %.2f Gflop" % (b.cost_direct / 1000000000))
 if b.wplanes > 0:
     print("  w-stacking: %.2f Gflop (%d u-chunks, %d v-chunks, %d w-planes)" % (
         b.cost / 1000000000, b.uchunks, b.vchunks, b.wplanes))
+print("  bin grid:   %.2f Gflop (%d bins, %d non-empty, max %.2f MB)" % (
+    bs.cost0 / 1000000000, len(initial_bins), len(bs.state),
+    16 * (bin_grid_size * args.theta) ** 2 / 1000000
+))
 print("FFT:          %.2f Gflop" % (c_FFT  / 1000000000))
 print("Reproject:    %.2f Gflop" % (c_Reproject / 1000000000))
 print()
 print("Efficiency:   %.2f flop/vis" % ((c_FFT + c_Reproject + b.cost_direct) / b.nvis))
 if b.wplanes > 0:
-    print("  w-stacking: %.2f flop/vis" % ((c_FFT + c_Reproject + b.cost) / b.nvis))
+    print("  w-stacking: %.2f flop/vis" % ((c_FFT + c_Reproject + bs1.cost0) / bs.nvis0))
+print("  bin grid:   %.2f flop/vis" % ((c_FFT + c_Reproject + bs.cost0) / bs.nvis0))
 print()
 
 # Set parameters
@@ -139,7 +156,7 @@ if args.profile:
     print("Profile:")
     print(s.getvalue())
 
-print("Resultin bins:")
+print("Resulting bins:")
 for b in sorted(result_bins, key=lambda b: b.cost):
     u0, v0, w0 = bin_to_uvw(numpy.array([b.iu0, b.iv0, b.iw0]))
     u1, v1, w1 = bin_to_uvw(numpy.array([b.iu1, b.iv1, b.iw1]))
@@ -158,6 +175,6 @@ for b in sorted(result_bins, key=lambda b: b.cost):
 
     print(" -> %.1f Gflops, %.1f flops/vis" % (b.cost / 1000000000, b.cost / b.nvis))
 
-if args.savefig is not None or args.showfig is not None:
-    bs.visualize("Finished, energy = %.f flops/vis" % bs.energy(),
-                 save=args.savefig.name if args.savefig is not None else None)
+#if args.savefig is not None or args.showfig is not None:
+#    bs.visualize("Finished, energy = %.f flops/vis" % bs.energy(),
+#                 save=args.savefig.name if args.savefig is not None else None)
