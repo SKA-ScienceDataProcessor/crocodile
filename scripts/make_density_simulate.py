@@ -20,6 +20,7 @@ import itertools
 import numpy
 import numpy.linalg
 import numba
+import time
 
 import arl.test_support
 import arl.visibility_operations
@@ -45,6 +46,8 @@ parser.add_argument('--dw', dest='dw', type=float, default=10,
                     help='w bin size (steps)')
 parser.add_argument('--tsnap', dest='tsnap', type=float, default=45,
                     help='Snapshot length (seconds)')
+parser.add_argument('--tlinear', dest='tlinear', type=float, default=45,
+                    help='Maximum time to allow linear approximation of baseline coordinates for')
 parser.add_argument('--freq-min', dest='freq_min', type=float, default=10*numpy.ceil(35 / 1.35),
                     help='Start frequency (MHz)')
 parser.add_argument('--freq-max', dest='freq_max', type=float, default=350,
@@ -98,9 +101,10 @@ print('Config:      %s, %d antennas at %s, %.2f' %
        config.location.latitude.to(u.deg).value))
 zenith = astropy.coordinates.AltAz(az=0*u.deg, alt=90*u.deg, location=config.location)
 zenith = SkyCoord(zenith, obstime=astropy.time.Time.now()).transform_to('icrs')
-ha0 = -args.tsnap/2 /3600/24 * 360 * u.deg
-ha1 = args.tsnap/2 /3600/24 * 360 * u.deg
-print("Hour angles: %s - %s" % (ha0, ha1))
+ha_start = -args.tsnap/2 /3600/24 * 360 * u.deg
+ha_end = args.tsnap/2 /3600/24 * 360 * u.deg
+ha_steps = int(numpy.ceil(args.tsnap / args.tlinear))
+print("Hour angles: %s - %s (%d steps)" % (ha_start, ha_end, ha_steps))
 print("Frequencies: %.1f - %.1f MHz" % (args.freq_min, args.freq_max))
 print()
 
@@ -131,12 +135,9 @@ for _ in range(2):
     print('Phase Centre: RA %s, Dec %s' % (pc.ra, pc.dec))
     dec = pc.dec.to(u.rad).value
 
-# Check fit
-print(fit_uvwplane(xyz_to_baselines(numpy.array(config.xyz), [0], dec)))
-
 # Check range
-uvw_0 = xyz_to_baselines(numpy.array(config.xyz), [ha0], dec)
-uvw_1 = xyz_to_baselines(numpy.array(config.xyz), [ha1], dec)
+uvw_0 = xyz_to_baselines(numpy.array(config.xyz), [ha_start], dec)
+uvw_1 = xyz_to_baselines(numpy.array(config.xyz), [ha_end], dec)
 c = const.c.value
 print("u range:     %.2f - %.2f lambda" % (
     numpy.min([uvw_0[:,0], uvw_1[:,0]]) * args.freq_max * 1000000 / c,
@@ -153,72 +154,85 @@ print()
 density = numpy.zeros((wcount, ucount, ucount), dtype=int)
 @numba.jit(nopython=True)
 def fill_density(density, uvw00, nvis, tlen, flen, t_duvw, f_duvw):
-    for t in range(int(tlen)):
-        for f in range(int(flen)):
-            b = uvw_to_bin(uvw00 + t * t_duvw + f * f_duvw)
-            density[b[2],b[1],b[0]] += nvis
+    for bl in range(uvw00.shape[0]):
+        for t in range(int(tlen[bl])):
+            for f in range(int(flen[bl])):
+                uvw = uvw00[bl] + t * t_duvw[bl] + f * f_duvw[bl]
+                if uvw[1] < 0:
+                    uvw = -uvw
+                b = uvw_to_bin(uvw)
+                density[b[2],b[1],b[0]] += nvis[bl]
 
 # Loop through baselines
 nvis_total = 0
-for a0 in range(ants_xyz.shape[0]):
-  print("%d: " % a0, end='', flush=True)
-  nbins = 0
-  nvis = 0
-  for a1 in range(a0+1, ants_xyz.shape[0]):
+for t in range(0, ha_steps):
+
+    # Determine start end end HA
+    ha0 = ha_start + t * (ha_end - ha_start) / ha_steps
+    ha1 = ha_start + (t+1) * (ha_end - ha_start) / ha_steps
+    tstep = args.tsnap / ha_steps
+
+    nant = ants_xyz.shape[0]
+    auvw0 = numpy.array([xyz_to_uvw(ants_xyz[a], ha0, dec) for a in range(nant)])
+    auvw1 = numpy.array([xyz_to_uvw(ants_xyz[a], ha1, dec) for a in range(nant)])
+
+    start_time = time.time()
+    a1, a0 = numpy.meshgrid(range(nant), range(nant))
+    a0, a1 = a0[a0 < a1], a1[a0 < a1]
 
     # Determine extreme points
-    dxyz = ants_xyz[a0] - ants_xyz[a1]
-    if dxyz[1] < 0:
-        dxyz = -dxyz
-    uvw0 = xyz_to_uvw(dxyz, ha0, dec)
-    uvw1 = xyz_to_uvw(dxyz, ha1, dec)
+    uvw0 = auvw0[a0] - auvw0[a1]
+    uvw1 = auvw1[a0] - auvw1[a1]
 
     # Scale by frequency
     uvw00 = uvw0 * args.freq_min * 1000000 / c
     uvw01 = uvw0 * args.freq_max * 1000000 / c
     uvw10 = uvw1 * args.freq_min * 1000000 / c
     uvw11 = uvw1 * args.freq_max * 1000000 / c
-    assert(numpy.max(numpy.abs([uvw00[2], uvw01[2], uvw10[2], uvw11[2]])) < args.wmax)
+    assert(numpy.max(numpy.abs([uvw00[:,2], uvw01[:,2], uvw10[:,2], uvw11[:,2]])) < args.wmax)
 
     # Determine number of steps for averaging
-    duv_t = numpy.sqrt(max(numpy.sum((uvw00 - uvw10)**2),
-                           numpy.sum((uvw01 - uvw11)**2)))
-    duv_f = numpy.sqrt(max(numpy.sum((uvw00 - uvw01)**2),
-                           numpy.sum((uvw10 - uvw11)**2)))
-    cells_t = int(numpy.ceil(max(
-        1, args.tsnap / args.dt_max, duv_t / ustep / args.grid_step)))
-    cells_t = min(cells_t, int(args.tsnap / args.dt_min))
-    cells_f = int(numpy.ceil(max(
-        1, (args.freq_max - args.freq_min) / args.df_max, duv_f / ustep / args.grid_step)))
-    cells_f = min(cells_f, int((args.freq_max - args.freq_min) / args.df_min))
-    nvis += cells_t * cells_f
+    duv_t = numpy.sqrt(numpy.maximum(numpy.sum((uvw00 - uvw10)**2, axis=1),
+                                     numpy.sum((uvw01 - uvw11)**2, axis=1)))
+    duv_f = numpy.sqrt(numpy.maximum(numpy.sum((uvw00 - uvw01)**2, axis=1),
+                                     numpy.sum((uvw10 - uvw11)**2, axis=1)))
+    cells_t = numpy.ceil(numpy.maximum(
+        max(1, tstep / args.dt_max),
+        duv_t / ustep / args.grid_step)).astype(int)
+    cells_t = numpy.minimum(cells_t, int(tstep / args.dt_min))
+    cells_f = numpy.ceil(numpy.maximum(
+        max(1, (args.freq_max - args.freq_min) / args.df_max),
+        duv_f / ustep / args.grid_step)).astype(int)
+    cells_f = numpy.minimum(cells_f, int((args.freq_max - args.freq_min) / args.df_min))
+    nvis = numpy.sum(cells_t * cells_f)
 
     # Determine how many bins we are covering
-    dw_t = numpy.sqrt(max(numpy.sum((uvw00[2] - uvw10[2])**2),
-                          numpy.sum((uvw01[2] - uvw11[2])**2)))
-    dw_f = numpy.sqrt(max(numpy.sum((uvw00[2] - uvw01[2])**2),
-                          numpy.sum((uvw10[2] - uvw11[2])**2)))
+    dw_t = numpy.maximum(numpy.abs(uvw00[:,2] - uvw10[:,2]),
+                         numpy.abs(uvw01[:,2] - uvw11[:,2]))
+    dw_f = numpy.maximum(numpy.abs(uvw00[:,2] - uvw01[:,2]),
+                         numpy.abs(uvw10[:,2] - uvw11[:,2]))
     bins_uv_t = counts[0] * duv_t / step_sizes[0]
     bins_uv_f = counts[0] * duv_f / step_sizes[0]
-    bins_w_t = counts[2] * dw_t / step_sizes[2]
-    bins_w_f = counts[2] * dw_f / step_sizes[2]
+    bins_w_t = float(counts[2]) * dw_t / float(step_sizes[2])
+    bins_w_f = counts[2] * dw_f / float(step_sizes[2])
 
     # From that determine number of steps. We deliberately choose the
     # number of steps such that we hit individual bins multiple times
     # so that partial overlaps are represented roughly correctly.
-    steps_t = int(numpy.ceil(max(1, bins_uv_t, bins_w_t) * args.subbin))
-    steps_f = int(numpy.ceil(max(1, bins_uv_f, bins_w_f) * args.subbin))
-    nbins += steps_t * steps_f
+    steps_t = numpy.ceil(numpy.maximum(1, numpy.maximum(bins_uv_t, bins_w_t)) * args.subbin).astype(int)
+    steps_f = numpy.ceil(numpy.maximum(1, numpy.maximum(bins_uv_f, bins_w_f)) * args.subbin).astype(int)
+    nbins = numpy.sum(steps_t * steps_f)
 
     fill_density(density,
                  uvw00,
                  (cells_t * cells_f) // (steps_t * steps_f),
                  steps_t, steps_f,
-                 (uvw10 - uvw00) / int(steps_t),
-                 (uvw00 - uvw01) / int(steps_f))
+                 (uvw10 - uvw00) / steps_t[:,numpy.newaxis],
+                 (uvw00 - uvw01) / steps_f[:,numpy.newaxis])
 
-  print(" %d visibilities, %d bin updates" % (nvis, nbins))
-  nvis_total += nvis
+    print(" %d visibilities, %d bin updates (%.1f Mvis/s)" % \
+          (nvis, nbins, nvis / (time.time() - start_time) / 1000000))
+    nvis_total += nvis
 
 print("done, %d visibilities total\n" % nvis_total)
 
