@@ -1,4 +1,5 @@
 
+import datetime
 from itertools import product, combinations
 import numpy
 import random
@@ -238,6 +239,7 @@ class Bin:
         u_w = numpy.sqrt( (w * args.theta/2)**2 +
                           (numpy.sqrt(w)**3 * args.theta / 2 / numpy.pi / args.epsw) )
         nw = 1 + 2 * numpy.ceil(u_w / args.ustep)
+        #print("w = %.1f, u_w = %.1f, nw = %d" % (w, u_w, nw))
 
         # Determine size of kernel to w-project visibilities to their w-plane
         d_w = numpy.abs(w1 - w0) / 2 / wplanes
@@ -327,6 +329,7 @@ class BinSet(Annealer):
 
     def __init__(self, bin_to_uvw, args, density,
                  initial_state=None,
+                 name = datetime.datetime.now().strftime("%Y-%m-%dT%Hh%Mm%Ss"),
                  add_cost=0,
                  pop_method='random', merge_prop=4,
                  max_merge_distance=100, max_bins=100,
@@ -348,6 +351,7 @@ class BinSet(Annealer):
         self.bin_to_uvw = bin_to_uvw
         self.args = args
         self.density = density
+        self.name = name
 
         # Parameters
         self.add_cost = add_cost
@@ -356,7 +360,7 @@ class BinSet(Annealer):
         self.max_merge_distance = max_merge_distance
         self.max_bins = max_bins
         self.progress_image = progress_image
-        self.extra_energy_per_bin = 0.01
+        self.extra_energy_per_bin = 0.001
 
         # Make bins
         if initial_state is not None:
@@ -508,3 +512,8 @@ class BinSet(Annealer):
             plt.show()
         plt.close()
 
+    def save_state(self, fname=None, *args, **kwargs):
+        if fname is None:
+            true_energy = self.energy() - self.extra_energy_per_bin * len(self.state)
+            fname = self.name + "_E%.1f.state" % true_energy
+        super(BinSet, self).save_state(fname, *args, **kwargs)

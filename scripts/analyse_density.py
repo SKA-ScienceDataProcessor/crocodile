@@ -45,6 +45,12 @@ parser.add_argument('--asize', dest='asize', type=int, default=9,
                     help='A-kernel size (cells)')
 parser.add_argument('--scalew', dest='scalew', type=float, default=1,
                     help='Scale problem up by given factor in w direction (larger snapshot, roughly)')
+parser.add_argument('--save', dest='save', type=argparse.FileType('w'),
+                    help='Save end state to file')
+parser.add_argument('--load', dest='load', type=argparse.FileType('r'),
+                    help='Load start state from file')
+parser.add_argument('--dump', dest='dump', action='store_true',
+                    help='Dump bins in end state')
 parser.add_argument('--savefig', dest='savefig', type=argparse.FileType('w'),
                     help='Save image of end state')
 parser.add_argument('--showfig', dest='showfig', action='store_true',
@@ -96,47 +102,68 @@ assert density.shape == (wcount, ucount, ucount), \
 c_FFT = 5 * numpy.ceil(numpy.log(usize*usize)/numpy.log(2))*usize*usize
 c_Reproject = 50 * (usize*usize)
 
-# Create grid bins
-initial_bins = []
-bin_grid_size = 5000
-bins_grid = int( (umax+bin_grid_size-1) // bin_grid_size )
-for iu in range(-bins_grid, bins_grid):
-    for iv in range(-bins_grid, bins_grid):
-        u0,v0 = uvw_to_bin(numpy.array([iu * bin_grid_size, iv * bin_grid_size]), coords=slice(0,2))
-        u1,v1 = uvw_to_bin(numpy.array([(iu+1) * bin_grid_size, (iv+1) * bin_grid_size]), coords=slice(0,2))
-        initial_bins += [(max(0, u0), min(ucount, u1), max(0, v0), min(v1, ucount), 0, wcount)]
+if args.load is None:
 
-# Create initial bin
-bs1 = BinSet(bin_to_uvw, args, density, [(0, ucount, 0, ucount, 0, wcount)],
-             add_cost = c_FFT+c_Reproject)
-bs = BinSet(bin_to_uvw, args, density, initial_bins,
-            add_cost = c_FFT+c_Reproject)
-assert bs.nvis0 == bs1.nvis0, "%d %d" % (bs.nvis0, bs1.nvis0)
-b = bs1.bins[0]
-print("Start:        %s" % bs.state)
-print("Visibilities: %d" % bs.nvis0)
-print("Gridding:     %.2f Gflop" % (b.cost_direct / 1000000000))
-if b.wplanes > 0:
-    print("  w-stacking: %.2f Gflop (%d u-chunks, %d v-chunks, %d w-planes)" % (
-        b.cost / 1000000000, b.uchunks, b.vchunks, b.wplanes))
-print("  bin grid:   %.2f Gflop (%d bins, %d non-empty, max %.2f MB)" % (
-    bs.cost0 / 1000000000, len(initial_bins), len(bs.state),
-    16 * (bin_grid_size * args.theta) ** 2 / 1000000
-))
-print("FFT:          %.2f Gflop" % (c_FFT  / 1000000000))
-print("Reproject:    %.2f Gflop" % (c_Reproject / 1000000000))
-print()
-print("Efficiency:   %.2f flop/vis" % ((c_FFT + c_Reproject + b.cost_direct) / b.nvis))
-if b.wplanes > 0:
-    print("  w-stacking: %.2f flop/vis" % ((c_FFT + c_Reproject + bs1.cost0) / bs.nvis0))
-print("  bin grid:   %.2f flop/vis" % ((c_FFT + c_Reproject + bs.cost0) / bs.nvis0))
-print()
+    # Create grid bins
+    initial_bins = []
+    bin_grid_size = 500 / args.theta
+    bins_grid = int( (umax+bin_grid_size-1) // bin_grid_size )
+    for iu in range(-bins_grid, bins_grid):
+        for iv in range(-bins_grid, bins_grid):
+            u0,v0 = uvw_to_bin(numpy.array([iu * bin_grid_size, iv * bin_grid_size]), coords=slice(0,2))
+            u1,v1 = uvw_to_bin(numpy.array([(iu+1) * bin_grid_size, (iv+1) * bin_grid_size]), coords=slice(0,2))
+            initial_bins += [(max(0, u0), min(ucount, u1), max(0, v0), min(v1, ucount), 0, wcount)]
+
+    # Create initial bin
+    bs1 = BinSet(bin_to_uvw, args, density, [(0, ucount, 0, ucount, 0, wcount)],
+                 name=os.path.splitext(os.path.basename(args.density.name))[0],
+                 add_cost = c_FFT+c_Reproject)
+    bs = BinSet(bin_to_uvw, args, density, initial_bins,
+                name=os.path.splitext(os.path.basename(args.density.name))[0],
+                add_cost = c_FFT+c_Reproject)
+    assert bs.nvis0 == bs1.nvis0, "%d %d" % (bs.nvis0, bs1.nvis0)
+    b = bs1.bins[0]
+    print("Start:        %s" % bs.state)
+    print("Visibilities: %d" % bs.nvis0)
+    print("Gridding:     %.2f Gflop" % (b.cost_direct / 1000000000))
+    if b.wplanes > 0:
+        print("  w-stacking: %.2f Gflop (%d u-chunks, %d v-chunks, %d w-planes)" % (
+            b.cost / 1000000000, b.uchunks, b.vchunks, b.wplanes))
+    print("  bin grid:   %.2f Gflop (%d bins, %d non-empty, max %.2f MB)" % (
+        bs.cost0 / 1000000000, len(initial_bins), len(bs.state),
+        16 * (bin_grid_size * args.theta) ** 2 / 1000000
+    ))
+    print("FFT:          %.2f Gflop" % (c_FFT  / 1000000000))
+    print("Reproject:    %.2f Gflop" % (c_Reproject / 1000000000))
+    print()
+    print("Efficiency:   %.2f flop/vis" % ((c_FFT + c_Reproject + b.cost_direct) / b.nvis))
+    if b.wplanes > 0:
+        print("  w-stacking: %.2f flop/vis" % ((c_FFT + c_Reproject + bs1.cost0) / bs.nvis0))
+    print("  bin grid:   %.2f flop/vis" % ((c_FFT + c_Reproject + bs.cost0) / bs.nvis0))
+    print()
+
+else:
+
+    print("State read from %s", args.load.name)
+    bs = BinSet(bin_to_uvw, args, density,
+                name=os.path.splitext(os.path.basename(args.load.name))[0],
+                load_state=args.load.name,
+                add_cost = c_FFT+c_Reproject)
+
+    print()
+    print("Visibilities: %d" % bs.nvis0)
+    print("Gridding:     %.2f Gflop (%d bins)" % (bs.cost0 / 1000000000, len(bs.state)))
+    print("FFT:          %.2f Gflop" % (c_FFT  / 1000000000))
+    print("Reproject:    %.2f Gflop" % (c_Reproject / 1000000000))
+    print("Efficiency:   %.2f flop/vis" % ((c_FFT + c_Reproject + bs.cost0) / bs.nvis0))
+    print()
 
 # Set parameters
 bs.Tmax = args.tmax
 bs.Tmin = args.tmin
 bs.steps = args.steps
 bs.updates = args.updates
+bs.save_state_on_exit = False
 
 if args.profile:
     # Start profile
@@ -144,7 +171,19 @@ if args.profile:
     pr.enable()
 
 # Do simulated annealing
+start_time = time.time()
 result_bins, energy = bs.anneal()
+
+# Save
+if args.save is not None:
+    print("Saving to %s" % args.save.name)
+    bs.save_state(args.save)
+    print()
+elif time.time() - start_time > 5:
+    # Automatically save if we invested more than 5 minutes
+    print("Auto-saving state")
+    bs.save_state()
+    print()
 
 if args.profile:
     # Show profile
@@ -156,25 +195,26 @@ if args.profile:
     print("Profile:")
     print(s.getvalue())
 
-print("Resulting bins:")
-for b in sorted(result_bins, key=lambda b: b.cost):
-    u0, v0, w0 = bin_to_uvw(numpy.array([b.iu0, b.iv0, b.iw0]))
-    u1, v1, w1 = bin_to_uvw(numpy.array([b.iu1, b.iv1, b.iw1]))
+if args.dump:
+    print("Resulting bins:")
+    for b in sorted(result_bins, key=lambda b: b.cost):
+        u0, v0, w0 = bin_to_uvw(numpy.array([b.iu0, b.iv0, b.iw0]))
+        u1, v1, w1 = bin_to_uvw(numpy.array([b.iu1, b.iv1, b.iw1]))
 
-    print("u %+d:%+d, v %+d:%+d, w %+d:%+d, %d vis, " % (
-        u0, u1, v0, v1, w0, w1, b.nvis), end='')
+        print("u %+d:%+d, v %+d:%+d, w %+d:%+d, %d vis, " % (
+            u0, u1, v0, v1, w0, w1, b.nvis), end='')
 
-    if b.wplanes == 0:
-        print("direct ", end='')
-    else:
-        if b.uchunks > 1:
-            print("%d u-chunks, " % b.uchunks, end='')
-        if b.vchunks > 1:
-            print("%d v-chunks, " % b.vchunks, end='')
-        print("%d w-planes " % b.wplanes, end='')
+        if b.wplanes == 0:
+            print("direct ", end='')
+        else:
+            if b.uchunks > 1:
+                print("%d u-chunks, " % b.uchunks, end='')
+            if b.vchunks > 1:
+                print("%d v-chunks, " % b.vchunks, end='')
+            print("%d w-planes " % b.wplanes, end='')
 
-    print(" -> %.1f Gflops, %.1f flops/vis" % (b.cost / 1000000000, b.cost / b.nvis))
+            print(" -> %.1f Gflops, %.1f flops/vis" % (b.cost / 1000000000, b.cost / b.nvis))
 
-#if args.savefig is not None or args.showfig is not None:
-#    bs.visualize("Finished, energy = %.f flops/vis" % bs.energy(),
-#                 save=args.savefig.name if args.savefig is not None else None)
+if args.savefig is not None or args.showfig is not None:
+    bs.visualize("Finished, energy = %.f flops/vis" % bs.energy(),
+                 save=args.savefig.name if args.savefig is not None else None)
