@@ -129,6 +129,7 @@ def extract_mid(a, N):
     :param a: grid from which to extract
     :param s: size of section
     """
+    assert N <= a.shape[0] and N <= a.shape[1]
     cx = a.shape[0] // 2
     cy = a.shape[1] // 2
     s = N // 2
@@ -185,6 +186,36 @@ def anti_aliasing_function(shape, m, c):
                for N in shape ]
     return numpy.outer(sy, sx)
 
+def kernel_transform(dl, dm):
+    """Determine linear transformation matrix for a given shift that
+    keeps w-kernel coordinates as constant as possible.
+
+    To be precise: This returns a transformation matrix such that with
+
+      (l',m') = T (l,m) + (dl,dm)
+
+    We still have:
+
+      sqrt(1-l'^2-m'^2) ~~ sqrt(1-l^2-m^2)
+
+    As well as leaving l' and m' roughly aligned to l and m. This
+    boils down to matching up the first-order terms of the series
+    expansions (which are clearly zero for the right-hand term, as it
+    is symmetric in both l and m).
+
+    :param dl: Horizontal shift (directional cosine)
+    :param dl: Vertical shift (directional cosine)
+    :returns: A 2x2 transformation matrix
+    """
+
+    dn = numpy.sqrt(1-dl**2-dm**2)
+    if dl != 0 or dm != 0:
+        f = (dn-1) / (dl**2 + dm**2)
+    else:
+        f = 0
+    return numpy.array([[dn-dm*dm*f,    dl*dm*f],
+                        [   dl*dm*f, dn-dl*dl*f]])
+
 def kernel_coordinates(N, theta, dl=0, dm=0, T=None):
     """
     Returns (l,m) coordinates for generation of kernels
@@ -208,40 +239,55 @@ def kernel_coordinates(N, theta, dl=0, dm=0, T=None):
     return l+dl, m+dm
 
 
-def w_kernel_function(l, m, w, dl=0, dm=0, T=numpy.eye(2)):
+def w_kernel_function(l, m, w):
     """W beam, the fresnel diffraction pattern arising from non-coplanar baselines
 
     For the w-kernel, shifting the kernel pattern happens to also
-    shift the kernel depending on w. To counter this effect, `dl` or
-    `dm` can be passed so that the kernel ends up approximately
-    centered again. This means that kernels will have to be used at an
-    offset to get the same result, use `visibility_recentre` to
-    achieve this.
+    shift the kernel depending on w. Use `kernel_recentre` to counter
+    this effect and `visibility_recentre` to apply the reverse
+    correction to visibilities.
 
     :param l: Horizontal image coordinates
     :param m: Vertical image coordinates
     :param N: Size of the grid in pixels
     :param w: Baseline distance to the projection plane
-    :param dl: Shift the kernel by `dl w` to re-center it after a pattern shift.
-    :param dm: Shift the kernel by `dm w` to re-center it after a pattern shift.
     :returns: N x N array with the far field
+
     """
 
     r2 = l**2 + m**2
     assert numpy.all(r2 < 1.0), "Error in image coordinate system: l %s, m %s" % (l, m)
-    ph = 1 - numpy.sqrt(1.0 - r2) - dl * l - dm * m
+    ph = 1 - numpy.sqrt(1.0 - r2)
     cp = numpy.exp(2j * numpy.pi * w * ph)
     return cp
 
 
+def kernel_recentre(cp, theta, w, dl, dm):
+    """
+    Re-center the kernel in grid-space by multiplying it by a phase
+    ramp in image space, allowing us to reduce kernel support. Must be
+    paired with `visibility_recentre` so that we end up with the same
+    uv-grid in the end.
+
+    :param cp: Kernel pattern
+    :param w: w-plane of kernel
+    :param dl: Horizontal shift to add
+    :param dm: Vertical shift to add
+    :returns: Re-centered kernel
+    """
+    N = cp.shape[0]
+    l,m = coordinates2(N) * theta
+    return cp * numpy.exp(-2j * numpy.pi * w * (dl * l + dm * m))
+
+
 def visibility_recentre(uvw, dl, dm):
     """
-    Compensate for kernel re-centering - see `w_kernel_function`.
+    Compensate for kernel re-centering - see `kernel_recentre`.
 
     :param uvw: Visibility coordinates
     :param dl: Horizontal shift to compensate for
     :param dm: Vertical shift to compensate for
-    :returns: Visibility coordinates re-centrered on the peak of their w-kernel
+    :returns: Visibility coordinates re-centred to the peak of their w-kernel
     """
 
     u, v, w = numpy.hsplit(uvw, 3)
