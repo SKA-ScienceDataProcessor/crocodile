@@ -15,6 +15,14 @@ struct bl_data
     double *uvw;
     double complex *vis;
     double complex *awkern;
+
+    double u_min, u_max; // in m
+    double v_min, v_max; // in m
+    double w_min, w_max; // in m
+    double t_min, t_max; // in h
+    double f_min, f_max; // in Hz
+
+    uint64_t flops;
 };
 struct vis_data
 {
@@ -83,6 +91,10 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
                      struct vis_data *vis);
 uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
                           struct vis_data *vis, struct w_kernel_data *wkern);
+uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
+                      double theta,
+                      struct vis_data *vis, struct w_kernel_data *wkern,
+					  int subgrid_size, int subgrid_margin, double wincrement);
 void convolve_aw_kernels(struct bl_data *bl,
                          struct w_kernel_data *wkern,
                          struct a_kernel_data *akern);
