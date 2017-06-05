@@ -105,22 +105,38 @@ static bool load_vis_group(hid_t vis_g, struct bl_data *bl,
     H5Dclose(vis_ds);
 
     // Statistics
+    bl->u_min = DBL_MAX; bl->u_max = -DBL_MAX;
+    bl->v_min = DBL_MAX; bl->v_max = -DBL_MAX;
+    bl->w_min = DBL_MAX; bl->w_max = -DBL_MAX;
+    bl->t_min = DBL_MAX; bl->t_max = -DBL_MAX;
+    bl->f_min = DBL_MAX; bl->f_max = -DBL_MAX;
+    int j;
+    for (j = 0; j < freq_dim; j++) {
+        if (bl->f_min > bl->freq[j]) { bl->f_min = bl->freq[j]; }
+        if (bl->f_max < bl->freq[j]) { bl->f_max = bl->freq[j]; }
+    }
+    for (j = 0; j < time_dim; j++) {
+        if (bl->t_min > bl->time[j])    { bl->t_min = bl->time[j]; }
+        if (bl->t_max < bl->time[j])    { bl->t_max = bl->time[j]; }
+        if (bl->u_min > bl->uvw[3*j+0]) { bl->u_min = bl->uvw[3*j+0]; }
+        if (bl->u_max < bl->uvw[3*j+0]) { bl->u_max = bl->uvw[3*j+0]; }
+        if (bl->v_min > bl->uvw[3*j+1]) { bl->v_min = bl->uvw[3*j+1]; }
+        if (bl->v_max < bl->uvw[3*j+1]) { bl->v_max = bl->uvw[3*j+1]; }
+        if (bl->w_min > bl->uvw[3*j+2]) { bl->w_min = bl->uvw[3*j+2]; }
+        if (bl->w_max < bl->uvw[3*j+2]) { bl->w_max = bl->uvw[3*j+2]; }
+    }
+
     if (stats) {
-        int j;
-        for (j = 0; j < freq_dim; j++) {
-            if (stats->f_min > bl->freq[j]) { stats->f_min = bl->freq[j]; }
-            if (stats->f_max < bl->freq[j]) { stats->f_max = bl->freq[j]; }
-        }
-        for (j = 0; j < time_dim; j++) {
-            if (stats->t_min > bl->time[j])    { stats->t_min = bl->time[j]; }
-            if (stats->t_max < bl->time[j])    { stats->t_max = bl->time[j]; }
-            if (stats->u_min > bl->uvw[3*j+0]) { stats->u_min = bl->uvw[3*j+0]; }
-            if (stats->u_max < bl->uvw[3*j+0]) { stats->u_max = bl->uvw[3*j+0]; }
-            if (stats->v_min > bl->uvw[3*j+1]) { stats->v_min = bl->uvw[3*j+1]; }
-            if (stats->v_max < bl->uvw[3*j+1]) { stats->v_max = bl->uvw[3*j+1]; }
-            if (stats->w_min > bl->uvw[3*j+2]) { stats->w_min = bl->uvw[3*j+2]; }
-            if (stats->w_max < bl->uvw[3*j+2]) { stats->w_max = bl->uvw[3*j+2]; }
-        }
+        if (stats->f_min > bl->f_min) { stats->f_min = bl->f_min; }
+        if (stats->f_max < bl->f_max) { stats->f_max = bl->f_max; }
+        if (stats->t_min > bl->t_min) { stats->t_min = bl->t_min; }
+        if (stats->t_max < bl->t_max) { stats->t_max = bl->t_max; }
+        if (stats->u_min > bl->u_min) { stats->u_min = bl->u_min; }
+        if (stats->u_max < bl->u_max) { stats->u_max = bl->u_max; }
+        if (stats->v_min > bl->v_min) { stats->v_min = bl->v_min; }
+        if (stats->v_max < bl->v_max) { stats->v_max = bl->v_max; }
+        if (stats->w_min > bl->w_min) { stats->w_min = bl->w_min; }
+        if (stats->w_max < bl->w_max) { stats->w_max = bl->w_max; }
     }
 
     return true;
@@ -145,11 +161,11 @@ int load_vis(const char *filename, struct vis_data *vis,
     // Set up statistics
     struct bl_stats stats;
     stats.vis_count = stats.total_vis_count = 0;
-    stats.u_min = DBL_MAX; stats.u_max = DBL_MIN;
-    stats.v_min = DBL_MAX; stats.v_max = DBL_MIN;
-    stats.w_min = DBL_MAX; stats.w_max = DBL_MIN;
-    stats.t_min = DBL_MAX; stats.t_max = DBL_MIN;
-    stats.f_min = DBL_MAX; stats.f_max = DBL_MIN;
+    stats.u_min = DBL_MAX; stats.u_max = -DBL_MAX;
+    stats.v_min = DBL_MAX; stats.v_max = -DBL_MAX;
+    stats.w_min = DBL_MAX; stats.w_max = -DBL_MAX;
+    stats.t_min = DBL_MAX; stats.t_max = -DBL_MAX;
+    stats.f_min = DBL_MAX; stats.f_max = -DBL_MAX;
 
     // Check whether "vis" a flat visibility group (legacy - should
     // not have made a data set in this format in the first place.)
@@ -163,7 +179,7 @@ int load_vis(const char *filename, struct vis_data *vis,
 
         // Read visibilities
         struct bl_data data;
-        if (!load_vis_group(vis_g, &data, 0, 0, DBL_MIN, DBL_MAX, &stats)) {
+        if (!load_vis_group(vis_g, &data, 0, 0, -DBL_MAX, DBL_MAX, &stats)) {
             H5Gclose(vis_g);
             H5Fclose(vis_f);
             return 1;
@@ -228,6 +244,11 @@ int load_vis(const char *filename, struct vis_data *vis,
             vis->bl[bl].uvw[0] = data.uvw[i*3+0];
             vis->bl[bl].uvw[1] = data.uvw[i*3+1];
             vis->bl[bl].uvw[2] = data.uvw[i*3+2];
+			vis->bl[bl].u_min = vis->bl[bl].u_max = vis->bl[bl].uvw[0];
+			vis->bl[bl].v_min = vis->bl[bl].v_max = vis->bl[bl].uvw[1];
+			vis->bl[bl].w_min = vis->bl[bl].w_max = vis->bl[bl].uvw[2];
+			vis->bl[bl].f_min = data.f_min;
+			vis->bl[bl].f_max = data.f_max;
             int j;
             for (j = 0; j < data.freq_count; j++) {
                 vis->bl[bl].freq[j] = data.freq[j];
@@ -468,8 +489,8 @@ int load_akern(const char *filename, double theta, struct a_kernel_data *akern) 
     // Read kernels
     int total_kernels = akern->antenna_count * akern->time_count * akern->freq_count;
     akern->kern = (struct a_kernel *)calloc(total_kernels, sizeof(struct a_kernel));
-    akern->t_min = DBL_MAX; akern->t_max = DBL_MIN;
-    akern->f_min = DBL_MAX; akern->f_max = DBL_MIN;
+    akern->t_min = DBL_MAX; akern->t_max = -DBL_MAX;
+    akern->f_min = DBL_MAX; akern->f_max = -DBL_MAX;
     akern->size_x = akern->size_y = 0;
     int *ant_ix = (int *)calloc(akern->antenna_count, sizeof(int));
     int ant; int i = 0;

@@ -4,7 +4,10 @@
 #include <math.h>
 #include <assert.h>
 #include <float.h>
+#include <fcntl.h>
 #include <stdint.h>
+#include <complex.h>
+#include <fftw3.h>
 
 #include "grid.h"
 
@@ -14,12 +17,12 @@
 
 static const double c = 299792458.0;
 
-inline double uvw_lambda(struct bl_data *bl_data,
-                         int time, int freq, int uvw) {
+inline static double uvw_lambda(struct bl_data *bl_data,
+                                int time, int freq, int uvw) {
     return bl_data->uvw[3*time+uvw] * bl_data->freq[freq] / c;
 }
 
-inline int coord(int grid_size, double theta,
+inline static int coord(int grid_size, double theta,
                  struct bl_data *bl_data,
                  int time, int freq) {
 #ifdef ASSUME_UVW_0
@@ -31,21 +34,22 @@ inline int coord(int grid_size, double theta,
     return (y+grid_size/2) * grid_size + (x+grid_size/2);
 }
 
-inline void frac_coord(int grid_size, int kernel_size, int oversample,
-                       double theta,
-                       struct bl_data *bl_data,
-                       int time, int freq,
-                       int *grid_offset, int *sub_offset) {
+inline static void frac_coord(int grid_size, int kernel_size, int oversample,
+                              double theta,
+                              struct bl_data *bl_data,
+                              int time, int freq,
+                              double d_u, double d_v,
+                              int *grid_offset, int *sub_offset) {
 #ifdef ASSUME_UVW_0
-    double u = 0, v = 0;
+    double x = 0, y = 0;
 #else
-    double u = theta * uvw_lambda(bl_data, time, freq, 0);
-    double v = theta * uvw_lambda(bl_data, time, freq, 1);
+    double x = theta * (uvw_lambda(bl_data, time, freq, 0) - d_u);
+    double y = theta * (uvw_lambda(bl_data, time, freq, 1) - d_v);
 #endif
-    int flx = (int)floor(u + .5 / oversample);
-    int fly = (int)floor(v + .5 / oversample);
-    int xf = (int)floor((u - (double)flx) * oversample + .5);
-    int yf = (int)floor((v - (double)fly) * oversample + .5);
+    int flx = (int)floor(x + .5 / oversample);
+    int fly = (int)floor(y + .5 / oversample);
+    int xf = (int)floor((x - (double)flx) * oversample + .5);
+    int yf = (int)floor((y - (double)fly) * oversample + .5);
     *grid_offset =
         (fly+grid_size/2-kernel_size/2)*grid_size +
         (flx+grid_size/2-kernel_size/2);
@@ -94,6 +98,36 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
     return flops;
 }
 
+inline static uint64_t w_project(double complex *uvgrid, int grid_size, double theta,
+                                 int time, int freq,
+                                 double d_u, double d_v, double d_w,
+                                 struct bl_data *bl, struct w_kernel_data *wkern) {
+
+    // Calculate grid and sub-grid coordinates
+    int grid_offset, sub_offset;
+    frac_coord(grid_size, wkern->size_x, wkern->oversampling,
+               theta, bl, time, freq, d_u, d_v,
+               &grid_offset, &sub_offset);
+    // Determine w-kernel to use
+    double w = uvw_lambda(bl, time, freq, 2) - d_w;
+    int w_plane = (int)floor((w - wkern->w_min) / wkern->w_step + .5);
+    double complex *wk = wkern->kern_by_w[w_plane].data;
+    // Get visibility
+    double complex v = bl->vis[time*bl->freq_count+freq];
+    // Copy kernel
+    int x, y;
+    int wkern_size = wkern->size_x;
+    assert(wkern->size_y == wkern_size);
+    for (y = 0; y < wkern_size; y++) {
+        for (x = 0; x < wkern_size; x++) {
+            uvgrid[grid_offset + y*grid_size + x]
+                += v * conj(wk[sub_offset + y*wkern_size + x]);
+        }
+    }
+
+    return 8 * wkern->size_x * wkern->size_y;
+}
+
 uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
                           struct vis_data *vis, struct w_kernel_data *wkern) {
 
@@ -102,29 +136,302 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
     for (bl = 0; bl < vis->bl_count; bl++) {
         for (time = 0; time < vis->bl[bl].time_count; time++) {
             for (freq = 0; freq < vis->bl[bl].freq_count; freq++) {
-                // Calculate grid and sub-grid coordinates
-                int grid_offset, sub_offset;
-                frac_coord(grid_size, wkern->size_x, wkern->oversampling,
-                           theta, &vis->bl[bl], time, freq,
-                           &grid_offset, &sub_offset);
-                // Determine w-kernel to use
-                double w = uvw_lambda(&vis->bl[bl], time, freq, 2);
-                int w_plane = (int)floor((w - wkern->w_min) / wkern->w_step + .5);
-                double complex *wk = wkern->kern_by_w[w_plane].data;
-                // Get visibility
-                double complex v = vis->bl[bl].vis[time*vis->bl[bl].freq_count+freq];
-                // Copy kernel
-                int x, y;
-                for (y = 0; y < wkern->size_y; y++) {
-                    for (x = 0; x < wkern->size_x; x++) {
-                        uvgrid[grid_offset + y*grid_size + x]
-                            += v * conj(wk[sub_offset + y*wkern->size_x + x]);
-                    }
-                }
-                flops += 8 * wkern->size_x * wkern->size_y;
+                flops += w_project(uvgrid, grid_size, theta, time, freq,
+                                   0, 0, 0, &vis->bl[bl], wkern);
             }
         }
     }
+
+    return flops;
+}
+
+static inline double lambda_min(struct bl_data *bl_data, double u) {
+    return u * (u < 0 ? bl_data->f_max : bl_data->f_min) / c;
+}
+static inline double lambda_max(struct bl_data *bl_data, double u) {
+    return u * (u < 0 ? bl_data->f_min : bl_data->f_max) / c;
+}
+
+static uint64_t w_project_bin(double complex *subgrid, int subgrid_size, double theta,
+                              struct bl_data **bl_bin, int bl_count,
+                              struct w_kernel_data *wkern,
+                              double u_min, double u_max, double u_mid,
+                              double v_min, double v_max, double v_mid,
+                              double w_min, double w_max, double w_mid) {
+
+    int bl, time, freq;
+    uint64_t all_flops = 0;
+    for (bl = 0; bl < bl_count; bl++) {
+        struct bl_data *bl_data = bl_bin[bl];
+
+        // Baseline cannot possible overlap uvw bin?
+        if (lambda_max(bl_data, bl_data->u_max) < u_min ||
+            lambda_min(bl_data, bl_data->u_min) >= u_max ||
+            lambda_max(bl_data, bl_data->v_max) < v_min ||
+            lambda_min(bl_data, bl_data->v_min) >= v_max ||
+            lambda_max(bl_data, bl_data->w_max) < w_min ||
+            lambda_min(bl_data, bl_data->w_min) >= w_max) {
+
+            // Skip
+            continue;
+        }
+
+        // Then go through individual visibilities
+        uint64_t flops = 0;
+        for (time = 0; time < bl_data->time_count; time++) {
+            for (freq = 0; freq < bl_data->freq_count; freq++) {
+
+                // Fine bounds check
+                double u = uvw_lambda(bl_data, time, freq, 0);
+                double v = uvw_lambda(bl_data, time, freq, 1);
+                double w = uvw_lambda(bl_data, time, freq, 2);
+                if (u < u_min || u >= u_max ||
+                    v < v_min || v >= v_max ||
+                    w < w_min || w >= w_max) {
+
+                    continue;
+                }
+
+                // w-project the last mile (TODO: special case for wp=0)
+                flops += w_project(subgrid, subgrid_size, theta,
+                                   time, freq,
+                                   u_mid, v_mid, w_mid,
+                                   bl_data, wkern);
+            }
+        }
+
+        bl_data->flops += flops;
+        all_flops += flops;
+    }
+
+    return all_flops;
+}
+
+// How is this not in the standard library somewhere?
+// (stolen from Stack Overflow)
+inline double complex cipow(double complex base, int exp)
+{
+    double complex result = 1;
+    if (exp < 0) return 1 / cipow(base, -exp);
+    if (exp == 1) return base;
+    while (exp)
+    {
+        if (exp & 1)
+            result *= base;
+        exp >>= 1;
+        base *= base;
+    }
+    return result;
+}
+
+uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
+                      double theta,
+                      struct vis_data *vis, struct w_kernel_data *wkern,
+                      int subgrid_size, int subgrid_margin, double wincrement) {
+
+    assert(subgrid_margin >= wkern->size_x);
+    assert(wkern->size_x == wkern->size_y);
+    assert(subgrid_size % 2 == 0 && subgrid_margin % 2 == 0); // Not sure whether it works otherwise
+
+    // Make transfer Fresnel pattern
+    int subgrid_mem_size = sizeof(double complex) * subgrid_size * subgrid_size;
+    double complex *wtransfer = (double complex *)malloc(subgrid_mem_size);
+    int x, y;
+    for (y = 0; y < subgrid_size; y++) {
+        for (x = 0; x < subgrid_size; x++) {
+            double l = theta * (double)(x - subgrid_size / 2) / subgrid_size;
+            double m = theta * (double)(y - subgrid_size / 2) / subgrid_size;
+            double ph = wincrement * (1 - sqrt(1 - l*l - m*m));
+            wtransfer[y * subgrid_size + x] = cexp(2 * M_PI * I * ph);
+        }
+    }
+
+    // Move zero image position to (0,0). This is going to be the
+    // convention for subimg, it simplifies the (frequent!) FFTs.
+    fft_shift(wtransfer, subgrid_size);
+
+    // Make sub-grids in grid and image space
+    double complex *subgrid = (double complex *)malloc(subgrid_mem_size);
+    double complex *subimg = (double complex *)malloc(subgrid_mem_size);
+
+    // Make FFT plans
+    fftw_plan fft_plan, ifft_plan;
+    fft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subimg, subimg, -1, FFTW_MEASURE);
+    ifft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subgrid, subgrid, +1, FFTW_MEASURE);
+
+    // Determine bounds in w
+    double vis_w_min = 0, vis_w_max = 0;
+    int bl;
+    for (bl = 0; bl < vis->bl_count; bl++) {
+        double w_min = lambda_min(&vis->bl[bl], vis->bl[bl].w_min);
+        double w_max = lambda_max(&vis->bl[bl], vis->bl[bl].w_max);
+        if (w_min < vis_w_min) { vis_w_min = w_min; }
+        if (w_max > vis_w_max) { vis_w_max = w_max; }
+    }
+    int wp_min = (int) floor(vis_w_min / wincrement + 0.5);
+    int wp_max = (int) floor(vis_w_max / wincrement + 0.5);
+
+    // Bin in uv
+    int chunk_size = subgrid_size - subgrid_margin;
+    int chunk_count = grid_size / chunk_size + 1;
+    int bins_size = sizeof(void *) * chunk_count * chunk_count;
+    struct bl_data ***bins = (struct bl_data ***)malloc(bins_size);
+    memset(bins, 0, bins_size);
+    int bins_count_size = sizeof(int) * chunk_count * chunk_count;
+    int *bins_count = (int *)malloc(bins_count_size);
+    memset(bins_count, 0, bins_count_size);
+    for (bl = 0; bl < vis->bl_count; bl++) {
+
+        // Determine bounds (could be more precise, future work...)
+        struct bl_data *bl_data = &vis->bl[bl];
+        double u_min = lambda_min(bl_data, bl_data->u_min);
+        double u_max = lambda_max(bl_data, bl_data->u_max);
+        double v_min = lambda_min(bl_data, bl_data->v_min);
+        double v_max = lambda_max(bl_data, bl_data->v_max);
+
+        // Determine first/last overlapping grid chunks
+        int cx0 = (floor(u_min * theta + 0.5) + grid_size/2) / chunk_size;
+        int cx1 = (floor(u_max * theta + 0.5) + grid_size/2) / chunk_size;
+        int cy0 = (floor(v_min * theta + 0.5) + grid_size/2) / chunk_size;
+        int cy1 = (floor(v_max * theta + 0.5) + grid_size/2) / chunk_size;
+
+        int cy, cx;
+        for (cy = cy0; cy <= cy1; cy++) {
+            for (cx = cx0; cx <= cx1; cx++) {
+
+                // Lazy dynamically sized vector
+                int bcount = ++bins_count[cy*chunk_count + cx];
+                bins[cy*chunk_count + cx] =
+                    (struct bl_data **)realloc(bins[cy*chunk_count + cx], sizeof(void *) * bcount);
+                bins[cy*chunk_count + cx][bcount-1] = bl_data;
+
+            }
+        }
+
+    }
+
+    // Grid chunks
+    uint64_t flops = 0;
+    int cy, cx;
+    for (cy = 0; cy < grid_size / chunk_size + 1; cy++) {
+        for (cx = 0; cx < grid_size / chunk_size + 1; cx++) {
+
+            // Get our baselines bin
+            struct bl_data **bl_bin = bins[cy*chunk_count + cx];
+            int bl_count = bins_count[cy*chunk_count + cx];
+            if (bl_count == 0) { continue; }
+
+            // Determine tower base
+            int x_min = chunk_size*cx - grid_size/2;
+            int y_min = chunk_size*cy - grid_size/2;
+            double u_min = ((double)x_min - 0.5) / theta;
+            double v_min = ((double)y_min - 0.5) / theta;
+            double u_max = u_min + chunk_size / theta;
+            double v_max = v_min + chunk_size / theta;
+
+            // Midpoint in uvw. Important to note that for even-sized
+            // FFTs (likely what we are using!) this is slightly
+            // off-centre, so u_mid != (u_min + u_max) / 2.
+            double u_mid = (double)(x_min + chunk_size / 2) / theta;
+            double v_mid = (double)(y_min + chunk_size / 2) / theta;
+
+            // Clean subgrid
+            memset(subgrid, 0, subgrid_mem_size);
+            memset(subimg, 0, subgrid_mem_size);
+
+            // Go through w-planes
+            int have_vis = 0;
+            int last_wp = wp_min;
+            for (int wp = wp_min; wp <= wp_max; wp++) {
+                double w_mid = (double)wp * wincrement;
+                double w_min = ((double)wp - 0.5) * wincrement;
+                double w_max = ((double)wp + 0.5) * wincrement;
+
+                // Now grid all baselines for this uvw bin
+                uint64_t bin_flops = w_project_bin(subgrid, subgrid_size, theta, bl_bin, bl_count, wkern,
+                                                   u_min, u_max, u_mid,
+                                                   v_min, v_max, v_mid,
+                                                   w_min, w_max, w_mid);
+
+                // Skip the rest if we found no visibilities
+                if (bin_flops == 0) { continue; }
+                flops += bin_flops;
+                have_vis = 1;
+
+                // IFFT the sub-grid in-place, add to image sum
+                fftw_execute_dft(ifft_plan, subgrid, subgrid);
+
+                // Bring image sum to our w-plane and add new data,
+                // clean subgrid for next w-plane.
+                for (y = 0; y < subgrid_size; y++) {
+                    for (x = 0; x < subgrid_size; x++) {
+                        double complex wtrans = cipow(wtransfer[y*subgrid_size + x], wp-last_wp);
+                        subimg[y*subgrid_size + x] =
+                            wtrans * subimg[y*subgrid_size + x] + subgrid[y*subgrid_size + x];
+                        subgrid[y*subgrid_size + x] = 0;
+                    }
+                }
+                last_wp = wp;
+
+            }
+
+            // No visibilities? Skip
+            if (!have_vis) { continue; }
+
+            // Transfer to w=0 plane
+            if (last_wp != 0) {
+                for (y = 0; y < subgrid_size; y++) {
+                    for (x = 0; x < subgrid_size; x++) {
+                        subimg[y*subgrid_size + x] /= cipow(wtransfer[y*subgrid_size + x], last_wp);
+                    }
+                }
+            }
+
+            // FFT
+            fftw_execute_dft(fft_plan, subimg, subimg);
+
+            // Add to main grid, ignoring margins, which might be over
+            // bounds (should not actually happen, but let's be safe)
+            int x0 = x_min - subgrid_margin/2, x1 = x0 + subgrid_size;
+            int y0 = y_min - subgrid_margin/2, y1 = y0 + subgrid_size;
+            if (x0 < -grid_size/2) { x0 = -grid_size/2; }
+            if (y0 < -grid_size/2) { y0 = -grid_size/2; }
+            if (x1 > grid_size/2) { x1 = grid_size/2; }
+            if (y1 > grid_size/2) { y1 = grid_size/2; }
+            double complex *uvgrid_mid = uvgrid + (grid_size+1)*grid_size/2;
+            for (y = y0; y < y1; y++) {
+                for (x = x0; x < x1; x++) {
+                    uvgrid_mid[x + y*grid_size] += subimg[(x-x_min+subgrid_margin/2) +
+                                                          (y-y_min+subgrid_margin/2)*subgrid_size];
+                }
+            }
+
+        }
+    }
+
+    // Check that all visibilities were actually gridded
+    for (bl = 0; bl < vis->bl_count; bl++) {
+        if (vis->bl[bl].flops !=
+            8 * wkern->size_x * wkern->size_x * vis->bl[bl].time_count * vis->bl[bl].freq_count) {
+            printf("!!! bl %d-%d: %lu flops, %d expected !!!\n",
+                   vis->bl[bl].antenna1, vis->bl[bl].antenna2,
+                   vis->bl[bl].flops,
+                   8 * wkern->size_x * wkern->size_x * vis->bl[bl].time_count * vis->bl[bl].freq_count);
+        }
+    }
+
+    // Clean up
+    fftw_destroy_plan(fft_plan);
+    fftw_destroy_plan(ifft_plan);
+    free(subgrid);
+    free(subimg);
+    for (cy = 0; cy < grid_size / chunk_size + 1; cy++) {
+        for (cx = 0; cx < grid_size / chunk_size + 1; cx++) {
+            free(bins[cy*chunk_count + cx]);
+        }
+    }
+    free(bins);
+    free(bins_count);
 
     return flops;
 }
@@ -187,7 +494,7 @@ uint64_t grid_awprojection(double complex *uvgrid, int grid_size, double theta,
                 // Calculate grid and sub-grid coordinates
                 int grid_offset, sub_offset;
                 frac_coord(grid_size, wkern->size_x, wkern->oversampling,
-                           theta, &vis->bl[bl], time, freq,
+                           theta, &vis->bl[bl], time, freq, 0, 0,
                            &grid_offset, &sub_offset);
                 // Determine kernel frequency, get kernel
                 int afreq = (int)floor((pbl->freq[freq] - akern->f_min)

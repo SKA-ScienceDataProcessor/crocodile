@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <complex.h>
 #include <fftw3.h>
+#include <time.h>
 
 #include "grid.h"
 
@@ -29,12 +30,16 @@ int main(int argc, char *argv[]) {
         {"image",   optional_argument, 0, 'i' },
         {"min-bl",  optional_argument, 0, 'b' },
         {"max-bl",  optional_argument, 0, 'B' },
+        {"subgrid", optional_argument, 0, 's' },
+        {"margin",  optional_argument, 0, 'm' },
+        {"winc",    optional_argument, 0, 'I' },
         {0, 0, 0, 0}
       };
     int option_index = 0;
     double theta = 0, lambda = 0;
     char *wkern_file = NULL, *akern_file = NULL,
          *grid_file = NULL, *image_file = NULL;
+    int subgrid = 0, margin = 16; double winc = 50;
     double bl_min = DBL_MIN, bl_max = DBL_MAX;
     int c; int invalid = 0;
     while ((c = getopt_long(argc, argv, ":", options, &option_index)) != -1) {
@@ -47,6 +52,9 @@ int main(int argc, char *argv[]) {
         case 'i': image_file = optarg; break;
         case 'b': bl_min = atof(optarg); break;
         case 'B': bl_max = atof(optarg); break;
+        case 's': subgrid = atoi(optarg); break;
+        case 'm': margin = atoi(optarg); break;
+        case 'I': winc = atof(optarg); break;
         default: invalid = 1; break;
         }
     }
@@ -82,6 +90,10 @@ int main(int argc, char *argv[]) {
         printf("  --akern=AKERN         A-kernel file to use for w-projection\n");
         printf("  --min-bl=MIN_BL       Minimum baseline length to consider (in km)\n");
         printf("  --max-bl=MAX_BL       Maximum baseline length to consider (in km)\n");
+        printf("  --max-bl=MAX_BL       Maximum baseline length to consider (in km)\n");
+        printf("  --subgrid=CELLS       Subgrid size for w-towers (in cells)\n");
+        printf("  --margin=CELLS        Margin size for w-towers (in cells)\n");
+        printf("  --winc=CELLS          Distance of w-planes for w-towers (in wavelengths)\n");
         printf("positional arguments:\n");
         printf("  input                 input visibilities\n");
         return 1;
@@ -109,14 +121,14 @@ int main(int argc, char *argv[]) {
         }
     }
     if (grid_file) {
-        grid_fd = open(grid_file, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+        grid_fd = open(grid_file, O_CREAT | O_TRUNC | O_WRONLY, 0666);
         if (grid_fd == -1) {
             perror("Failed to open grid file");
             return 1;
         }
     }
     if (image_file) {
-        image_fd = open(image_file, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+        image_fd = open(image_file, O_CREAT | O_TRUNC | O_WRONLY, 0666);
         if (image_fd == -1) {
             perror("Failed to open image file");
             return 1;
@@ -136,6 +148,10 @@ int main(int argc, char *argv[]) {
     struct perf_counters counters;
     open_perf_counters(&counters);
 
+    // Start timer
+    struct timespec start_time;
+    clock_gettime(CLOCK_REALTIME, &start_time);
+
     uint64_t flops = 0, mem = 0;
     if (!wkern_file) {
         printf("Gridder: Simple imaging\n");
@@ -145,12 +161,26 @@ int main(int argc, char *argv[]) {
         // Assuming 0.5 flop/B
         mem = flops * 2;
     } else if (!akern_file) {
-        printf("Gridder: W-projection\n");
-        enable_perf_counters(&counters);
-        flops = grid_wprojection(uvgrid, grid_size, theta, &vis, &wkern);
-        disable_perf_counters(&counters);
-        // Assuming 10 flop/B
-        mem = flops / 10;
+
+        if (subgrid == 0) {
+            printf("Gridder: W-projection\n");
+            enable_perf_counters(&counters);
+            flops = grid_wprojection(uvgrid, grid_size, theta, &vis, &wkern);
+            disable_perf_counters(&counters);
+            // Assuming 10 flop/B
+            mem = flops / 10;
+
+        } else {
+
+            printf("Gridder: W-towers\n");
+            enable_perf_counters(&counters);
+            flops = grid_wtowers(uvgrid, grid_size, theta, &vis, &wkern,
+                                 subgrid, margin, winc);
+            disable_perf_counters(&counters);
+            // Assuming 10 flop/B
+            mem = flops / 10;
+
+        }
     } else {
         printf("Gridder: AW-projection (ignoring convolution)\n");
 
@@ -183,6 +213,12 @@ int main(int argc, char *argv[]) {
         // Assuming 0.5 flop/B
         mem = flops * 2;
     }
+
+    struct timespec end_time;
+    clock_gettime(CLOCK_REALTIME, &end_time);
+    printf(" ... took %.3fs",
+           (double)(end_time.tv_sec - start_time.tv_sec) +
+           (double)(end_time.tv_nsec - start_time.tv_nsec) / 1000000000);
 
     // Show performance counters after gridding
     printf("\nCounters:\n");
