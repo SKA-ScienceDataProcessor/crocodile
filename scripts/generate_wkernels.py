@@ -7,6 +7,8 @@ sys.path.append(project_root)
 
 import argparse
 import h5py
+import numpy
+import scipy.optimize
 
 from arl.test_support import import_visibility_from_oskar, export_visibility_to_fits
 from crocodile.synthesis import w_kernel
@@ -32,6 +34,17 @@ args = parser.parse_args()
 
 # Open output file
 output = h5py.File(args.output, "a")
+
+# Calculate recommended w-kernel size
+wmax = args.wstep * args.wcount
+def recommended_size(eps=0.01):
+    usupp = numpy.sqrt((wmax*args.theta/2)**2 + (wmax**1.5 * args.theta / 2 / numpy.pi / eps))
+    return 2 * args.theta * usupp
+def recommended_diff(eps):
+    return abs(recommended_size(eps) - args.size)
+print("w range:        %.1f - %.1f lambda" % (-wmax, wmax))
+print("Kernel size:    %d px (> %.1f recommended)" % (args.size, recommended_size()))
+print("Expected error: %f %%" % (100 * scipy.optimize.minimize(recommended_diff, 0.0001, bounds=[(1e-10,1)]).x))
 
 # Generate kernels
 for iw in range(-args.wcount, args.wcount+1):
