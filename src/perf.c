@@ -23,6 +23,7 @@ static int perf_open_counter(int group_fd, uint64_t config, uint64_t config1)
     attr.exclude_kernel = 1;
     attr.exclude_hv = 1;
     attr.disabled = 1;
+    attr.inherit = 1;
     attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING;
     return syscall(__NR_perf_event_open, &attr, 0, -1, group_fd, 0);
 }
