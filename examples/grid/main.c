@@ -31,6 +31,7 @@ int main(int argc, char *argv[]) {
         {"min-bl",  optional_argument, 0, 'b' },
         {"max-bl",  optional_argument, 0, 'B' },
         {"subgrid", optional_argument, 0, 's' },
+        {"fsample", optional_argument, 0, 'F' },
         {"margin",  optional_argument, 0, 'm' },
         {"winc",    optional_argument, 0, 'I' },
         {0, 0, 0, 0}
@@ -39,7 +40,7 @@ int main(int argc, char *argv[]) {
     double theta = 0, lambda = 0;
     char *wkern_file = NULL, *akern_file = NULL,
          *grid_file = NULL, *image_file = NULL;
-    int subgrid = 0, margin = 16; double winc = 50;
+    int subgrid = 0, fsample = 512, margin = 16; double winc = 50;
     double bl_min = DBL_MIN, bl_max = DBL_MAX;
     int c; int invalid = 0;
     while ((c = getopt_long(argc, argv, ":", options, &option_index)) != -1) {
@@ -53,6 +54,7 @@ int main(int argc, char *argv[]) {
         case 'b': bl_min = atof(optarg); break;
         case 'B': bl_max = atof(optarg); break;
         case 's': subgrid = atoi(optarg); break;
+        case 'F': fsample = atoi(optarg); break;
         case 'm': margin = atoi(optarg); break;
         case 'I': winc = atof(optarg); break;
         default: invalid = 1; break;
@@ -92,6 +94,7 @@ int main(int argc, char *argv[]) {
         printf("  --max-bl=MAX_BL       Maximum baseline length to consider (in km)\n");
         printf("  --max-bl=MAX_BL       Maximum baseline length to consider (in km)\n");
         printf("  --subgrid=CELLS       Subgrid size for w-towers (in cells)\n");
+        printf("  --fsample=CELLS       Sample points for Fresnel pattern (in cells - default 512)\n");
         printf("  --margin=CELLS        Margin size for w-towers (in cells)\n");
         printf("  --winc=CELLS          Distance of w-planes for w-towers (in wavelengths)\n");
         printf("positional arguments:\n");
@@ -136,7 +139,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Allocate grid
-    printf("\nGrid size:    %d x %d (%.2f GB)\n", grid_size, grid_size, (double)(grid_byte_size)/1000000000);
+    printf("\nGrid size:   %d x %d (%.2f GB)\n", grid_size, grid_size, (double)(grid_byte_size)/1000000000);
     double complex *uvgrid = (double complex *)calloc(grid_byte_size, 1);
 
     // Simple uniform weight (we re-use the grid to save an allocation)
@@ -175,7 +178,7 @@ int main(int argc, char *argv[]) {
             printf("Gridder: W-towers\n");
             enable_perf_counters(&counters);
             flops = grid_wtowers(uvgrid, grid_size, theta, &vis, &wkern,
-                                 subgrid, margin, winc);
+                                 subgrid, fsample, margin, winc);
             disable_perf_counters(&counters);
             // Assuming 10 flop/B
             mem = flops / 10;
