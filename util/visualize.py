@@ -42,13 +42,13 @@ def show_image(img, name, theta, norm=None, extra_dep=None):
     pl.imshow(img.real, extent=extent, norm=norm, origin='lower')
     pl.title(r"$Re(%s)$" % title)
     pl.xlabel(r"L [$1$]"); pl.ylabel(r"M [$1$]")
-    if norm is None: pl.colorbar(shrink=.4,pad=0.025)
+    pl.colorbar(shrink=.4,pad=0.025)
     if numpy.any(numpy.iscomplex(img)):
         pl.subplot(122)
         pl.imshow(img.imag, extent=extent, norm=norm, origin='lower')
         pl.title(r"$Im(%s)$" % title)
         pl.xlabel(r"L [$1$]"); pl.ylabel(r"M [$1$]")
-        if norm is None: pl.colorbar(shrink=.4,pad=0.025)
+        pl.colorbar(shrink=.4,pad=0.025)
     pl.show()
 
 def show_grid(grid, name, theta, norm=None, size=None):
@@ -71,7 +71,7 @@ def show_grid(grid, name, theta, norm=None, size=None):
     for plot, comp, data in [(121, "Re", grid.real), (122, "Im", grid.imag)]:
         pl.subplot(plot)
         pl.imshow(data, extent=extent, norm=norm, interpolation='nearest', origin='lower')
-        pl.title("$%s(%s(u,v,w))$" % (comp, name))
+        pl.title("$%s(%s(u,v))$" % (comp, name))
         pl.xlabel(r"U [$\lambda$]")
         pl.ylabel(r"V [$\lambda$]")
         # Only show color bar if we don't use the standard normalisation.
