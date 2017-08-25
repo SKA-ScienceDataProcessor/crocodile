@@ -226,9 +226,23 @@ inline double complex cipow(double complex base, int exp)
     return result;
 }
 
+inline int cipow_flops(int exp)
+{
+    // Popcount, basically. Yes, there are really clever algorithms for
+    // this *and* a builtin, but we are more interested in clarity here.
+    if (exp < 0) return cipow_flops(exp);
+    int flops = 0;
+    while(exp)
+    {
+        if (exp & 1) flops+=6;
+        exp >>= 1;
+    }
+    return flops;
+}
 
 double complex *make_wtransfer(double theta, double wincrement,
-                               int subgrid_size, int fsample_size)
+                               int subgrid_size, int fsample_size,
+                               uint64_t *flops)
 {
 
     if(fsample_size < subgrid_size) {
@@ -256,15 +270,21 @@ double complex *make_wtransfer(double theta, double wincrement,
         for (x = 0; x < fsample_size; x++) {
             double l = theta * (double)(x - fsample_size / 2) / fsample_size;
             double m = theta * (double)(y - fsample_size / 2) / fsample_size;
-            double ph = wincrement * (1 - sqrt(1 - l*l - m*m));
-            fsample[y * fsample_size + x] = cexp(2 * M_PI * I * ph);
+            double ph = 2 * M_PI * wincrement * (1 - sqrt(1 - l*l - m*m));
+            fsample[y * fsample_size + x] = cos(ph) + I * sin(ph);
         }
     }
+    *flops += 10 * fsample_size * fsample_size;
+
+    // Move zero image position to (0,0). This is going to be the
+    // convention for subimg, it simplifies the (frequent!) FFTs.
+    fft_shift(fsample, fsample_size);
 
     // Downsample Fresnel pattern
     if (fsample_size > subgrid_size) {
-        fft_shift(fsample, fsample_size);
         fftw_execute(ff_fft_plan); fftw_free(ff_fft_plan);
+        *flops += (int) ceil(5 * fsample_size * fsample_size * log(fsample_size * fsample_size) / log(2) );
+
         fft_shift(fsample, fsample_size);
 
         for (y = 0; y < subgrid_size; y++) {
@@ -278,13 +298,7 @@ double complex *make_wtransfer(double theta, double wincrement,
         free(fsample);
         fft_shift(wtransfer, subgrid_size);
         fftw_execute(ff_ifft_plan); fftw_free(ff_ifft_plan);
-
-    } else {
-
-        // Move zero image position to (0,0). This is going to be the
-        // convention for subimg, it simplifies the (frequent!) FFTs.
-        fft_shift(wtransfer, subgrid_size);
-
+        *flops += (int) ceil(5 * subgrid_size * subgrid_size * log(subgrid_size * subgrid_size) / log(2) );
     }
 
     return wtransfer;
@@ -309,7 +323,8 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
     assert(subgrid_size % 2 == 0 && subgrid_margin % 2 == 0); // Not sure whether it works otherwise
 
     // Make w transfer pattern
-    double complex *wtransfer = make_wtransfer(theta, wincrement, subgrid_size, fsample_size);
+    uint64_t flops = 0;
+    double complex *wtransfer = make_wtransfer(theta, wincrement, subgrid_size, fsample_size, &flops);
 
     // Determine bounds in w
     double vis_w_min = 0, vis_w_max = 0;
@@ -362,9 +377,12 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
 
     }
 
-    uint64_t flops = 0;
+    // Initialise FLOP counts. We will do a lot of subgrid FFTs, so cache
+    // its approximate cost.
+    int subgrid_cells = subgrid_size * subgrid_size;
+    uint64_t subgrid_fft_flops = (int) ceil(5 * subgrid_cells * log(subgrid_cells) / log(2) );
 
-    #pragma omp parallel
+    #pragma omp parallel reduction(+:flops)
     {
 
     // Make sub-grids in grid and image space, and FFT plans
@@ -430,6 +448,7 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
 
             // IFFT the sub-grid in-place, add to image sum
             fftw_execute(ifft_plan);
+            flops += subgrid_fft_flops;
 
             // Bring image sum to our w-plane and add new data,
             // clean subgrid for next w-plane.
@@ -442,6 +461,7 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
                     subgrid[y*subgrid_size + x] = 0;
                 }
             }
+            flops += subgrid_cells * (8 + cipow_flops(wp-last_wp));
             last_wp = wp;
 
         }
@@ -457,10 +477,12 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
                     subimg[y*subgrid_size + x] /= cipow(wtransfer[y*subgrid_size + x], last_wp);
                 }
             }
+            flops += subgrid_cells * (8 + cipow_flops(wp-last_wp));
         }
 
         // FFT
         fftw_execute(fft_plan);
+        flops += subgrid_fft_flops;
 
         // Add to main grid, ignoring margins, which might be over
         // bounds (should not actually happen, but let's be safe)
@@ -478,6 +500,7 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
                                                       (y-y_min+subgrid_margin/2)*subgrid_size] / subgrid_size / subgrid_size;
             }
         }
+        flops += 2 * (y1 - y0) * (x1 - x0);
     }
 
     // Clean up
