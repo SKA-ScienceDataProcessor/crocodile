@@ -244,11 +244,11 @@ int load_vis(const char *filename, struct vis_data *vis,
             vis->bl[bl].uvw[0] = data.uvw[i*3+0];
             vis->bl[bl].uvw[1] = data.uvw[i*3+1];
             vis->bl[bl].uvw[2] = data.uvw[i*3+2];
-			vis->bl[bl].u_min = vis->bl[bl].u_max = vis->bl[bl].uvw[0];
-			vis->bl[bl].v_min = vis->bl[bl].v_max = vis->bl[bl].uvw[1];
-			vis->bl[bl].w_min = vis->bl[bl].w_max = vis->bl[bl].uvw[2];
-			vis->bl[bl].f_min = data.f_min;
-			vis->bl[bl].f_max = data.f_max;
+            vis->bl[bl].u_min = vis->bl[bl].u_max = vis->bl[bl].uvw[0];
+            vis->bl[bl].v_min = vis->bl[bl].v_max = vis->bl[bl].uvw[1];
+            vis->bl[bl].w_min = vis->bl[bl].w_max = vis->bl[bl].uvw[2];
+            vis->bl[bl].f_min = data.f_min;
+            vis->bl[bl].f_max = data.f_max;
             int j;
             for (j = 0; j < data.freq_count; j++) {
                 vis->bl[bl].freq[j] = data.freq[j];
@@ -323,7 +323,7 @@ int load_vis(const char *filename, struct vis_data *vis,
 
     printf("\n");
     if (stats.vis_count < stats.total_vis_count) {
-        printf("Have %d baselines and %d visibilities (%d total)\n", vis->bl_count, stats.vis_count, stats.total_vis_count);
+        printf("Have %d baselines, %d uvw positions, %d visibilities\n", vis->bl_count, stats.vis_count, stats.total_vis_count);
     } else {
         printf("Have %d baselines and %d visibilities\n", vis->bl_count, stats.vis_count);
     }
@@ -443,6 +443,8 @@ int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) 
     }
     printf("w kernels:   %.2f - %.2f lambda (step %.2f lambda)\n",
            wkern->w_min, wkern->w_max, wkern->w_step);
+    printf("             %d x %d pixels (%d oversampled)",
+           wkern->size_x, wkern->size_y, wkern->oversampling);
 
     return 0;
 }
