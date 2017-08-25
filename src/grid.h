@@ -94,7 +94,8 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
 uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
                       double theta,
                       struct vis_data *vis, struct w_kernel_data *wkern,
-					  int subgrid_size, int subgrid_margin, double wincrement);
+                      int subgrid_size, int fsample_size,
+                      int subgrid_margin, double wincrement);
 void convolve_aw_kernels(struct bl_data *bl,
                          struct w_kernel_data *wkern,
                          struct a_kernel_data *akern);

@@ -226,33 +226,90 @@ inline double complex cipow(double complex base, int exp)
     return result;
 }
 
-uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
-                      double theta,
-                      struct vis_data *vis, struct w_kernel_data *wkern,
-                      int subgrid_size, int subgrid_margin, double wincrement) {
 
-    assert(subgrid_margin >= wkern->size_x);
-    assert(wkern->size_x == wkern->size_y);
-    assert(subgrid_size % 2 == 0 && subgrid_margin % 2 == 0); // Not sure whether it works otherwise
+double complex *make_wtransfer(double theta, double wincrement,
+                               int subgrid_size, int fsample_size)
+{
 
-    // Make transfer Fresnel pattern
+    if(fsample_size < subgrid_size) {
+        fprintf(stderr, "Warning: Increasing Fresnel sampling to sub-grid resolution!");
+        fsample_size = subgrid_size;
+    }
+
+    // Allocate grid for Fresnel sampling / w kernel
+    int fsample_mem_size = sizeof(double complex) * fsample_size * fsample_size;
     int subgrid_mem_size = sizeof(double complex) * subgrid_size * subgrid_size;
     double complex *wtransfer = (double complex *)malloc(subgrid_mem_size);
+    double complex *fsample = wtransfer;
+    fftw_plan ff_fft_plan = 0, ff_ifft_plan = 0;
+    if (fsample_size > subgrid_size) {
+        // If we need to down-sample the Fresnel pattern to the
+        // subgrid allocate a separate buffer
+        fsample = (double complex *)malloc(fsample_mem_size);
+        ff_fft_plan = fftw_plan_dft_2d(fsample_size, fsample_size, fsample, fsample, -1, FFTW_MEASURE);
+        ff_ifft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, wtransfer, wtransfer, +1, FFTW_MEASURE);
+    }
+
+    // Sample
     int x, y;
-    for (y = 0; y < subgrid_size; y++) {
-        for (x = 0; x < subgrid_size; x++) {
-            double l = theta * (double)(x - subgrid_size / 2) / subgrid_size;
-            double m = theta * (double)(y - subgrid_size / 2) / subgrid_size;
+    for (y = 0; y < fsample_size; y++) {
+        for (x = 0; x < fsample_size; x++) {
+            double l = theta * (double)(x - fsample_size / 2) / fsample_size;
+            double m = theta * (double)(y - fsample_size / 2) / fsample_size;
             double ph = wincrement * (1 - sqrt(1 - l*l - m*m));
-            wtransfer[y * subgrid_size + x] = cexp(2 * M_PI * I * ph);
+            fsample[y * fsample_size + x] = cexp(2 * M_PI * I * ph);
         }
     }
 
-    // Move zero image position to (0,0). This is going to be the
-    // convention for subimg, it simplifies the (frequent!) FFTs.
-    fft_shift(wtransfer, subgrid_size);
+    // Downsample Fresnel pattern
+    if (fsample_size > subgrid_size) {
+        fft_shift(fsample, fsample_size);
+        fftw_execute(ff_fft_plan); fftw_free(ff_fft_plan);
+        fft_shift(fsample, fsample_size);
 
+        for (y = 0; y < subgrid_size; y++) {
+            for (x = 0; x < subgrid_size; x++) {
+                int y2 = y - subgrid_size/2 + fsample_size/2;
+                int x2 = x - subgrid_size/2 + fsample_size/2;
+                wtransfer[y * subgrid_size + x] = fsample[y2 * fsample_size + x2] / fsample_size / fsample_size;
+            }
+        }
 
+        free(fsample);
+        fft_shift(wtransfer, subgrid_size);
+        fftw_execute(ff_ifft_plan); fftw_free(ff_ifft_plan);
+
+    } else {
+
+        // Move zero image position to (0,0). This is going to be the
+        // convention for subimg, it simplifies the (frequent!) FFTs.
+        fft_shift(wtransfer, subgrid_size);
+
+    }
+
+    return wtransfer;
+}
+
+uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
+                      double theta,
+                      struct vis_data *vis, struct w_kernel_data *wkern,
+                      int subgrid_size, int fsample_size,
+                      int subgrid_margin, double wincrement) {
+
+    // Check conditions
+    if(subgrid_margin < wkern->size_x) {
+        fprintf(stderr, "Error: The margin is too small for this w-kernel size!\n");
+        exit(1);
+    }
+    assert(wkern->size_x == wkern->size_y);
+    if(wkern->w_min > -wincrement / 2 || wkern->w_max < wincrement / 2) {
+        fprintf(stderr, "Error: The w-kernel does not cover a whole w-increment!\n");
+        exit(1);
+    }
+    assert(subgrid_size % 2 == 0 && subgrid_margin % 2 == 0); // Not sure whether it works otherwise
+
+    // Make w transfer pattern
+    double complex *wtransfer = make_wtransfer(theta, wincrement, subgrid_size, fsample_size);
 
     // Determine bounds in w
     double vis_w_min = 0, vis_w_max = 0;
