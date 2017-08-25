@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <complex.h>
 #include <fftw3.h>
+#include <omp.h>
 
 #include "grid.h"
 
@@ -200,6 +201,7 @@ static uint64_t w_project_bin(double complex *subgrid, int subgrid_size, double 
             }
         }
 
+        #pragma omp atomic
         bl_data->flops += flops;
         all_flops += flops;
     }
@@ -250,14 +252,7 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
     // convention for subimg, it simplifies the (frequent!) FFTs.
     fft_shift(wtransfer, subgrid_size);
 
-    // Make sub-grids in grid and image space
-    double complex *subgrid = (double complex *)malloc(subgrid_mem_size);
-    double complex *subimg = (double complex *)malloc(subgrid_mem_size);
 
-    // Make FFT plans
-    fftw_plan fft_plan, ifft_plan;
-    fft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subimg, subimg, -1, FFTW_MEASURE);
-    ifft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subgrid, subgrid, +1, FFTW_MEASURE);
 
     // Determine bounds in w
     double vis_w_min = 0, vis_w_max = 0;
@@ -310,103 +305,130 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
 
     }
 
-    // Grid chunks
     uint64_t flops = 0;
-    int cy, cx;
-    for (cy = 0; cy < grid_size / chunk_size + 1; cy++) {
-        for (cx = 0; cx < grid_size / chunk_size + 1; cx++) {
 
-            // Get our baselines bin
-            struct bl_data **bl_bin = bins[cy*chunk_count + cx];
-            int bl_count = bins_count[cy*chunk_count + cx];
-            if (bl_count == 0) { continue; }
+    #pragma omp parallel
+    {
 
-            // Determine tower base
-            int x_min = chunk_size*cx - grid_size/2;
-            int y_min = chunk_size*cy - grid_size/2;
-            double u_min = ((double)x_min - 0.5) / theta;
-            double v_min = ((double)y_min - 0.5) / theta;
-            double u_max = u_min + chunk_size / theta;
-            double v_max = v_min + chunk_size / theta;
+    // Make sub-grids in grid and image space, and FFT plans
+    int subgrid_mem_size = sizeof(double complex) * subgrid_size * subgrid_size;
+    double complex *subgrid = (double complex *)malloc(subgrid_mem_size);
+    double complex *subimg = (double complex *)malloc(subgrid_mem_size);
+    fftw_plan fft_plan, ifft_plan;
+    #pragma omp critical
+    {
+        fft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subimg, subimg, -1, FFTW_MEASURE);
+        ifft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subgrid, subgrid, +1, FFTW_MEASURE);
+    }
 
-            // Midpoint in uvw. Important to note that for even-sized
-            // FFTs (likely what we are using!) this is slightly
-            // off-centre, so u_mid != (u_min + u_max) / 2.
-            double u_mid = (double)(x_min + chunk_size / 2) / theta;
-            double v_mid = (double)(y_min + chunk_size / 2) / theta;
+    // Grid chunks
+    int cc;
+    #pragma omp for schedule(dynamic)
+    for (cc = 0; cc < chunk_count * chunk_count; cc++) {
+        int cx = cc % chunk_count, cy = cc / chunk_count;
 
-            // Clean subgrid
-            memset(subgrid, 0, subgrid_mem_size);
-            memset(subimg, 0, subgrid_mem_size);
+        // Get our baselines bin
+        struct bl_data **bl_bin = bins[cy*chunk_count + cx];
+        int bl_count = bins_count[cy*chunk_count + cx];
+        if (bl_count == 0) { continue; }
+        //printf("%d %d/%d\n", omp_get_thread_num(), cx, cy);
 
-            // Go through w-planes
-            int have_vis = 0;
-            int last_wp = wp_min;
-            for (int wp = wp_min; wp <= wp_max; wp++) {
-                double w_mid = (double)wp * wincrement;
-                double w_min = ((double)wp - 0.5) * wincrement;
-                double w_max = ((double)wp + 0.5) * wincrement;
+        // Determine tower base
+        int x_min = chunk_size*cx - grid_size/2;
+        int y_min = chunk_size*cy - grid_size/2;
+        double u_min = ((double)x_min - 0.5) / theta;
+        double v_min = ((double)y_min - 0.5) / theta;
+        double u_max = u_min + chunk_size / theta;
+        double v_max = v_min + chunk_size / theta;
 
-                // Now grid all baselines for this uvw bin
-                uint64_t bin_flops = w_project_bin(subgrid, subgrid_size, theta, bl_bin, bl_count, wkern,
-                                                   u_min, u_max, u_mid,
-                                                   v_min, v_max, v_mid,
-                                                   w_min, w_max, w_mid);
+        // Midpoint in uvw. Important to note that for even-sized
+        // FFTs (likely what we are using!) this is slightly
+        // off-centre, so u_mid != (u_min + u_max) / 2.
+        double u_mid = (double)(x_min + chunk_size / 2) / theta;
+        double v_mid = (double)(y_min + chunk_size / 2) / theta;
 
-                // Skip the rest if we found no visibilities
-                if (bin_flops == 0) { continue; }
-                flops += bin_flops;
-                have_vis = 1;
+        // Clean subgrid
+        memset(subgrid, 0, subgrid_mem_size);
+        memset(subimg, 0, subgrid_mem_size);
 
-                // IFFT the sub-grid in-place, add to image sum
-                fftw_execute_dft(ifft_plan, subgrid, subgrid);
+        // Go through w-planes
+        int have_vis = 0;
+        int last_wp = wp_min;
+        int wp;
+        for (wp = wp_min; wp <= wp_max; wp++) {
+            double w_mid = (double)wp * wincrement;
+            double w_min = ((double)wp - 0.5) * wincrement;
+            double w_max = ((double)wp + 0.5) * wincrement;
 
-                // Bring image sum to our w-plane and add new data,
-                // clean subgrid for next w-plane.
-                for (y = 0; y < subgrid_size; y++) {
-                    for (x = 0; x < subgrid_size; x++) {
-                        double complex wtrans = cipow(wtransfer[y*subgrid_size + x], wp-last_wp);
-                        subimg[y*subgrid_size + x] =
-                            wtrans * subimg[y*subgrid_size + x] + subgrid[y*subgrid_size + x];
-                        subgrid[y*subgrid_size + x] = 0;
-                    }
-                }
-                last_wp = wp;
+            // Now grid all baselines for this uvw bin
+            uint64_t bin_flops = w_project_bin(subgrid, subgrid_size, theta, bl_bin, bl_count, wkern,
+                                               u_min, u_max, u_mid,
+                                               v_min, v_max, v_mid,
+                                               w_min, w_max, w_mid);
 
-            }
+            // Skip the rest if we found no visibilities
+            if (bin_flops == 0) { continue; }
+            flops += bin_flops;
+            have_vis = 1;
 
-            // No visibilities? Skip
-            if (!have_vis) { continue; }
+            // IFFT the sub-grid in-place, add to image sum
+            fftw_execute(ifft_plan);
 
-            // Transfer to w=0 plane
-            if (last_wp != 0) {
-                for (y = 0; y < subgrid_size; y++) {
-                    for (x = 0; x < subgrid_size; x++) {
-                        subimg[y*subgrid_size + x] /= cipow(wtransfer[y*subgrid_size + x], last_wp);
-                    }
-                }
-            }
-
-            // FFT
-            fftw_execute_dft(fft_plan, subimg, subimg);
-
-            // Add to main grid, ignoring margins, which might be over
-            // bounds (should not actually happen, but let's be safe)
-            int x0 = x_min - subgrid_margin/2, x1 = x0 + subgrid_size;
-            int y0 = y_min - subgrid_margin/2, y1 = y0 + subgrid_size;
-            if (x0 < -grid_size/2) { x0 = -grid_size/2; }
-            if (y0 < -grid_size/2) { y0 = -grid_size/2; }
-            if (x1 > grid_size/2) { x1 = grid_size/2; }
-            if (y1 > grid_size/2) { y1 = grid_size/2; }
-            double complex *uvgrid_mid = uvgrid + (grid_size+1)*grid_size/2;
-            for (y = y0; y < y1; y++) {
-                for (x = x0; x < x1; x++) {
-                    uvgrid_mid[x + y*grid_size] += subimg[(x-x_min+subgrid_margin/2) +
-                                                          (y-y_min+subgrid_margin/2)*subgrid_size];
+            // Bring image sum to our w-plane and add new data,
+            // clean subgrid for next w-plane.
+            int x, y;
+            for (y = 0; y < subgrid_size; y++) {
+                for (x = 0; x < subgrid_size; x++) {
+                    double complex wtrans = cipow(wtransfer[y*subgrid_size + x], wp-last_wp);
+                    subimg[y*subgrid_size + x] =
+                        wtrans * subimg[y*subgrid_size + x] + subgrid[y*subgrid_size + x];
+                    subgrid[y*subgrid_size + x] = 0;
                 }
             }
+            last_wp = wp;
 
         }
+
+        // No visibilities? Skip
+        if (!have_vis) { continue; }
+
+        // Transfer to w=0 plane
+        if (last_wp != 0) {
+            int x, y;
+            for (y = 0; y < subgrid_size; y++) {
+                for (x = 0; x < subgrid_size; x++) {
+                    subimg[y*subgrid_size + x] /= cipow(wtransfer[y*subgrid_size + x], last_wp);
+                }
+            }
+        }
+
+        // FFT
+        fftw_execute(fft_plan);
+
+        // Add to main grid, ignoring margins, which might be over
+        // bounds (should not actually happen, but let's be safe)
+        int x0 = x_min - subgrid_margin/2, x1 = x0 + subgrid_size;
+        int y0 = y_min - subgrid_margin/2, y1 = y0 + subgrid_size;
+        if (x0 < -grid_size/2) { x0 = -grid_size/2; }
+        if (y0 < -grid_size/2) { y0 = -grid_size/2; }
+        if (x1 > grid_size/2) { x1 = grid_size/2; }
+        if (y1 > grid_size/2) { y1 = grid_size/2; }
+        double complex *uvgrid_mid = uvgrid + (grid_size+1)*grid_size/2;
+        int x, y;
+        for (y = y0; y < y1; y++) {
+            for (x = x0; x < x1; x++) {
+                uvgrid_mid[x + y*grid_size] += subimg[(x-x_min+subgrid_margin/2) +
+                                                      (y-y_min+subgrid_margin/2)*subgrid_size] / subgrid_size / subgrid_size;
+            }
+        }
+    }
+
+    // Clean up
+    fftw_destroy_plan(fft_plan);
+    fftw_destroy_plan(ifft_plan);
+    free(subgrid);
+    free(subimg);
+
     }
 
     // Check that all visibilities were actually gridded
@@ -420,11 +442,7 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
         }
     }
 
-    // Clean up
-    fftw_destroy_plan(fft_plan);
-    fftw_destroy_plan(ifft_plan);
-    free(subgrid);
-    free(subimg);
+    int cx, cy;
     for (cy = 0; cy < grid_size / chunk_size + 1; cy++) {
         for (cx = 0; cx < grid_size / chunk_size + 1; cx++) {
             free(bins[cy*chunk_count + cx]);
