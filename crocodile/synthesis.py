@@ -86,7 +86,11 @@ def fft(a):
     :param a: image in `lm` coordinate space
     :returns: `uv` grid
     """
-    return numpy.fft.fftshift(numpy.fft.fft2(numpy.fft.ifftshift(a)))
+    if len(a.shape) == 1:
+        return numpy.fft.fftshift(numpy.fft.fft(numpy.fft.ifftshift(a)))
+    elif len(a.shape) == 2:
+        return numpy.fft.fftshift(numpy.fft.fft2(numpy.fft.ifftshift(a)))
+    assert False, "Unsupported image shape for FFT!"
 
 
 def ifft(a):
@@ -95,7 +99,11 @@ def ifft(a):
     :param a: `uv` grid to transform
     :returns: an image in `lm` coordinate space
     """
-    return numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(a)))
+    if len(a.shape) == 1:
+        return numpy.fft.fftshift(numpy.fft.ifft(numpy.fft.ifftshift(a)))
+    elif len(a.shape) == 2:
+        return numpy.fft.fftshift(numpy.fft.ifft2(numpy.fft.ifftshift(a)))
+    assert False, "Unsupported grid shape for iFFT!"
 
 
 def pad_mid(ff, N):
@@ -111,13 +119,14 @@ def pad_mid(ff, N):
 
     """
 
-    N0, N0w = ff.shape
+    N0 = ff.shape[0]
     if N == N0: return ff
-    assert N > N0 and N0 == N0w
-    return numpy.pad(ff,
-                     pad_width=2*[(N//2-N0//2, (N+1)//2-(N0+1)//2)],
-                     mode='constant',
-                     constant_values=0.0)
+    assert N > N0
+    pad = [(N//2-N0//2, (N+1)//2-(N0+1)//2)]
+    if len(ff.shape) == 2:
+        assert N0 == ff.shape[1]
+        pad = 2*pad # both dimensions
+    return numpy.pad(ff, pad, mode='constant', constant_values=0.0)
 
 def extract_mid(a, N):
     """
@@ -129,16 +138,26 @@ def extract_mid(a, N):
     :param a: grid from which to extract
     :param s: size of section
     """
-    assert N <= a.shape[0] and N <= a.shape[1]
-    cx = a.shape[0] // 2
-    cy = a.shape[1] // 2
-    s = N // 2
-    if N % 2 != 0:
-        return a[cx - s:cx + s + 1, cy - s:cy + s + 1]
-    else:
-        return a[cx - s:cx + s, cy - s:cy + s]
 
-def extract_oversampled(a, xf, yf, Qpx, N):
+    assert N <= a.shape[0]
+    cx = a.shape[0] // 2
+    s = N // 2
+    if len(a.shape) == 2:
+        assert N <= a.shape[1]
+        cy = a.shape[1] // 2
+        if N % 2 != 0:
+            return a[cx - s:cx + s + 1, cy - s:cy + s + 1]
+        else:
+            return a[cx - s:cx + s, cy - s:cy + s]
+    elif len(a.shape) == 1:
+        if N % 2 != 0:
+            return a[cx - s:cx + s + 1]
+        else:
+            return a[cx - s:cx + s]
+    else:
+        assert False, "Unsupported grid shape for extract_mid!"
+
+def extract_oversampled(a, Qpx, N):
     """
     Extract the (xf-th,yf-th) w-kernel from the oversampled parent
 
@@ -151,40 +170,52 @@ def extract_oversampled(a, xf, yf, Qpx, N):
     Qpx*(N+2) to contain enough information in all circumstances
 
     :param a: grid from which to extract
-    :param ox: x offset
-    :param oy: y offset
     :param Qpx: oversampling factor
     :param N: size of section
     """
 
-    assert xf >= 0 and xf < Qpx
-    assert yf >= 0 and yf < Qpx
-    # Determine start offset.
     Na = a.shape[0]
-    my = Na//2 - Qpx*(N//2) - yf
-    mx = Na//2 - Qpx*(N//2) - xf
-    assert mx >= 0 and my >= 0
-    # Extract every Qpx-th pixel
-    mid = a[my : my+Qpx*N : Qpx,
-            mx : mx+Qpx*N : Qpx]
-    # normalise
-    return Qpx * Qpx * mid
-
+    if len(a.shape) == 1:
+        result = numpy.empty((Qpx, N), dtype=complex)
+        for xf in range(Qpx):
+            # Determine start offset.
+            mx = Na//2 - Qpx*(N//2) - xf
+            # Extract every Qpx-th pixel
+            result[xf] = a[mx : mx+Qpx*N : Qpx]
+        return result
+    elif len(a.shape) == 2:
+        result = numpy.empty((Qpx, Qpx, N, N), dtype=complex)
+        for yf in range(Qpx):
+            for xf in range(Qpx):
+                # Determine start offset.
+                my = Na//2 - Qpx*(N//2) - yf
+                mx = Na//2 - Qpx*(N//2) - xf
+                # Extract every Qpx-th pixel
+                result[yf,xf] = a[my : my+Qpx*N : Qpx,
+                                  mx : mx+Qpx*N : Qpx]
+        return result
+    assert False, "Unsupported grid shape for extract_oversampled!"
 
 def anti_aliasing_function(shape, m, c):
     """
     Compute the prolate spheroidal anti-aliasing function
 
     See VLA Scientific Memoranda 129, 131, 132
-    :param shape: (height, width) pair
+    :param shape: (height, width) pair or just width
     :param m: mode parameter
     :param c: spheroidal parameter
     """
 
+    # One dimensional?
+    if len(numpy.array(shape).shape) == 0:
+
+        # Remove one pixel on either side to prevent zeroes.
+        mult = 2 - 1/shape/4
+        return scipy.special.pro_ang1(m, m, c, mult*coordinates(shape))[0]
+
     # 2D Prolate spheroidal angular function is seperable
-    sy, sx = [ scipy.special.pro_ang1(m, m, c, coordinates(N))[0]
-               for N in shape ]
-    return numpy.outer(sy, sx)
+    return numpy.outer(anti_aliasing_function(shape[0], m, c),
+                       anti_aliasing_function(shape[1], m, c))
 
 def kernel_transform(dl, dm):
     """Determine linear transformation matrix for a given shift that
@@ -296,7 +327,7 @@ def visibility_recentre(uvw, dl, dm):
                          w])
 
 
-def kernel_oversample(ff, N, Qpx, s):
+def kernel_oversample(ff, Qpx, s=None):
     """
     Takes a farfield pattern and creates an oversampled convolution
     function.
@@ -305,7 +336,6 @@ def kernel_oversample(ff, N, Qpx, s):
     essentially means we apply a sinc anti-aliasing kernel by default.
 
     :param ff: Far field pattern
-    :param N:  Image size without oversampling
     :param Qpx: Factor to oversample by -- there will be Qpx x Qpx convolution arl
     :param s: Size of convolution function to extract
     :returns: Numpy array of shape [ov, ou, v, u], e.g. with sub-pixel
@@ -313,14 +343,15 @@ def kernel_oversample(ff, N, Qpx, s):
     """
 
     # Pad the far field to the required pixel size
+    N = ff.shape[0]
+    if s is None: s = N
     padff = pad_mid(ff, N*Qpx)
 
     # Obtain oversampled uv-grid
     af = ifft(padff)
 
     # Extract kernels
-    res = [[extract_oversampled(af, x, y, Qpx, s) for x in range(Qpx)] for y in range(Qpx)]
-    return numpy.array(res)
+    return extract_oversampled(af, Qpx, s)
 
 
 def w_kernel(theta, w, NpixFF, NpixKern, Qpx, **kwargs):
@@ -340,7 +371,7 @@ def w_kernel(theta, w, NpixFF, NpixKern, Qpx, **kwargs):
 
     l,m = kernel_coordinates(NpixFF, theta, **kwargs)
     kern = w_kernel_function(l,m,w)
-    return kernel_oversample(kern, NpixFF, Qpx, NpixKern)
+    return kernel_oversample(kern, Qpx, NpixKern)
 
 
 def invert_kernel(a):
@@ -415,12 +446,24 @@ def frac_coords(shape, Qpx, p):
     y, yf = frac_coord(h, Qpx, p[:,1])
     return x,xf, y,yf
 
+def make_gcf(src, gcf):
 
-def convgrid(gcf, a, p, v):
+    src = numpy.array(src)
+    if len(gcf.shape) - src.shape[1] == 2:
+        Qpx, gw = gcf.shape[-2:]
+        return Qpx, gw, gw, lambda s, xf, yf: numpy.outer(gcf[(*s, yf)], gcf[(*s, xf)])
+    elif len(gcf.shape) - src.shape[1] == 4:
+        Qpx, gh, gw = gcf.shape[-3:]
+        return Qpx, gw, gh, lambda s, xf, yf: gcf[(*s, yf, xf)]
+    else:
+        assert False
+
+
+def convgrid(gcf, a, p, src, v):
     """Grid after convolving with gcf
 
     Takes into account fractional `uv` coordinate values where the GCF
-    is oversampled
+    is oversampled.
 
     :param a: Grid to add to
     :param p: UVW positions
@@ -428,14 +471,15 @@ def convgrid(gcf, a, p, v):
     :param gcf: Oversampled convolution kernel
     """
 
-    Qpx, _, gh, gw = gcf.shape
+    if src is None: src = numpy.zeros((p.shape[0], 0))
+    Qpx, gh, gw, mk_gcf = make_gcf(src, gcf)
     coords = frac_coords(a.shape, Qpx, p)
-    for v, x,xf, y,yf in zip(v, *coords):
+    for v, s, x,xf, y,yf in zip(v, src, *coords):
         a[y-gh//2 : y+(gh+1)//2,
-          x-gw//2 : x+(gw+1)//2] += gcf[yf,xf] * v
+          x-gw//2 : x+(gw+1)//2] += mk_gcf(s,xf,yf) * v
 
 
-def convdegrid(gcf, a, p):
+def convdegrid(gcf, a, p, src=None):
     """Convolutional degridding
 
     Takes into account fractional `uv` coordinate values where the GCF
@@ -444,16 +488,17 @@ def convdegrid(gcf, a, p):
     :param gcf: Oversampled convolution kernel
     :param a:   The uv plane to de-grid from
     :param p:   The coordinates to degrid at.
-    :returns: Array of visibilities.
+    :param src: Visibility source information
+    :returns:   Array of visibilities.
     """
-    Qpx, _, gh, gw = gcf.shape
+
+    if src is None: src = numpy.zeros((p.shape[0], 0))
+    Qpx, gw, gh, mk_gcf = make_gcf(src, gcf)
     coords = frac_coords(a.shape, Qpx, p)
-    vis = [
-        numpy.sum(a[y-gh//2 : y+(gh+1)//2,
-                    x-gw//2 : x+(gw+1)//2] * gcf[yf,xf])
-        for x,xf, y,yf in zip(*coords)
-    ]
-    return numpy.array(vis)
+    return numpy.array([
+       numpy.sum(a[y-gh//2 : y+(gh+1)//2,
+                   x-gw//2 : x+(gw+1)//2] * mk_gcf(s, xf, yf))
+       for s, x,xf, y,yf in zip(src, *coords)])
 
 
 def sort_vis_w(p, v=None):
@@ -515,16 +560,16 @@ def simple_imaging(theta, lam, uvw, src, vis):
     return guv
 
 
-def simple_predict(guv, theta, lam, uvw):
+def simple_predict(theta, lam, uvw, src, guv):
     """Trivial function for degridding
 
     Does no convolution but simply extracts the visibilities from a grid cell i.e. boxcar degridding
 
     :param theta: Field of view (directional cosines)
     :param lam: Maximum uv represented in the grid
-    :param p: UVWs of visibilities
-    :param v: Visibility values
-    :param kv: gridding kernel
+    :param uvw: UVWs of visibilities
+    :param src: Visibility source information (ignored)
+    :param guv: Input u/v grid
     :returns: p, v
     """
     N = int(round(theta * lam))
@@ -539,7 +584,7 @@ def conv_imaging(theta, lam, uvw, src, vis, kv):
     :param theta: Field of view (directional cosines))
     :param lam: UV grid range
     :param uvw: UVWs of visibilities
-    :param src: Visibility source information (ignored)
+    :param src: Visibility source information
     :param vis: Visibility values
     :param kv: Gridding kernel
     :returns: UV grid
@@ -547,8 +592,23 @@ def conv_imaging(theta, lam, uvw, src, vis, kv):
     N = int(round(theta * lam))
     assert N > 1
     guv = numpy.zeros([N, N], dtype=complex)
-    convgrid(kv, guv, uvw / lam, vis)
+    convgrid(kv, guv, uvw / lam, src, vis)
     return guv
+
+def conv_predict(theta, lam, uvw, src, guv, kv):
+    """Convolve and grid with user-supplied kernels
+
+    :param theta: Field of view (directional cosines))
+    :param lam: UV grid range
+    :param uvw: UVWs of visibilities
+    :param src: Visibility source information
+    :param vis: Visibility values
+    :param kv: Gridding kernel
+    :returns: UV grid
+    """
+
+    if src is None: src = numpy.ndarray((len(uvw), 0))
+    return convdegrid(kv, guv, uvw / lam, src)
 
 
 def w_slice_imaging(theta, lam, uvw, src, vis,
@@ -578,7 +638,7 @@ def w_slice_imaging(theta, lam, uvw, src, vis,
     for ps, vs in slices:
         w = numpy.mean(ps[:, 2])
         wg = numpy.conj(kernel_fn(theta, w, **kwargs))
-        convgrid(wg, guv, ps / lam, vs)
+        convgrid(wg, guv, ps / lam, src, vs)
     return guv
 
 
@@ -709,7 +769,7 @@ def w_cache_imaging(theta, lam, uvw, src, vis,
     for p, s, v in zip(uvw, src, vis):
         wbin = wstep * numpy.round(p[2] / wstep)
         wg = numpy.conj(kernel_cache(theta, wbin, *s, **kwargs))
-        convgrid(wg, guv, numpy.array([p / lam]), numpy.array([v]))
+        convgrid(wg, guv, numpy.array([p / lam]), [()], numpy.array([v]))
     return guv
 
 
@@ -811,7 +871,7 @@ def do_imaging(theta, lam, uvw, src, vis, imgfn, **kwargs):
       are passed on to the imaging function.
     :returns: dirty Image, psf
     """
-    if src == None: src = numpy.ndarray((len(vis), 0))
+    if src is None: src = numpy.ndarray((len(vis), 0))
     # Mirror baselines such that v>0
     uvw,vis = mirror_uvw(uvw, vis)
     # Determine weights
@@ -828,7 +888,7 @@ def do_imaging(theta, lam, uvw, src, vis, imgfn, **kwargs):
     return drt / pmax, psf / pmax, pmax
 
 
-def do_predict(theta, lam, uvw, modelimage, predfn, **kwargs):
+def do_predict(theta, lam, uvw, src, modelimage, predfn, **kwargs):
     """Predict visibilities for a model Image at the phase centre using the
     specified degridding function.
 
