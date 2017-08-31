@@ -403,5 +403,23 @@ class TestSynthesis(unittest.TestCase):
                 assert_allclose(a, a_blh, rtol=1e-5, atol=1e-5)
                 assert_allclose(ifft(a).imag, 0, atol=1e-14)
 
+    def test_frac_coord(self):
+
+        for Qpx in range(1,6):
+            # Check all values at *double* the oversampled accuracy
+            p = numpy.arange(-2*Qpx, 2*Qpx)/4/Qpx
+            flx, fracx = frac_coord(2, Qpx, p)
+            # Make sure we honour the allowed values for oversampled offsets
+            self.assertTrue(numpy.all(fracx >= 0).all())
+            self.assertTrue(numpy.all(fracx < Qpx))
+            # Check that the resulting coordinates are sound. Note
+            # that because we placed coordinates exactly between
+            # oversampling values above we get "even" rounding three
+            # times more often than "odd" rounding. This is correct
+            # behaviour of numpy.around to prevent biases in this
+            # corner case.
+            assert_allclose(flx - fracx / Qpx,
+                            numpy.around(numpy.arange(0, 4*Qpx)/2)/Qpx)
+
 if __name__ == '__main__':
     unittest.main()

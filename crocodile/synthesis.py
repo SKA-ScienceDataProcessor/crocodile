@@ -179,7 +179,7 @@ def extract_oversampled(a, Qpx, N):
         result = numpy.empty((Qpx, N), dtype=complex)
         for xf in range(Qpx):
             # Determine start offset.
-            mx = Na//2 - Qpx*(N//2) - xf
+            mx = Na//2 - Qpx*(N//2) + xf
             # Extract every Qpx-th pixel
             result[xf] = a[mx : mx+Qpx*N : Qpx]
         return result
@@ -188,8 +188,8 @@ def extract_oversampled(a, Qpx, N):
         for yf in range(Qpx):
             for xf in range(Qpx):
                 # Determine start offset.
-                my = Na//2 - Qpx*(N//2) - yf
-                mx = Na//2 - Qpx*(N//2) - xf
+                my = Na//2 - Qpx*(N//2) + yf
+                mx = Na//2 - Qpx*(N//2) + xf
                 # Extract every Qpx-th pixel
                 result[yf,xf] = a[my : my+Qpx*N : Qpx,
                                   mx : mx+Qpx*N : Qpx]
@@ -428,9 +428,8 @@ def frac_coord(N, Qpx, p):
     """
     assert (p >= -0.5).all() and (p < 0.5).all()
     x = N//2 + p * N
-    flx = numpy.floor(x + 0.5 / Qpx)
-    fracx = numpy.around((x - flx) * Qpx)
-    return flx.astype(int), fracx.astype(int)
+    fx = numpy.around(-x * Qpx).astype(int)
+    return -(fx // Qpx), fx % Qpx
 
 
 def frac_coords(shape, Qpx, p):
