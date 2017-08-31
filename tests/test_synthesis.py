@@ -43,12 +43,6 @@ class TestSynthesis(unittest.TestCase):
             # And extracting the middle should recover the original data
             assert_allclose(extract_mid(cs_pad, N), cs)
 
-    def test_extract_oversampled(self):
-        for N, Qpx in [ (1,2), (2,3), (3,2), (4,2), (5,3) ]:
-            a = 1+self._pattern(N * Qpx)
-            ex = extract_oversampled(a, 0, 0, Qpx, N)/Qpx**2
-            assert_allclose(ex, 1+self._pattern(N))
-
     def test_anti_aliasing(self):
         for shape in [(4,4),(5,5),(4,6),(7,3)]:
             aaf = anti_aliasing_function(shape, 0, 10)
@@ -71,8 +65,9 @@ class TestSynthesis(unittest.TestCase):
            for dl, dm in [(1,1), (2,0), (1,-3)]:
                # Generate kernels with one re-centred by (dl,dm).
                l,m = kernel_coordinates(N, N/lam)
-               kern = ifft(w_kernel_function(l,m,w))
-               kerns = ifft(w_kernel_function(l,m,w, dl*lam/N/w,dm*lam/N/w))
+               cp = w_kernel_function(l,m,w)
+               kern = ifft(cp)
+               kerns = ifft(kernel_recentre(cp, N/lam, w, dl*lam/N/w,dm*lam/N/w))
                # Check that we shifted the kernel appropriately. Note
                # that for numpy's axes 0 -> Y and 1 -> X.
                assert_allclose(numpy.roll(numpy.roll(kern, dl, axis=1), dm, axis=0),
@@ -83,35 +78,26 @@ class TestSynthesis(unittest.TestCase):
         # Oversampling should produce the same values where sub-grids overlap
         for N in range(3,30):
             pat = self._pattern(N)
-            kern = kernel_oversample(pat, N, 1, N-2)
-            kern2 = kernel_oversample(pat, N, 2, N-2)
-            assert_allclose(kern[0,0], kern2[0,0], atol=1e-15)
-            kern3 = kernel_oversample(pat, N, 3, N-2)
-            assert_allclose(kern[0,0], kern3[0,0], atol=1e-15)
-            kern4 = kernel_oversample(pat, N, 4, N-2)
+            kern = kernel_oversample(pat, 1, N-2)
+            kern2 = kernel_oversample(pat, 2, N-2)
+            assert_allclose(kern[0,0], kern2[0,0], atol=1e-13)
+            kern3 = kernel_oversample(pat, 3, N-2)
+            assert_allclose(kern[0,0], kern3[0,0], atol=1e-13)
+            kern4 = kernel_oversample(pat, 4, N-2)
             for ux, uy in itertools.product(range(2), range(2)):
-                assert_allclose(kern2[uy,ux], kern4[2*uy,2*ux], atol=1e-15)
-            kern8 = kernel_oversample(pat, N, 8, N-2)
+                assert_allclose(kern2[uy,ux], kern4[2*uy,2*ux], atol=1e-13)
+            kern8 = kernel_oversample(pat, 8, N-2)
             for ux, uy in itertools.product(range(3), range(3)):
-                assert_allclose(kern4[uy,ux], kern8[2*uy,2*ux], atol=1e-15)
+                assert_allclose(kern4[uy,ux], kern8[2*uy,2*ux], atol=1e-13)
 
     def test_kernel_scale(self):
         # Scaling the grid should not make a difference
         N = 10
         wff = numpy.zeros((N,N))
         wff[N//2,N//2] = 1 # Not the most interesting kernel...
-        k = kernel_oversample(wff, N, 1, N)
-        k2 = kernel_oversample(wff, N*2, 1, N)
-        assert_allclose(k, k2*4)
-
-    def test_w_kernel_normalisation(self):
-        # Test w-kernel normalisation. This isn't quite perfect.
-        for Qpx in [4,5,6]:
-            for N in [3,5,9,16,20,24,32,64]:
-                l,m = kernel_coordinates(N+2,0.1)
-                k = kernel_oversample(w_kernel_function(l,m,N*10), N+2, Qpx, N)
-                assert_allclose(numpy.sum(k), Qpx**2,
-                                rtol=0.07)
+        k = kernel_oversample(wff, 1, N)
+        k2 = kernel_oversample(pad_mid(wff,N*2), 1, N)
+        assert_allclose(k, k2)
 
     def _uvw(self, N, uw=0, vw=0):
         u,v = coordinates2(N)
@@ -138,7 +124,7 @@ class TestSynthesis(unittest.TestCase):
                 grid(a, uvw/lam, vis)
                 # Do it using convolution gridding too, which should
                 # double the result
-                convgrid(gcf, a, uvw/lam, vis)
+                convgrid(gcf, a, uvw/lam, None, vis)
                 a /= 2
                 # Image should have a single 1 at the source
                 img = numpy.real(ifft(a))
@@ -347,7 +333,7 @@ class TestSynthesis(unittest.TestCase):
             uvw_slices = slice_vis(N, *sort_vis_w(uvwt_all, uvw_all))
             # Generate kernels for every w-value, using the same far
             # field size and support as the grid size (perfect sampling).
-            gcfs = [ w_kernel(N/lam, numpy.mean(uvwt[:,2]), N, N, 1, T=Ti, dl=-dl, dm=-dm)
+            gcfs = [ w_kernel(N/lam, numpy.mean(uvwt[:,2]), N, N, 1, T=Ti, dl=-dl, dm=-dm)/N**2
                      for uvwt,_ in uvw_slices ]
             xys = range(-(N//2),(N+1)//2)
             for xt, yt in itertools.product(xys, xys):
