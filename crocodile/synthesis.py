@@ -733,6 +733,27 @@ def aw_kernel_fn(a_kernel_fn, w_kernel_fn=w_kernel):
 
     return fn
 
+def sample_image(image, x, y):
+    """ Sample image at given position(s), relative to middle of image.
+
+    Performs simple bilinear interpolation if positions are not even numbers.
+
+    :param image: Image to sample
+    :param x: Horizontal sampling coordinates
+    :param y: Vertical sampling coordinates
+    """
+
+    # Make positions relative to image middle
+    x += image.shape[0]/2
+    y += image.shape[1]/2
+    # Crude linear sampling
+    ix = numpy.floor(x).astype(int); dx = x - ix
+    iy = numpy.floor(y).astype(int); dy = y - iy
+    return numpy.sum([image[iy,   ix]  *((1-dx)*(1-dy)),
+                      image[iy,   ix+1]*(   dx *(1-dy)),
+                      image[iy+1, ix]  *((1-dx)*   dy ),
+                      image[iy+1, ix+1]*(   dx *   dy )], axis=0)
+
 def w_cache_imaging(theta, lam, uvw, src, vis,
                     wstep=2000,
                     kernel_cache=None,

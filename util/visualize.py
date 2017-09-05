@@ -7,7 +7,7 @@ from matplotlib import colors
 from matplotlib.patches import FancyArrowPatch
 from mpl_toolkits.mplot3d import Axes3D, proj3d
 
-def show_image(img, name, theta, norm=None, extra_dep=None):
+def show_image(img, title, theta, norm=None, xlim=None, ylim=None):
     """Visualise quadratic image in the (L,M) plane (directional
     cosines). We assume (0,0) to be at the image center.
 
@@ -26,9 +26,6 @@ def show_image(img, name, theta, norm=None, extra_dep=None):
     lm_upper = (lm_upper+1./size/2)*theta
     extent = (lm_lower, lm_upper, lm_lower, lm_upper)
 
-    # Format title
-    title = "%s(l,m%s)" % (name, ','+extra_dep if extra_dep is not None else "")
-
     # Determine normalisation for image.
     if norm is not None:
         norm = colors.Normalize(vmin=-norm, vmax=norm, clip=True)
@@ -40,15 +37,23 @@ def show_image(img, name, theta, norm=None, extra_dep=None):
     else:
         pl.subplot(111)
     pl.imshow(img.real, extent=extent, norm=norm, origin='lower')
-    pl.title(r"$Re(%s)$" % title)
+    pl.title(r"$Re$(%s)" % title)
     pl.xlabel(r"L [$1$]"); pl.ylabel(r"M [$1$]")
     pl.colorbar(shrink=.4,pad=0.025)
+    if xlim is not None:
+        pl.xlim(xlim)
+    if ylim is not None:
+        pl.ylim(ylim)
     if numpy.any(numpy.iscomplex(img)):
         pl.subplot(122)
         pl.imshow(img.imag, extent=extent, norm=norm, origin='lower')
-        pl.title(r"$Im(%s)$" % title)
+        pl.title(r"$Im$(%s)" % title)
         pl.xlabel(r"L [$1$]"); pl.ylabel(r"M [$1$]")
         pl.colorbar(shrink=.4,pad=0.025)
+        if xlim is not None:
+            pl.xlim(xlim)
+        if ylim is not None:
+            pl.ylim(ylim)
     pl.show()
 
 def show_grid(grid, name, theta, norm=None, size=None):

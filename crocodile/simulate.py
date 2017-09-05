@@ -148,6 +148,23 @@ def baselines(ants_uvw):
 
     return basel_uvw
 
+# ---------------------------------------------------------------------------------
+
+def baseline_ids(ant_count, ha_count=1):
+    """
+    Returns baseline antenna pairs in the order `baselines` and `xyz_to_baselines` generates them.
+
+    :param ants: Antenna IDs
+    :param ha_range: list of hour angle values for astronomical source as function of time
+    """
+
+    ant1 = []
+    ant2 = []
+    for a1 in range(ant_count):
+        for a2 in range(a1 + 1, ant_count):
+            ant1.append(a1)
+            ant2.append(a2)
+    return numpy.tile(ant1, ha_count), numpy.tile(ant2, ha_count)
 
 # ---------------------------------------------------------------------------------
 
@@ -280,6 +297,7 @@ def uvw_transform(uvw, T):
     # Restack with original w values
     return numpy.hstack([uv1, uvw[:,2:3]])
 
+# ---------------------------------------------------------------------------------
 
 def combine_vis(viss, weights, axis=0):
     """Do a weighted linear combination of two visibility sets
@@ -302,9 +320,3 @@ def combine_vis(viss, weights, axis=0):
     vis[numpy.logical_not(non_zero)] = 0
 
     return vis, weight
-
-if __name__ == '__main__':
-    import tests.test_test_support
-    import tests.test_simulate
-
-    unittest.main()
