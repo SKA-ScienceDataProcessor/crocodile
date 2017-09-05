@@ -348,13 +348,13 @@ def kernel_oversample(ff, Qpx, s=None):
     padff = pad_mid(ff, N*Qpx)
 
     # Obtain oversampled uv-grid
-    af = ifft(padff)
+    af = fft(padff)
 
     # Extract kernels
     return extract_oversampled(af, Qpx, s)
 
 
-def w_kernel(theta, w, NpixFF, NpixKern, Qpx, **kwargs):
+def w_kernel(theta, w, NpixFF, NpixKern, Qpx, invert=True, **kwargs):
     """
     The middle s pixels of W convolution kernel. (W-KERNel-Aperture-Function)
 
@@ -364,6 +364,7 @@ def w_kernel(theta, w, NpixFF, NpixKern, Qpx, **kwargs):
     :param NpixKern: Size of convolution function to extract
     :param Qpx: Oversampling, pixels will be Qpx smaller in aperture
       plane than required to minimially sample theta.
+    :param invert: Produce an inverted kernel (as required for imaging)
 
     :returns: [Qpx,Qpx,s,s] shaped oversampled convolution kernels
     """
@@ -371,6 +372,8 @@ def w_kernel(theta, w, NpixFF, NpixKern, Qpx, **kwargs):
 
     l,m = kernel_coordinates(NpixFF, theta, **kwargs)
     kern = w_kernel_function(l,m,w)
+    if invert:
+        kern = 1 / kern
     return kernel_oversample(kern, Qpx, NpixKern)
 
 
@@ -636,7 +639,7 @@ def w_slice_imaging(theta, lam, uvw, src, vis,
     guv = numpy.zeros([N, N], dtype=complex)
     for ps, vs in slices:
         w = numpy.mean(ps[:, 2])
-        wg = numpy.conj(kernel_fn(theta, w, **kwargs))
+        wg = kernel_fn(theta, w, **kwargs)
         convgrid(wg, guv, ps / lam, src, vs)
     return guv
 
@@ -767,7 +770,7 @@ def w_cache_imaging(theta, lam, uvw, src, vis,
     guv = numpy.zeros([N, N], dtype=complex)
     for p, s, v in zip(uvw, src, vis):
         wbin = wstep * numpy.round(p[2] / wstep)
-        wg = numpy.conj(kernel_cache(theta, wbin, *s, **kwargs))
+        wg = kernel_cache(theta, wbin, *s, **kwargs)
         convgrid(wg, guv, numpy.array([p / lam]), [()], numpy.array([v]))
     return guv
 

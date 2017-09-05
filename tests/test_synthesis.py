@@ -249,7 +249,8 @@ class TestSynthesis(unittest.TestCase):
             uvw_slices = slice_vis(N, sort_vis_w(uvw_all))
             # Generate kernels for every w-value, using the same far
             # field size and support as the grid size (perfect sampling).
-            gcfs = [ w_kernel(N/lam, numpy.mean(uvw[:,2]), N, N, 1)
+            gcfs = [ (w_kernel(N/lam, numpy.mean(uvw[:,2]), N, N, 1)/N**2,
+                      w_kernel(N/lam, numpy.mean(uvw[:,2]), N, N, 1, invert=False)/N**2)
                      for uvw in uvw_slices ]
             xys = range(-(N//2),(N+1)//2)
             for x, y in itertools.product(xys, xys):
@@ -264,13 +265,13 @@ class TestSynthesis(unittest.TestCase):
                 # Make grid for gridding
                 a = numpy.zeros((2*N, 2*N), dtype=complex)
                 assert a.shape == a_ref.shape
-                for uvw, gcf in zip(uvw_slices, gcfs):
+                for uvw, (gcf, gcf_p) in zip(uvw_slices, gcfs):
                     # Degridding result should match direct fourier transform
                     vis = simulate_point(uvw, x/lam, y/lam)
-                    vis_d = convdegrid(gcf, a_ref, uvw/lam/2)
+                    vis_d = convdegrid(gcf_p, a_ref, uvw/lam/2)
                     assert_allclose(vis, vis_d)
                     # Grid
-                    convgrid(numpy.conj(gcf), a, uvw/lam/2, vis)
+                    convgrid(gcf, a, uvw/lam/2, None, vis)
                 # FFT halved generated grid (see above)
                 a = numpy.fft.fftshift(a[:N,:N]+a[:N,N:]+a[N:,:N]+a[N:,N:])
                 img = numpy.real(ifft(a))
@@ -287,7 +288,7 @@ class TestSynthesis(unittest.TestCase):
             theta = N/lam
             uvw_all = self._uvw(N, uw, vw) * lam
             uvw_slices = slice_vis(N, sort_vis_w(uvw_all))
-            gcfs = [ w_kernel(theta, numpy.mean(uvw[:,2]), N, N, 1, dl=-dl, dm=-dm)
+            gcfs = [ w_kernel(theta, numpy.mean(uvw[:,2]), N, N, 1, dl=-dl, dm=-dm)/N**2
                      for uvw in uvw_slices ]
             xys = range(-(N//2),(N+1)//2)
             for x, y in itertools.product(xys, xys):
@@ -301,7 +302,7 @@ class TestSynthesis(unittest.TestCase):
                     viss = visibility_shift(uvw, vis, dl, dm)
                     assert_allclose(visibility_shift(uvw, viss, -dl, -dm), vis)
                     # Grid
-                    convgrid(numpy.conj(gcf), a, uvw/lam/2, viss)
+                    convgrid(gcf, a, uvw/lam/2, None, viss)
                 # FFT halved generated grid
                 a2 = numpy.fft.fftshift(a[:N,:N]+a[:N,N:]+a[N:,:N]+a[N:,N:])
                 img = numpy.real(ifft(a2))
@@ -347,7 +348,7 @@ class TestSynthesis(unittest.TestCase):
                 for (uvwt, uvw), gcf in zip(uvw_slices, gcfs):
                     vis = simulate_point(uvw, x/lam-dl, y/lam-dm)
                     vis = visibility_shift(uvw, vis, dl, dm)
-                    convgrid(numpy.conj(gcf), a, uvwt/lam/2, vis)
+                    convgrid(gcf, a, uvwt/lam/2, None, vis)
                 # FFT halved generated grid
                 a = numpy.fft.fftshift(a[:N,:N]+a[:N,N:]+a[N:,:N]+a[N:,N:])
                 img = numpy.real(ifft(a))
