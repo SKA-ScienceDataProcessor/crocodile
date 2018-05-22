@@ -18,12 +18,12 @@
 #include <mpi.h>
 
 // Size specifications
-const int image_size = 98304 * 4;
-const int yB_size = 21504 * 4;
-const int yN_size = 24576 * 4;
-const int yP_size = 49152 * 4; // 24576;
-const int xA_size = 384;
-const int xM_size = 512;
+const int image_size = 98304;
+const int yB_size    = 24576;
+const int yN_size    = 33728;
+const int yP_size    = 49152;
+const int xA_size    = 1405;
+const int xM_size    = 1536;
 //int xM_yB_size = 100;
 #define nsubgrid (image_size / xA_size)
 
@@ -50,24 +50,24 @@ int producer(int *streamer_ranks, int streamer_count) {
     double *m_trunc = generate_m(image_size, yP_size, yN_size, xM_size, xMxN_yP_size, pswf);
     free(pswf);
 
-	size_t F_size = sizeof(double complex) * yB_size * yB_size;
-	size_t BF_size = sizeof(double complex) * yP_size * yB_size;
+    size_t F_size = sizeof(double complex) * yB_size * yB_size;
+    size_t BF_size = sizeof(double complex) * yP_size * yB_size;
     size_t MBF_size = sizeof(double complex) * xM_yP_size;
-	size_t NMBF_size = sizeof(double complex) * xM_yN_size * yB_size;
-	size_t NMBF_BF_size = sizeof(double complex) * xM_yN_size * yP_size;
-	size_t NMBF_NMBF_size = sizeof(double complex) * xM_yN_size * xM_yN_size;
+    size_t NMBF_size = sizeof(double complex) * xM_yN_size * yB_size;
+    size_t NMBF_BF_size = sizeof(double complex) * xM_yN_size * yP_size;
+    size_t NMBF_NMBF_size = sizeof(double complex) * xM_yN_size * xM_yN_size;
 
-	printf("Using %.1f GB global, %.1f GB per thread\n",
-		   (double)(F_size + BF_size + NMBF_size) / 1000000000,
-		   (double)(MBF_size + NMBF_BF_size + NMBF_NMBF_size) / 1000000000);
+    printf("Using %.1f GB global, %.1f GB per thread\n",
+           (double)(F_size + BF_size + NMBF_size) / 1000000000,
+           (double)(MBF_size + NMBF_BF_size + NMBF_NMBF_size) / 1000000000);
     double complex *F = (double complex *)calloc(F_size, 1);
     double complex *BF = (double complex *)malloc(BF_size);
     double complex *NMBF = (double complex *)malloc(NMBF_size);
-	if (!F || !BF || !NMBF) {
-		free(Fb); free(Fn); free(m_trunc); free(F); free(BF); free(NMBF);
-		printf("Failed to allocate global buffers!\n");
-		return 1;
-	}
+    if (!F || !BF || !NMBF) {
+        free(Fb); free(Fn); free(m_trunc); free(F); free(BF); free(NMBF);
+        printf("Failed to allocate global buffers!\n");
+        return 1;
+    }
 
     uint64_t output_size = 0;
 
@@ -78,18 +78,18 @@ int producer(int *streamer_ranks, int streamer_count) {
     const uint64_t NMBF_NMBF_stride0 = 1, NMBF_NMBF_stride1 = xM_yN_size;
     const int y_batch = 32;
 
-    const int send_queue_length = 32;
+    const int send_queue_length = 8;
 
-	printf("Filling facet...\n"); double generate_start = get_time_ns();
+    printf("Filling facet...\n"); double generate_start = get_time_ns();
     int y;
     #pragma omp parallel for schedule(dynamic, 1024)
     for (y = 0; y < yB_size; y++) {
         int x;
-		for (x = 0; x < yB_size; x+=100) {
-			F[y*F_stride0+x*F_stride1] = (double)rand() / RAND_MAX;
-		}
+        for (x = 0; x < yB_size; x+=100) {
+            F[y*F_stride0+x*F_stride1] = (double)rand() / RAND_MAX;
+        }
     }
-	printf(" %.2f s\n", get_time_ns() - generate_start);
+    printf(" %.2f s\n", get_time_ns() - generate_start);
 
     printf("Planning...\n"); double planning_start = get_time_ns();
     fftw_plan BF_plan = fftw_plan_many_dft(1, &yP_size, y_batch,
@@ -245,9 +245,9 @@ int producer(int *streamer_ranks, int streamer_count) {
            pf1_time, pf1_time / total * 100, ft1_time, ft1_time / total * 100, es1_time, es1_time / total * 100);
     printf("PF2: %.2f s (%.1f%%), FT2: %.2f s (%.1f%%), ES2: %.2f s (%.1f%%)\n",
            pf2_time, pf2_time / total * 100, ft2_time, ft2_time / total * 100, es2_time, es2_time / total * 100);
-	double idle = total - pf1_time - ft1_time - es1_time -
+    double idle = total - pf1_time - ft1_time - es1_time -
         pf2_time - ft2_time - es2_time - mpi_wait_time - mpi_send_time;
-	printf("mpi wait: %.2f s (%.1f%%), mpi send: %.2f s (%.1f%%), idle: %.2f s (%.1f%%)\n",
+    printf("mpi wait: %.2f s (%.1f%%), mpi send: %.2f s (%.1f%%), idle: %.2f s (%.1f%%)\n",
            mpi_wait_time, 100 * mpi_wait_time / omp_get_max_threads() / dt,
            mpi_send_time, 100 * mpi_send_time / omp_get_max_threads() / dt,
            idle, 100 * idle / omp_get_max_threads() / dt);
@@ -257,12 +257,24 @@ int producer(int *streamer_ranks, int streamer_count) {
 
 void streamer(int rank, int streamer_count, int *producer_ranks, int producer_count) {
     const int xM_yN_size = xM_size * yN_size / image_size;
-    double complex *NMBF_NMBF = (double complex *)malloc(sizeof(double complex) * xM_yN_size * xM_yN_size *
-                                                         producer_count);
-    MPI_Request *requests = (MPI_Request *)malloc(sizeof(MPI_Request) * producer_count);
-    MPI_Status *statuses = (MPI_Status *)malloc(sizeof(MPI_Status) * producer_count);
+    const int recv_queue_length = 16;
 
-    int r, p;
+    int queue_size = sizeof(double complex) * xM_yN_size * xM_yN_size * producer_count * recv_queue_length;
+    printf("Allocating %d MB receive queue\n", queue_size / 1000000);
+
+    double complex *NMBF_NMBF = (double complex *)malloc(queue_size);
+    MPI_Request *requests = (MPI_Request *)malloc(sizeof(MPI_Request) * producer_count * recv_queue_length);
+    MPI_Status *statuses = (MPI_Status *)malloc(sizeof(MPI_Status) * producer_count * recv_queue_length);
+    memset(requests, MPI_REQUEST_NULL, sizeof(MPI_Request) * producer_count * recv_queue_length);
+
+    int r, p, q;
+    for (q = 0; q < recv_queue_length; q++) {
+        for (p = 0; p < producer_count; p++) {
+            requests[p + producer_count * q] = MPI_REQUEST_NULL;
+        }
+    }
+
+    q = 0;
     uint64_t received_data = 0;
     for (r = 0; r < repeat_count; r++) {
         int i0, i1;
@@ -271,36 +283,54 @@ void streamer(int rank, int streamer_count, int *producer_ranks, int producer_co
                 int target_rank = (i1 + i0 * nsubgrid) % streamer_count;
                 if (target_rank == rank) {
 
-                    for (p = 0; p < producer_count; p++) {
-                        MPI_Irecv(NMBF_NMBF, xM_yN_size * xM_yN_size, MPI_DOUBLE_COMPLEX,
-                                  producer_ranks[p], 0, MPI_COMM_WORLD, requests + p);
-                        received_data += sizeof(double complex) * xM_yN_size * xM_yN_size;
+                    if(requests[producer_count * q] != MPI_REQUEST_NULL) {
+                        MPI_Waitall(producer_count, requests + producer_count * q, statuses + producer_count * q);
+                        for (p = 0; p < producer_count; p++) {
+                            requests[p + producer_count * q] = MPI_REQUEST_NULL;
+                        }
+                        received_data += sizeof(double complex) * xM_yN_size * xM_yN_size * producer_count;
                     }
 
-                    MPI_Waitall(producer_count, requests, statuses);
+                    for (p = 0; p < producer_count; p++) {
+                        MPI_Irecv(NMBF_NMBF + p * xM_yN_size * xM_yN_size, xM_yN_size * xM_yN_size, MPI_DOUBLE_COMPLEX,
+                                  producer_ranks[p], 0, MPI_COMM_WORLD, requests + p + producer_count * q);
+                    }
+
+                    q = (q + 1) % recv_queue_length;
+
                 }
             }
         }
     }
 
+    for (q = 0; q < recv_queue_length; q++) {
+        if(requests[producer_count * q] != MPI_REQUEST_NULL) {
+            MPI_Waitall(producer_count, requests + producer_count * q, statuses + producer_count * q);
+            received_data += sizeof(double complex) * xM_yN_size * xM_yN_size * producer_count;
+        }
+    }
     printf("Received %.2f GB\n", (double)received_data / 1000000000);
 }
 
 int main(int argc, char *argv[]) {
-	int thread_support, rank, size;
-	MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &thread_support);
+    int thread_support, rank, size;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &thread_support);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     if (thread_support < MPI_THREAD_MULTIPLE) {
         fprintf(stderr, "Need full thread support from MPI!\n");
         return 1;
     }
+    char proc_name[MPI_MAX_PROCESSOR_NAME];
+    int proc_name_length = 0;
+    MPI_Get_processor_name(proc_name, &proc_name_length);
+    proc_name[proc_name_length] = 0;
 
     fftw_import_wisdom_from_filename("recombine.wisdom");
 
     // Local run?
     if (size == 1) {
-        printf("Role: Single\n");
+        printf("%s pid %d role: Single\n", proc_name, getpid());
         producer(0, 0);
 
     } else {
@@ -311,7 +341,7 @@ int main(int argc, char *argv[]) {
         int i;
 
         if (rank < producer_count) {
-            printf("Role: Producer %d\n", rank);
+            printf("%s pid %d role: Producer %d\n", proc_name, getpid(), rank);
 
             int *streamer_ranks = (int *)malloc(sizeof(int) * streamer_count);
             for (i = 0; i < streamer_count; i++) {
@@ -321,7 +351,7 @@ int main(int argc, char *argv[]) {
             producer(streamer_ranks, streamer_count);
 
         } else if (rank - producer_count < streamer_count) {
-            printf("Role: Streamer %d\n", rank - producer_count);
+            printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), rank - producer_count);
 
             int *producer_ranks = (int *)malloc(sizeof(int) * producer_count);
             for (i = 0; i < producer_count; i++) {
