@@ -273,11 +273,11 @@ int T04_test_2d() {
     double complex *NMBF_BF = (double complex *)calloc(sizeof(double complex), xM_yN_size * yP_size);
     double complex *NMBF_NMBF = (double complex *)malloc(sizeof(double complex) * xM_yN_size * xM_yN_size);
 
-    int F_stride0 = 1, F_stride1 = yB_size;
+    int F_stride0 = yB_size, F_stride1 = 1;
     int BF_stride0 = yP_size, BF_stride1 = 1;
     int NMBF_stride0 = xM_yN_size, NMBF_stride1 = 1;
     int NMBF_BF_stride0 = 1, NMBF_BF_stride1 = yP_size;
-    int NMBF_NMBF_stride0 = 1, NMBF_NMBF_stride1 = xM_yN_size;
+    int NMBF_NMBF_stride0 = xM_yN_size, NMBF_NMBF_stride1 = 1;
 
     fftw_plan BF_plan = fftw_plan_many_dft(1, &yP_size, yB_size,
                                            BF, 0, BF_stride1, BF_stride0,
@@ -299,6 +299,7 @@ int T04_test_2d() {
                           BF+x*BF_stride0, BF_stride1);
         }
         fftw_execute(BF_plan);
+		write_dump(BF, sizeof(double complex) * yP_size * yB_size, "../data/grid/T04_bf%d%d.out", j0, j1);
 
         for (i0 = 0; i0 < nsubgrid; i0++) {
 
@@ -328,11 +329,11 @@ int T04_test_2d() {
                 write_dump(NMBF_NMBF, sizeof(double complex) * xM_yN_size * xM_yN_size,
                            "../data/grid/T04_nmbf%d%d%d%d.out", i0, i1, j0, j1);
                 double complex *ref = read_dump(sizeof(double complex) * xM_yN_size * xM_yN_size,
-                                                "../data/grid/T04_nmbf%d%d%d%d.in", i0, i1, j0, j1);
+                                                "../data/grid/T04_nmbf%d%d%d%d.in", i1, i0, j0, j1);
                 if (!ref) { free(BF); free(NMBF); free(NMBF_BF); free(NMBF_NMBF); return 1; }
 
                 for (y = 0; y < xM_yN_size * xM_yN_size; y++)
-                    assert(fabs(NMBF_NMBF[y] - ref[y]) < 3e-8);
+                    assert(fabs(NMBF_NMBF[y] - ref[y]) < 1.5e-8);
                 free(ref);
             }
         }
@@ -344,7 +345,7 @@ int T04_test_2d() {
     return 0;
 }
 
-int run_tests() {
+int main(int argc, char *argv[]) {
 
     int count = 0,fails = 0;
 #define RUN_TEST(t) count++; printf(#t"..."); fflush(stdout); if (!t()) puts(" ok"); else { puts("failed"); fails++; }
@@ -353,6 +354,7 @@ int run_tests() {
     RUN_TEST(T03_add_subgrid);
     RUN_TEST(T04_test_2d);
 #undef RUN_TEST
+
     printf(" *** %d/%d tests passed ***\n", count-fails, count);
     return fails;
 }
