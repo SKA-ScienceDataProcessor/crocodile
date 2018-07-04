@@ -59,7 +59,10 @@ def imshow_helper(img, title, theta, extent, xylabels,
 
     # Determine normalisation for image.
     if norm is not None:
-        norm = colors.Normalize(vmin=-norm, vmax=norm, clip=True)
+        if isinstance(norm, tuple):
+            norm = colors.Normalize(vmin=norm[0], vmax=norm[1], clip=True)
+        else:
+            norm = colors.Normalize(vmin=-norm, vmax=norm, clip=True)
     else:
         mi = numpy.min([img.real, img.imag])
         ma = numpy.max([img.real, img.imag])
