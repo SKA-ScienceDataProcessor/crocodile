@@ -7,7 +7,7 @@ from matplotlib import colors
 from matplotlib.patches import FancyArrowPatch
 from mpl_toolkits.mplot3d import Axes3D, proj3d
 
-def show_image(img, title, theta, norm=None, xlim=None, ylim=None):
+def show_image(img, title, theta, **kwargs):
     """Visualise quadratic image in the (L,M) plane (directional
     cosines). We assume (0,0) to be at the image center.
 
@@ -17,6 +17,7 @@ def show_image(img, title, theta, norm=None, xlim=None, ylim=None):
        image to spans coordinates [theta/2;theta/2[ in both L and M.
     :param extra_dep: Extra functiona parameters to add to the
        title. Purely cosmetic.
+    :param subplots: Sub-plot to generate graphs into
     """
 
     # Determine size of image.
@@ -26,37 +27,10 @@ def show_image(img, title, theta, norm=None, xlim=None, ylim=None):
     lm_upper = (lm_upper+1./size/2)*theta
     extent = (lm_lower, lm_upper, lm_lower, lm_upper)
 
-    # Determine normalisation for image.
-    if norm is not None:
-        norm = colors.Normalize(vmin=-norm, vmax=norm, clip=True)
-    else:
-        norm = None
+    return imshow_helper(img, "%s(l,m)" % title, theta, extent, ("l [1]", "m [1]"), **kwargs)
 
-    if numpy.any(numpy.iscomplex(img)):
-        pl.subplot(121)
-    else:
-        pl.subplot(111)
-    pl.imshow(img.real, extent=extent, norm=norm, origin='lower')
-    pl.title(r"$Re$(%s)" % title)
-    pl.xlabel(r"L [$1$]"); pl.ylabel(r"M [$1$]")
-    pl.colorbar(shrink=.4,pad=0.025)
-    if xlim is not None:
-        pl.xlim(xlim)
-    if ylim is not None:
-        pl.ylim(ylim)
-    if numpy.any(numpy.iscomplex(img)):
-        pl.subplot(122)
-        pl.imshow(img.imag, extent=extent, norm=norm, origin='lower')
-        pl.title(r"$Im$(%s)" % title)
-        pl.xlabel(r"L [$1$]"); pl.ylabel(r"M [$1$]")
-        pl.colorbar(shrink=.4,pad=0.025)
-        if xlim is not None:
-            pl.xlim(xlim)
-        if ylim is not None:
-            pl.ylim(ylim)
-    pl.show()
 
-def show_grid(grid, name, theta, norm=None, size=None):
+def show_grid(grid, name, theta, **kwargs):
 
     # Determine size of image. See above.
     size = grid.shape[0]
@@ -66,23 +40,71 @@ def show_grid(grid, name, theta, norm=None, size=None):
     uv_upper = (uv_upper+1./size/2)*lam
     extent = (uv_lower, uv_upper, uv_lower, uv_upper)
 
+    return imshow_helper(grid, "%s(u,v)" % name, theta, extent, ("u [$\lambda$]", "v [$\lambda$]"), **kwargs)
+
+
+def imshow_helper(img, title, theta, extent, xylabels,
+                  norm=None, xlim=None, ylim=None, axes=None):
+    """Visualise quadratic image in the (L,M) plane (directional
+    cosines). We assume (0,0) to be at the image center.
+
+    :param img: Data to visualise as a two-dimensional numpy array
+    :param name: Function name to show in the visualisation header
+    :param theta: Size of the image in radians. We will assume the
+       image to spans coordinates [theta/2;theta/2[ in both L and M.
+    :param extra_dep: Extra functiona parameters to add to the
+       title. Purely cosmetic.
+    :param axes: Sub-plot to generate graphs into
+    """
+
     # Determine normalisation for image.
     if norm is not None:
         norm = colors.Normalize(vmin=-norm, vmax=norm, clip=True)
     else:
-        norm = None
+        mi = numpy.min([img.real, img.imag])
+        ma = numpy.max([img.real, img.imag])
+        norm = colors.Normalize(vmin=mi, vmax=ma)
 
-    # Draw.
-    for plot, comp, data in [(121, "Re", grid.real), (122, "Im", grid.imag)]:
-        pl.subplot(plot)
-        pl.imshow(data, extent=extent, norm=norm, interpolation='nearest', origin='lower')
-        pl.title("$%s(%s(u,v))$" % (comp, name))
-        pl.xlabel(r"U [$\lambda$]")
-        pl.ylabel(r"V [$\lambda$]")
-        # Only show color bar if we don't use the standard normalisation.
-        if norm is None: pl.colorbar(shrink=.4,pad=0.025)
-    pl.show()
+    # Create subplots if not specified
+    if axes is None:
+        fig = pl.figure()
+        if numpy.any(numpy.iscomplex(img)):
+            ax_r = fig.add_subplot(121)
+            ax_i = fig.add_subplot(122)
+        else:
+            ax_r = fig.add_subplot(121)
+            ax_i = None
+    elif isinstance(axes, tuple):
+        ax_r, ax_i = axes
+    else:
+        ax_r = axes
+        ax_i = None
 
+    cax_r = ax_r.imshow(img.real, extent=extent, norm=norm, origin='lower')
+    ax_r.set_title(r"$Re$(%s)" % title)
+    ax_r.set_xlabel(xylabels[0]); ax_r.set_ylabel(xylabels[1])
+    #    if ax_i is None:
+    ax_r.figure.colorbar(cax_r,ax=ax_r,shrink=.4,pad=0.025)
+
+    # Limit to particular part of the image
+    if xlim is not None:
+        ax_r.set_xlim(xlim)
+    if ylim is not None:
+        ax_r.set_ylim(ylim)
+
+    # Generate graph for imaginary part
+    if ax_i is not None:
+        cax_i = ax_i.imshow(img.imag, extent=extent, norm=norm, origin='lower')
+        ax_i.set_title(r"$Im$(%s)" % title)
+        ax_i.set_xlabel(xylabels[0]); ax_i.set_ylabel(xylabels[1])
+        ax_i.figure.colorbar(cax_i,ax=ax_i,shrink=.4,pad=0.025)
+        if xlim is not None:
+            ax_i.set_xlim(xlim)
+        if ylim is not None:
+            ax_i.set_ylim(ylim)
+
+    if axes is None:
+        pl.show()
 
 # from http://stackoverflow.com/questions/22867620/putting-arrowheads-on-vectors-in-matplotlibs-3d-plot
 # by CT Zhu
