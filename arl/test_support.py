@@ -69,8 +69,7 @@ def create_configuration_from_array(antxyz: numpy.array, name: str = None, locat
 
 def create_configuration_from_file(antfile: str, name: str = None, location: EarthLocation = None, mount: str = 'altaz',
                                    names: str = "%d", frame: str = 'local',
-                                   meta: dict =
-                                   None,
+                                   meta: dict = None,
                                    params={}):
     """ Define from a file
 
@@ -141,25 +140,30 @@ def create_named_configuration(name: str = 'LOWBD2', params={}):
     if name == 'LOWBD2':
         location = EarthLocation(lon="116.4999", lat="-26.7000", height=300.0)
         fc = create_configuration_from_file(antfile=crocodile_path("data/configurations/LOWBD2.csv"),
-                                            location=location, mount='xy', names='LOWBD2_%d')
+                                            location=location, mount='xy',
+                                            names='LOWBD2_%d', name=name)
     elif name == 'LOWBD1':
         location = EarthLocation(lon="116.4999", lat="-26.7000", height=300.0)
         fc = create_configuration_from_file(antfile=crocodile_path("data/configurations/LOWBD1.csv"),
-                                            location=location, mount='xy', names='LOWBD1_%d')
+                                            location=location, mount='xy',
+                                            names='LOWBD1_%d', name=name)
     elif name == 'LOFAR':
         fc = create_LOFAR_configuration(antfile=crocodile_path("data/configurations/LOFAR.csv"))
     elif name == 'VLAA':
         location = EarthLocation(lon="-107.6184", lat="34.0784", height=2124.0)
         fc = create_configuration_from_file(antfile=crocodile_path("data/configurations/VLA_A_hor_xyz.csv"),
                                             location=location,
-                                            mount='altaz',
-                                            names='VLA_%d')
-    elif name == 'VLAA_north':
+                                            mount='altaz', names='VLA_%d',name=name)
+    elif name == 'VLAA_north': # Pseudo-VLAA at north pole
         location = EarthLocation(lon="-107.6184", lat="90.000", height=2124.0)
         fc = create_configuration_from_file(antfile=crocodile_path("data/configurations/VLA_A_hor_xyz.csv"),
                                             location=location,
-                                            mount='altaz',
-                                            names='VLA_%d')
+                                            mount='altaz', names='VLA_%d', name=name)
+    elif name == 'LOWBD2_north': # Pseudo-SKA-LOW at north pole
+        location = EarthLocation(lon="116.4999", lat="90.000", height=300.0)
+        fc = create_configuration_from_file(antfile=crocodile_path("data/configurations/LOWBD2.csv"),
+                                            location=location, mount='xy',
+                                            names='LOWBD2_%d', name=name)
     else:
         fc = Configuration()
         raise UserWarning("No such Configuration %s" % name)
@@ -275,8 +279,8 @@ def export_configuration_to_hdf5(cfg: Configuration, f: h5py.File, path: str = '
     grp = f.create_group(path)
     grp.attrs['type'] = 'Configuration'
     grp.attrs['name'] = cfg.name
-    grp.attrs['location'] = [cfg.location.latitude.value,
-                             cfg.location.longitude.value,
+    grp.attrs['location'] = [cfg.location.lat.value,
+                             cfg.location.lon.value,
                              cfg.location.height.value ]
     for col in cfg.data.columns:
         c = cfg.data[col]

@@ -4,7 +4,10 @@
 
 #include <complex.h>
 #include <stdint.h>
+#include <math.h>
 #include <fftw3.h>
+#include <stdbool.h>
+#include <hdf5.h>
 
 // Visibility data
 struct bl_data
@@ -14,10 +17,12 @@ struct bl_data
     int freq_count;
     double *time;
     double *freq;
-    double *uvw;
+    double *uvw_m; // in m
     double complex *vis;
-    double complex *awkern;
 
+    // temporary from here
+
+    double complex *awkern;
     double u_min, u_max; // in m
     double v_min, v_max; // in m
     double w_min, w_max; // in m
@@ -31,6 +36,33 @@ struct vis_data
     int antenna_count;
     int bl_count;
     struct bl_data *bl;
+};
+
+// Antenna/station configuration
+struct ant_config
+{
+    int ant_count;
+    char *name;
+    double *xyz; // x geographical east, z celestial north
+};
+
+static const double c = 299792458.0;
+
+static inline double uvw_m_to_l(double u, double f) {
+	return u * f / c;
+}
+static inline double uvw_l_to_m(double u, double f) {
+	return u / f * c;
+}
+
+// Subgrid/facet configurations
+struct subgrid
+{
+	double mid_u, mid_v;
+};
+struct facet
+{
+	double mid_l, mid_m;
 };
 
 // W-kernel data
@@ -80,6 +112,10 @@ struct perf_counters
 
 // Prototypes
 void init_dtype_cpx();
+int load_ant_config(const char *filename, struct ant_config *ant);
+bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
+                      struct bl_data *bl);
+
 int load_vis(const char *filename, struct vis_data *vis,
              double min_len, double max_len);
 int load_wkern(const char *filename, double theta,
