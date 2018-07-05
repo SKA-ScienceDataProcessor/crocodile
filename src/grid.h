@@ -65,6 +65,14 @@ struct facet
 	double mid_l, mid_m;
 };
 
+// Separable kernel data
+struct sep_kernel_data
+{
+    double *data; // Assumed to be real
+    int size;
+    int oversampling;
+};
+
 // W-kernel data
 struct w_kernel
 {

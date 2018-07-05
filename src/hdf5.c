@@ -468,6 +468,70 @@ bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
 }
 
 
+int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern) {
+
+    // Open file
+    hid_t sepkern_f = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (sepkern_f < 0) {
+        fprintf(stderr, "Could not open separable kernel file %s!\n", filename);
+        return 1;
+    }
+
+    // Access group
+    hid_t sepkern_g = H5Gopen(sepkern_f, "sepkern", H5P_DEFAULT);
+    if (sepkern_g < 0) {
+        fprintf(stderr, "Could not open 'sepkern' group in separable kernel file %s!\n", filename);
+        H5Fclose(sepkern_f);
+        return 1;
+    }
+
+
+    // Open the data set
+    hid_t dset = H5Dopen(sepkern_g, "sepkern", H5P_DEFAULT);
+    if (dset < 0) {
+        fprintf(stderr, "'sepkern/kern' dataset could not be opened from file %s!\n", filename);
+        H5Gclose(sepkern_g);
+        H5Fclose(sepkern_f);
+        return 1;
+    }
+
+    // Check that it has the expected format
+    hsize_t dims[4];
+    if (H5Sget_simple_extent_ndims(H5Dget_space(dset)) != 4 ||
+        H5Tget_size(H5Dget_type(dset)) != sizeof(double) ||
+        H5Sget_simple_extent_dims(H5Dget_space(dset), dims, NULL) < 0 ||
+        dims[0] != dims[1] || dims[2] != dims[3]) {
+
+        fprintf(stderr, "'sepkern/kern' dataset has wrong format in file %s!\n", filename);
+        H5Dclose(dset);
+        H5Gclose(sepkern_g);
+        H5Fclose(sepkern_f);
+        return 1;
+    }
+
+    // Read dimensions
+    sepkern->oversampling = dims[0];
+    sepkern->size = dims[2];
+
+    // Read kernel
+    hsize_t total_size = sepkern->oversampling * sepkern->oversampling *
+                         sepkern->size * sepkern->size;
+    sepkern->data = (double *)calloc(sizeof(double), total_size);
+    if (H5Dread(dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, sepkern->data) < 0) {
+        fprintf(stderr, "Failed to read separable kernel data from %s!\n", filename);
+    }
+
+    // Close file
+    H5Dclose(dset);
+    H5Gclose(sepkern_g);
+    H5Fclose(sepkern_f);
+
+    printf("seperable kernel: %d (%d oversampled)",
+           sepkern->size, sepkern->oversampling);
+
+    return 0;
+}
+
 int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) {
 
     // Open file
