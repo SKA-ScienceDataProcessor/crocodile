@@ -9,9 +9,6 @@
 
 #include "grid.h"
 
-// Nature constant
-const double c = 299792458.0;
-
 // Complex data type
 hid_t dtype_cpx;
 
@@ -20,9 +17,64 @@ void init_dtype_cpx() {
     // HDF5 has no native complex datatype, so we mirror h5py here and
     // declare a compound equivalent.
     dtype_cpx = H5Tcreate(H5T_COMPOUND, sizeof(double complex));
-    H5Tinsert(dtype_cpx, "r", 0, H5T_IEEE_F64LE);
-    H5Tinsert(dtype_cpx, "i", 8, H5T_IEEE_F64LE);
+    H5Tinsert(dtype_cpx, "r", 0, H5T_NATIVE_DOUBLE);
+    H5Tinsert(dtype_cpx, "i", 8, H5T_NATIVE_DOUBLE);
 
+}
+
+int load_ant_config(const char *filename, struct ant_config *cfg) {
+
+    // Open file
+    printf("Reading %s...\n", filename);
+    hid_t cfg_f = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (cfg_f < 0) {
+        fprintf(stderr, "Could not open antenna configuration file %s!\n", filename);
+        return 1;
+    }
+    hid_t cfg_g = H5Gopen(cfg_f, "cfg", H5P_DEFAULT);
+    if (cfg_g < 0) {
+        H5Fclose(cfg_f);
+        fprintf(stderr, "Could not open 'cfg' group in antenna configuration file %s!\n", filename);
+        return 1;
+    }
+
+    // Read name
+    hid_t name_a;
+    if ((name_a = H5Aopen(cfg_g, "name", H5P_DEFAULT)) < 0 ||
+        H5Tget_class(H5Aget_type(name_a)) != H5T_STRING ||
+        H5Aread(name_a, H5Aget_type(name_a), &cfg->name) < 0) {
+
+        H5Gclose(cfg_g);
+        H5Fclose(cfg_f);
+        fprintf(stderr, "Could not read 'name' attribute from antenna configuration file %s!\n", filename);
+        return 1;
+    }
+
+    // Read data, verify shape (... quite verbose ...)
+    hid_t xyz_ds = H5Dopen(cfg_g, "xyz", H5P_DEFAULT);
+    hsize_t xyz_dim[2];
+    if (!(H5Tget_size(H5Dget_type(xyz_ds)) == sizeof(double) &&
+          H5Sget_simple_extent_ndims(H5Dget_space(xyz_ds)) == 2 &&
+          H5Sget_simple_extent_dims(H5Dget_space(xyz_ds), xyz_dim, NULL) >= 0 &&
+          xyz_dim[1] == 3)) {
+
+        H5Dclose(xyz_ds);
+        H5Gclose(cfg_g);
+        H5Fclose(cfg_f);
+        fprintf(stderr, "Could not read 'xyz' data from antenna configuration file %s!\n", filename);
+        return false;
+    }
+
+    // Set/read data
+    cfg->ant_count = xyz_dim[0];
+    cfg->xyz = (double *)malloc(sizeof(double) * 3 * cfg->ant_count);
+    H5Dread(xyz_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, cfg->xyz);
+
+    // Done
+    H5Dclose(xyz_ds);
+    H5Gclose(cfg_g);
+    H5Fclose(cfg_f);
+    return 0;
 }
 
 struct bl_stats {
@@ -72,12 +124,12 @@ static bool load_vis_group(hid_t vis_g, struct bl_data *bl,
     if (stats) { stats->total_vis_count += vis_c; }
 
     // Use first uvw to decide whether to skip baseline
-    bl->uvw = (double *)malloc(uvw_dim[0] * uvw_dim[1] * sizeof(double));
-    H5Dread(uvw_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->uvw);
-    double len = sqrt(bl->uvw[0] * bl->uvw[0] +
-                      bl->uvw[1] * bl->uvw[1]);
+    bl->uvw_m = (double *)malloc(uvw_dim[0] * uvw_dim[1] * sizeof(double));
+    H5Dread(uvw_ds, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->uvw_m);
+    double len = sqrt(bl->uvw_m[0] * bl->uvw_m[0] +
+                      bl->uvw_m[1] * bl->uvw_m[1]);
     if (len < min_len || len >= max_len) {
-        free(bl->uvw);
+        free(bl->uvw_m);
         H5Dclose(freq_ds);
         H5Dclose(time_ds);
         H5Dclose(uvw_ds);
@@ -118,12 +170,12 @@ static bool load_vis_group(hid_t vis_g, struct bl_data *bl,
     for (j = 0; j < time_dim; j++) {
         if (bl->t_min > bl->time[j])    { bl->t_min = bl->time[j]; }
         if (bl->t_max < bl->time[j])    { bl->t_max = bl->time[j]; }
-        if (bl->u_min > bl->uvw[3*j+0]) { bl->u_min = bl->uvw[3*j+0]; }
-        if (bl->u_max < bl->uvw[3*j+0]) { bl->u_max = bl->uvw[3*j+0]; }
-        if (bl->v_min > bl->uvw[3*j+1]) { bl->v_min = bl->uvw[3*j+1]; }
-        if (bl->v_max < bl->uvw[3*j+1]) { bl->v_max = bl->uvw[3*j+1]; }
-        if (bl->w_min > bl->uvw[3*j+2]) { bl->w_min = bl->uvw[3*j+2]; }
-        if (bl->w_max < bl->uvw[3*j+2]) { bl->w_max = bl->uvw[3*j+2]; }
+        if (bl->u_min > bl->uvw_m[3*j+0]) { bl->u_min = bl->uvw_m[3*j+0]; }
+        if (bl->u_max < bl->uvw_m[3*j+0]) { bl->u_max = bl->uvw_m[3*j+0]; }
+        if (bl->v_min > bl->uvw_m[3*j+1]) { bl->v_min = bl->uvw_m[3*j+1]; }
+        if (bl->v_max < bl->uvw_m[3*j+1]) { bl->v_max = bl->uvw_m[3*j+1]; }
+        if (bl->w_min > bl->uvw_m[3*j+2]) { bl->w_min = bl->uvw_m[3*j+2]; }
+        if (bl->w_max < bl->uvw_m[3*j+2]) { bl->w_max = bl->uvw_m[3*j+2]; }
     }
 
     if (stats) {
@@ -198,7 +250,7 @@ int load_vis(const char *filename, struct vis_data *vis,
               H5Sget_simple_extent_dims(H5Dget_space(a2_ds), &a2_dim, NULL) >= 0 &&
               a2_dim == data.time_count)) {
 
-            free(data.uvw);
+            free(data.uvw_m);
             free(data.time);
             free(data.freq);
             free(data.vis);
@@ -224,8 +276,8 @@ int load_vis(const char *filename, struct vis_data *vis,
         for (i = 0; i < data.time_count; i++) {
 
             // Calculate baseline length (same check as in load_vis_group)
-            double len = sqrt(data.uvw[3*i+0] * data.uvw[3*i+0] +
-                              data.uvw[3*i+1] * data.uvw[3*i+1]);
+            double len = sqrt(data.uvw_m[3*i+0] * data.uvw_m[3*i+0] +
+                              data.uvw_m[3*i+1] * data.uvw_m[3*i+1]);
             if (len < min_len || len >= max_len) {
                 printf("asd %g\n", len);
                 continue;
@@ -236,17 +288,17 @@ int load_vis(const char *filename, struct vis_data *vis,
             vis->bl[bl].antenna2 = a2[i];
             vis->bl[bl].time_count = 1;
             vis->bl[bl].freq_count = data.freq_count;
-            vis->bl[bl].uvw = (double *)malloc(3 * sizeof(double));
+            vis->bl[bl].uvw_m = (double *)malloc(3 * sizeof(double));
             vis->bl[bl].time = (double *)malloc(sizeof(double));
             vis->bl[bl].freq = (double *)malloc(data.freq_count * sizeof(double));
             vis->bl[bl].vis = (double complex *)malloc(data.freq_count * sizeof(double complex));
             vis->bl[bl].time[0] = data.time[i];
-            vis->bl[bl].uvw[0] = data.uvw[i*3+0];
-            vis->bl[bl].uvw[1] = data.uvw[i*3+1];
-            vis->bl[bl].uvw[2] = data.uvw[i*3+2];
-            vis->bl[bl].u_min = vis->bl[bl].u_max = vis->bl[bl].uvw[0];
-            vis->bl[bl].v_min = vis->bl[bl].v_max = vis->bl[bl].uvw[1];
-            vis->bl[bl].w_min = vis->bl[bl].w_max = vis->bl[bl].uvw[2];
+            vis->bl[bl].uvw_m[0] = data.uvw_m[i*3+0];
+            vis->bl[bl].uvw_m[1] = data.uvw_m[i*3+1];
+            vis->bl[bl].uvw_m[2] = data.uvw_m[i*3+2];
+            vis->bl[bl].u_min = vis->bl[bl].u_max = vis->bl[bl].uvw_m[0];
+            vis->bl[bl].v_min = vis->bl[bl].v_max = vis->bl[bl].uvw_m[1];
+            vis->bl[bl].w_min = vis->bl[bl].w_max = vis->bl[bl].uvw_m[2];
             vis->bl[bl].f_min = data.f_min;
             vis->bl[bl].f_max = data.f_max;
             int j;
@@ -262,7 +314,7 @@ int load_vis(const char *filename, struct vis_data *vis,
         }
 
         // Finish
-        free(data.uvw);
+        free(data.uvw_m);
         free(data.time);
         free(data.freq);
         free(data.vis);
@@ -323,9 +375,9 @@ int load_vis(const char *filename, struct vis_data *vis,
 
     printf("\n");
     if (stats.vis_count < stats.total_vis_count) {
-        printf("Have %d baselines, %d uvw positions, %d visibilities\n", vis->bl_count, stats.vis_count, stats.total_vis_count);
+        printf("Have %d baselines, %lu uvw positions, %lu visibilities\n", vis->bl_count, stats.vis_count, stats.total_vis_count);
     } else {
-        printf("Have %d baselines and %d visibilities\n", vis->bl_count, stats.vis_count);
+        printf("Have %d baselines and %lu visibilities\n", vis->bl_count, stats.vis_count);
     }
     printf("u range:     %.2f - %.2f lambda\n", stats.u_min*stats.f_max/c, stats.u_max*stats.f_max/c);
     printf("v range:     %.2f - %.2f lambda\n", stats.v_min*stats.f_max/c, stats.v_max*stats.f_max/c);
@@ -336,6 +388,85 @@ int load_vis(const char *filename, struct vis_data *vis,
 
     return 0;
 }
+
+bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
+                      struct bl_data *bl) {
+
+    // Create a visibility group from baseline data *without* actually
+    // writing any visibility data (data in "bl" will be ignored).
+    // Instead, we will write a chunked visibility dataset with zeros
+    // for fill value.
+
+    // Create properties for compact and contigous data
+    hid_t compact_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
+    H5Pset_layout(compact_ds_prop, H5D_COMPACT);
+    hid_t cont_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
+    H5Pset_layout(cont_ds_prop, H5D_CONTIGUOUS);
+    hid_t chunked_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
+    H5Pset_layout(chunked_ds_prop, H5D_CHUNKED);
+    hsize_t chunks[3] = { freq_chunk, time_chunk, 1 };
+    H5Pset_chunk(chunked_ds_prop, 3, chunks);
+    complex double fill_value = 0;
+    H5Pset_fill_value(chunked_ds_prop, dtype_cpx, &fill_value);
+
+    // Create datasets
+    hsize_t freq_size = bl->freq_count;
+    hid_t freq_dsp = H5Screate_simple(1, &freq_size, NULL);
+    hid_t freq_ds = H5Dcreate(vis_g, "frequency", H5T_IEEE_F64LE,
+                              freq_dsp, H5P_DEFAULT, compact_ds_prop, H5P_DEFAULT);
+    if (freq_ds < 0) {
+        fprintf(stderr, "failed to create frequency dataset!");
+        H5Sclose(freq_dsp);
+        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
+        return false;
+    }
+    hsize_t time_size = bl->time_count;
+    hid_t time_dsp = H5Screate_simple(1, &time_size, NULL);
+    hid_t time_ds = H5Dcreate(vis_g, "time", H5T_IEEE_F64LE,
+                              H5Screate_simple(1, &time_size, NULL),
+                              H5P_DEFAULT, compact_ds_prop, H5P_DEFAULT);
+    if (time_ds < 0) {
+        fprintf(stderr, "failed to create time dataset!");
+        H5Sclose(freq_dsp); H5Sclose(time_dsp);
+        H5Dclose(freq_ds);
+        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
+        return false;
+    }
+    hsize_t uvw_dims[2] = { bl->time_count, 3 };
+    hid_t uvw_dsp = H5Screate_simple(2, uvw_dims, NULL);
+    hid_t uvw_ds = H5Dcreate(vis_g, "uvw", H5T_IEEE_F64LE,
+                             uvw_dsp, H5P_DEFAULT, cont_ds_prop, H5P_DEFAULT);
+    if (uvw_ds < 0) {
+        fprintf(stderr, "failed to create coordinates dataset!");
+        H5Sclose(uvw_dsp); H5Sclose(freq_dsp); H5Sclose(time_dsp);
+        H5Dclose(freq_ds); H5Dclose(time_ds);
+        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
+        return false;
+        }
+    hsize_t vis_dims[3] = { 0, 0, 1 };
+    hsize_t max_vis_dims[3] = { bl->time_count, bl->freq_count, 1 };
+    hid_t vis_dsp = H5Screate_simple(3, vis_dims, max_vis_dims);
+    hid_t vis_ds = H5Dcreate(vis_g, "vis", dtype_cpx,
+                             vis_dsp, H5P_DEFAULT, chunked_ds_prop, H5P_DEFAULT);
+    if (vis_ds < 0) {
+        fprintf(stderr, "failed to create visibility dataset!");
+        H5Sclose(vis_dsp); H5Sclose(uvw_dsp); H5Sclose(freq_dsp); H5Sclose(time_dsp);
+        H5Dclose(uvw_ds); H5Dclose(freq_ds); H5Dclose(time_ds);
+        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
+        return false;
+    }
+
+    H5Dwrite(freq_ds, H5T_NATIVE_DOUBLE, freq_dsp, freq_dsp, H5P_DEFAULT, bl->freq);
+    H5Dwrite(time_ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->time);
+    H5Dwrite(uvw_ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->uvw_m);
+
+    H5Sclose(vis_dsp); H5Sclose(uvw_dsp); H5Sclose(freq_dsp); H5Sclose(time_dsp);
+    H5Dclose(vis_ds); H5Dclose(uvw_ds); H5Dclose(freq_ds); H5Dclose(time_ds);
+
+    H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
+    return true;
+}
+
 
 int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) {
 
