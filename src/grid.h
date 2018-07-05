@@ -123,6 +123,8 @@ int load_wkern(const char *filename, double theta,
 int load_akern(const char *filename, double theta,
                struct a_kernel_data *akern);
 
+void frac_coord(int grid_size, int oversample,
+                double u, int *x, int *fx);
 void weight(unsigned int *wgrid, int grid_size, double theta,
             struct vis_data *vis);
 uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
