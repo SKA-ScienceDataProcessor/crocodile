@@ -1,9 +1,49 @@
 
+#include "recombine.h"
+
 #include <stdlib.h>
 #include <assert.h>
 #include <complex.h>
 #include <math.h>
 #include <fftw3.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <time.h>
+#include <omp.h>
+
+void *read_dump(int size, char *name, ...) {
+    va_list ap;
+    va_start(ap, name);
+    char fname[256];
+    vsnprintf(fname, 256, name, ap);
+    int fd = open(fname, O_RDONLY, 0666);
+    char *data = malloc(size);
+    if (read(fd, data, size) != size) {
+        fprintf(stderr, "failed to read enough data from %s!\n", fname);
+        return 0;
+    }
+    close(fd);
+    return data;
+}
+
+int write_dump(void *data, int size, char *name, ...) {
+    va_list ap;
+    va_start(ap, name);
+    char fname[256];
+    vsnprintf(fname, 256, name, ap);
+    int fd = open(fname, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+    if (write(fd, data, size) != size) {
+        fprintf(stderr, "failed to write data to %s!\n", fname);
+        close(fd);
+        return 1;
+    }
+    close(fd);
+    return 0;
+}
 
 double *generate_Fb(int yN_size, int yB_size, double *pswf) {
     double *Fb = (double *)malloc(sizeof(double) * yB_size);
@@ -29,11 +69,11 @@ double *generate_Fn(int yN_size, int xM_yN_size, double *pswf) {
 }
 
 double *generate_m(int image_size, int yP_size, int yN_size, int xM_size, int xMxN_yP_size,
-                         double *pswf) {
+                   double *pswf) {
     double *m = (double *)malloc(sizeof(double) * (yP_size/2+1));
 
     // Fourier transform of rectangular function with size xM, truncated by PSWF
-    m[0] = pswf[0] * (double)(xM_size) / image_size;
+    m[0] = pswf[0] * xM_size / image_size;
     int i;
     for (i = 1; i < yN_size/2; i++) {
         double x = (double)(i) * xM_size / image_size;
@@ -109,12 +149,265 @@ void extract_subgrid(int yP_size, int xM_yP_size, int xMxN_yP_size, int xM_yN_si
 }
 
 
-void add_subgrid(int xM_size, int xM_yN_size, int facet_offset,
-                 complex double *NMBF, complex double *out) {
+void add_facet(int xM_size, int xM_yN_size, int facet_offset,
+               complex double *NMBF, int NMBF_stride,
+               complex double *out, int out_stride) {
 
     int i;
-    for (i = -xM_yN_size/2; i < xM_yN_size/2; i++) {
-        out[(i + facet_offset + xM_size) % xM_size] += NMBF[(i + xM_yN_size) % xM_yN_size] / xM_size;
+    for (i = 0; i < xM_yN_size; i++) {
+        out[out_stride * ((i - xM_yN_size/2 + facet_offset + xM_size) % xM_size)] +=
+            NMBF[NMBF_stride * ((i + xM_yN_size/2) % xM_yN_size)] / xM_size;
     }
 
 }
+
+
+bool recombine2d_set_config(struct recombine2d_config *cfg,
+                            int image_size, char *pswf_file,
+                            int yB_size, int yN_size, int yP_size,
+                            int xA_size, int xM_size, int xMxN_yP_size) {
+
+    cfg->facet_file = NULL;
+    cfg->stream_check = NULL;
+    cfg->stream_check_threshold = 0;
+    cfg->stream_dump = NULL;
+
+    cfg->image_size = image_size;
+    cfg->yB_size    = yB_size;
+    cfg->yN_size    = yN_size;
+    cfg->yP_size    = yP_size;
+    cfg->xA_size    = xA_size;
+    cfg->xM_size    = xM_size;
+    cfg->xMxN_yP_size = xMxN_yP_size;
+
+    cfg->xA_yP_size = cfg->xA_size * cfg->yP_size / cfg->image_size;
+    assert((cfg->xM_size * cfg->yP_size) % cfg->image_size == 0);
+    cfg->xM_yP_size = cfg->xM_size * cfg->yP_size / cfg->image_size;
+    assert((cfg->xM_size * cfg->yN_size) % cfg->image_size == 0);
+    cfg->xM_yN_size = cfg->xM_size * cfg->yN_size / cfg->image_size;
+
+    cfg->F_size = sizeof(double complex) * cfg->yB_size * cfg->yB_size;
+    cfg->BF_size = sizeof(double complex) * cfg->yP_size * cfg->yB_size;
+    cfg->MBF_size = sizeof(double complex) * cfg->xM_yP_size;
+    cfg->NMBF_size = sizeof(double complex) * cfg->xM_yN_size * cfg->yB_size;
+    cfg->NMBF_BF_size = sizeof(double complex) * cfg->xM_yN_size * cfg->yP_size;
+    cfg->NMBF_NMBF_size = sizeof(double complex) * cfg->xM_yN_size * cfg->xM_yN_size;
+
+    cfg->SG_size = sizeof(double complex) * cfg->xM_size * cfg->xM_size;
+
+    cfg->F_stride0 = cfg->yB_size; cfg->F_stride1 = 1;
+    cfg->BF_stride0 = cfg->yP_size; cfg->BF_stride1 = 1;
+    cfg->NMBF_stride0 = cfg->xM_yN_size; cfg->NMBF_stride1 = 1;
+    cfg->NMBF_BF_stride0 = 1; cfg->NMBF_BF_stride1 = cfg->yP_size;
+    cfg->NMBF_NMBF_stride0 = cfg->xM_yN_size; cfg->NMBF_NMBF_stride1 = 1;
+
+    // Read PSWF (TODO: generate)
+    double *pswf = read_dump(sizeof(double) * cfg->yN_size, pswf_file);
+    if (!pswf) return false;
+
+    // Generate Fn, Fb and m
+    cfg->Fb = generate_Fb(cfg->yN_size, cfg->yB_size, pswf);
+    cfg->Fn = generate_Fn(cfg->yN_size, cfg->xM_yN_size, pswf);
+    cfg->m = generate_m(image_size, cfg->yP_size, cfg->yN_size, cfg->xM_size, cfg->xMxN_yP_size, pswf);
+    free(pswf);
+
+    return true;
+}
+
+void recombine2d_free(struct recombine2d_config *cfg)
+{
+    free(cfg->Fb); free(cfg->Fn); free(cfg->m);
+}
+
+// Global/per-thread memory required to run producer side
+uint64_t recombine2d_global_memory(struct recombine2d_config *cfg)
+{
+    return cfg->F_size + cfg->BF_size;
+}
+uint64_t recombine2d_worker_memory(struct recombine2d_config *cfg)
+{
+    return cfg->MBF_size + cfg->NMBF_size + cfg->NMBF_BF_size + cfg->NMBF_NMBF_size;
+}
+
+static double get_time_ns()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
+}
+
+fftw_plan recombine2d_bf_plan(struct recombine2d_config *cfg, int BF_batch,
+                              double complex *BF)
+{
+    return fftw_plan_many_dft(1, &cfg->yP_size, BF_batch,
+                              BF, 0, cfg->BF_stride1, cfg->BF_stride0,
+                              BF, 0, cfg->BF_stride1, cfg->BF_stride0,
+                              FFTW_BACKWARD, FFTW_MEASURE);
+}
+
+void recombine2d_init_worker(struct recombine2d_worker *worker, struct recombine2d_config *cfg,
+                             int BF_batch, fftw_plan BF_plan)
+{
+
+    // Set configuration
+    worker->cfg = cfg;
+
+    // Create buffers
+    worker->MBF = (double complex *)malloc(cfg->MBF_size);
+    worker->NMBF = (double complex *)malloc(cfg->NMBF_size);
+    worker->NMBF_BF = (double complex *)malloc(cfg->NMBF_BF_size);
+
+    // Plan Fourier Transforms
+    worker->BF_batch = BF_batch; worker->BF_plan = BF_plan;
+    worker->MBF_plan = fftw_plan_dft_1d(cfg->xM_yP_size, worker->MBF, worker->MBF,
+                                      FFTW_FORWARD, FFTW_MEASURE);
+    worker->NMBF_BF_plan = fftw_plan_many_dft(1, &cfg->yP_size, cfg->xM_yN_size,
+                                            worker->NMBF_BF, 0, cfg->NMBF_BF_stride0, cfg->NMBF_BF_stride1,
+                                            worker->NMBF_BF, 0, cfg->NMBF_BF_stride0, cfg->NMBF_BF_stride1,
+                                            FFTW_BACKWARD, FFTW_MEASURE);
+    // Initialise statistics
+    worker->pf1_time = worker->es1_time = worker->ft1_time =
+        worker->pf2_time = worker->es2_time = worker->ft2_time = 0;
+
+}
+
+void recombine2d_free_worker(struct recombine2d_worker *worker)
+{
+    // (BF_plan is assumed to be shared)
+    fftw_free(worker->MBF_plan);
+    fftw_free(worker->NMBF_BF_plan);
+
+    free(worker->MBF);
+    free(worker->NMBF);
+    free(worker->NMBF_BF);
+}
+
+void recombine2d_pf0_ft0_omp(struct recombine2d_worker *worker,
+                             complex double *F,
+                             complex double *BF)
+{
+    struct recombine2d_config *cfg = worker->cfg;
+    int y;
+#pragma omp for schedule(dynamic)
+    for (y = 0; y < cfg->yB_size; y+=worker->BF_batch) {
+
+        // Facet preparation along first axis
+        double start = get_time_ns();
+        int y2;
+        for (y2 = y; y2 < y+worker->BF_batch && y2 < cfg->yB_size; y2++) {
+            prepare_facet(cfg->yB_size, cfg->yP_size, cfg->Fb,
+                          F+y2*cfg->F_stride0, cfg->F_stride1,
+                          BF+y2*cfg->BF_stride0, cfg->BF_stride1);
+        }
+        worker->pf1_time += get_time_ns() - start;
+
+        // Fourier transform along first axis
+        start = get_time_ns();
+        fftw_execute_dft(worker->BF_plan, BF+y*cfg->BF_stride0, BF+y*cfg->BF_stride0);
+        worker->ft1_time += get_time_ns() - start;
+    }
+
+}
+
+void recombine2d_es0_pf1_ft1(struct recombine2d_worker *worker,
+                             int i0, complex double *BF)
+{
+    struct recombine2d_config *cfg = worker->cfg;
+    int x,y;
+
+    // Extract subgrids along first axis
+    double start = get_time_ns();
+    for (x = 0; x < cfg->yB_size; x++) {
+        extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
+                        i0*cfg->xA_yP_size, cfg->m, cfg->Fn,
+                        BF+x*cfg->BF_stride0, cfg->BF_stride1,
+                        worker->MBF, worker->MBF_plan,
+                        worker->NMBF+x*cfg->NMBF_stride0, cfg->NMBF_stride1);
+    }
+    worker->es1_time += get_time_ns() - start;
+
+    // Facet preparation along second axis
+    start = get_time_ns();
+    for (y = 0; y < cfg->xM_yN_size; y++) {
+        prepare_facet(cfg->yB_size, cfg->yP_size, cfg->Fb,
+                      worker->NMBF+y*cfg->NMBF_stride1, cfg->NMBF_stride0,
+                      worker->NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0);
+    }
+    worker->pf2_time += get_time_ns() - start;
+
+    // Fourier transform along second axis
+    start = get_time_ns();
+    fftw_execute(worker->NMBF_BF_plan);
+    worker->ft2_time += get_time_ns() - start;
+
+}
+
+void recombine2d_es1(struct recombine2d_worker *worker,
+                     int i0, int i1, double complex *NMBF_NMBF)
+{
+    struct recombine2d_config *cfg = worker->cfg;
+    int y;
+
+    // Extract subgrids along second axis
+    double start = get_time_ns();
+    for (y = 0; y < cfg->xM_yN_size; y++) {
+        extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
+                        i1*cfg->xA_yP_size, cfg->m, cfg->Fn,
+                        worker->NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0,
+                        worker->MBF, worker->MBF_plan,
+                        NMBF_NMBF+y*cfg->NMBF_NMBF_stride1, cfg->NMBF_NMBF_stride0);
+    }
+    worker->es2_time += get_time_ns() - start;
+
+    // Check stream contents if requested
+    if (cfg->stream_check) {
+        double complex *NMBF_NMBF_check = read_dump(cfg->NMBF_NMBF_size, cfg->stream_check, i1, i0);
+        if (NMBF_NMBF_check) {
+            int x0; int errs = 0;
+            for (x0 = 0; x0 < cfg->xM_yN_size * cfg->xM_yN_size; x0++) {
+                if (cabs(NMBF_NMBF[x0] - NMBF_NMBF_check[x0]) > cabs(NMBF_NMBF[x0]) * cfg->stream_check_threshold) {
+                    fprintf(stderr, "stream check failed: subgrid %d/%d at position %d/%d (%f%+f != %f%+f)\n",
+                            i0, i1, x0 / cfg->xM_yN_size, x0 % cfg->xM_yN_size,
+                            creal(NMBF_NMBF[x0]), cimag(NMBF_NMBF[x0]),
+                            creal(NMBF_NMBF_check[x0]), cimag(NMBF_NMBF_check[x0]));
+                    errs+=1;
+                }
+            }
+            if (!errs) {
+                printf("stream check for subgrid %d/%d passed\n", i0, i1);
+            }
+        }
+    }
+
+    // Similarly, write dump on request
+    if (cfg->stream_dump) {
+        write_dump(NMBF_NMBF, cfg->NMBF_NMBF_size, cfg->stream_dump, i1, i0);
+    }
+
+}
+
+void recombine2d_af0_af1(struct recombine2d_config *cfg,
+                         double complex *subgrid,
+                         int facet_offset0, int facet_offset1,
+                         double complex *NMBF_NMBF)
+{
+
+    int j0, j1;
+    for (j0 = 0; j0 < cfg->xM_yN_size; j0++) {
+
+        int off_sg0 = ((j0 - cfg->xM_yN_size/2 + facet_offset0 + cfg->xM_size) % cfg->xM_size);
+        int off_nmbf0 = ((j0 + cfg->xM_yN_size/2) % cfg->xM_yN_size);
+
+        for (j1 = 0; j1 < cfg->xM_yN_size; j1++) {
+
+            int off_sg1 = ((j1 - cfg->xM_yN_size/2 + facet_offset1 + cfg->xM_size) % cfg->xM_size);
+            int off_nmbf1 = ((j1 + cfg->xM_yN_size/2) % cfg->xM_yN_size);
+
+            subgrid[off_sg0*cfg->xM_size+off_sg1] +=
+                NMBF_NMBF[off_nmbf0*cfg->xM_yN_size+off_nmbf1] / (cfg->xM_size * cfg->xM_size);
+        }
+
+    }
+
+}
+

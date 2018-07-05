@@ -154,22 +154,6 @@ void print_perf_counters(struct perf_counters *counter,
                          uint64_t expected_flops,
                          uint64_t expected_mem);
 
-double *generate_Fb(int yN_size, int yB_size, double *pswf);
-double *generate_Fn(int yN_size, int xM_yN_size, double *pswf);
-double *generate_m(int image_size, int yP_size, int yN_size, int xM_size, int xMxN_yP_size,
-                   double *pswf);
-void prepare_facet(int yB_size, int yP_size,
-                   double *Fb,
-                   double complex *facet, int facet_stride,
-                   double complex *BF, int BF_stride);
-void extract_subgrid(int yP_size, int xM_yP_size, int xMxN_yP_size, int xM_yN_size, int subgrid_offset,
-                     double *m_trunc, double *Fn,
-                     complex double *BF, int BF_stride,
-                     complex double *MBF, fftw_plan MBF_plan,
-                     complex double *NMBF, int NMBF_stride);
-void add_subgrid(int xM_size, int xM_yN_size, int facet_offset,
-                 complex double *NMBF, complex double *out);
-
 int run_tests();
 void *read_dump(int size, char *name, ...);
 
