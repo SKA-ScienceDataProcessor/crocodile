@@ -604,9 +604,9 @@ def conv_predict(theta, lam, uvw, src, guv, kv):
     :param lam: UV grid range
     :param uvw: UVWs of visibilities
     :param src: Visibility source information
-    :param vis: Visibility values
+    :param guv: UV grid
     :param kv: Gridding kernel
-    :returns: UV grid
+    :returns: visibility values
     """
 
     if src is None: src = numpy.ndarray((len(uvw), 0))
