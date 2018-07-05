@@ -1,5 +1,6 @@
 
 #include "grid.h"
+#include "recombine.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -161,7 +162,7 @@ int T02_extract_subgrid() {
 }
 
 
-int T03_add_subgrid() {
+int T03_add_facet() {
 
     // Size specifications
     int image_size = 2000;
@@ -215,8 +216,8 @@ int T03_add_subgrid() {
 
         memset(subgrid, 0, xM_size * sizeof(double complex));
         for (j = 0; j < nfacet; j++) {
-            add_subgrid(xM_size, xM_yN_size, j * xM_yB_size,
-                        NMBF[i][j], subgrid);
+            add_facet(xM_size, xM_yN_size, j * xM_yB_size,
+                        NMBF[i][j], 1, subgrid, 1);
             free(NMBF[i][j]);
         }
         write_dump(subgrid, xM_size * sizeof(double complex), "../../data/grid/T03_approx%d.out", i);
@@ -267,10 +268,10 @@ int T04_test_2d() {
     free(pswf);
 
     double complex *facet[nfacet][nfacet];
-    double complex *BF = (double complex *)calloc(sizeof(double complex), yP_size * yB_size);
-    double complex *MBF = (double complex *)calloc(sizeof(double complex), xM_yP_size);
-    double complex *NMBF = (double complex *)calloc(sizeof(double complex), xM_yN_size * yB_size);
-    double complex *NMBF_BF = (double complex *)calloc(sizeof(double complex), xM_yN_size * yP_size);
+    double complex *BF = (double complex *)malloc(sizeof(double complex) * yP_size * yB_size);
+    double complex *MBF = (double complex *)malloc(sizeof(double complex) * xM_yP_size);
+    double complex *NMBF = (double complex *)malloc(sizeof(double complex) * xM_yN_size * yB_size);
+    double complex *NMBF_BF = (double complex *)malloc(sizeof(double complex) * xM_yN_size * yP_size);
     double complex *NMBF_NMBF = (double complex *)malloc(sizeof(double complex) * xM_yN_size * xM_yN_size);
 
     int F_stride0 = yB_size, F_stride1 = 1;
@@ -299,7 +300,6 @@ int T04_test_2d() {
                           BF+x*BF_stride0, BF_stride1);
         }
         fftw_execute(BF_plan);
-		write_dump(BF, sizeof(double complex) * yP_size * yB_size, "../../data/grid/T04_bf%d%d.out", j0, j1);
 
         for (i0 = 0; i0 < nsubgrid; i0++) {
 
@@ -329,7 +329,8 @@ int T04_test_2d() {
                 write_dump(NMBF_NMBF, sizeof(double complex) * xM_yN_size * xM_yN_size,
                            "../../data/grid/T04_nmbf%d%d%d%d.out", i0, i1, j0, j1);
                 double complex *ref = read_dump(sizeof(double complex) * xM_yN_size * xM_yN_size,
-                                                "../../data/grid/T04_nmbf%d%d%d%d.in", i1, i0, j0, j1);
+                                                "../../data/grid/T04_nmbf%d%d%d%d.in",
+                                                i1, i0, j0, j1);
                 if (!ref) { free(BF); free(NMBF); free(NMBF_BF); free(NMBF_NMBF); return 1; }
 
                 for (y = 0; y < xM_yN_size * xM_yN_size; y++)
@@ -338,11 +339,67 @@ int T04_test_2d() {
             }
         }
 
+        free(facet[j0][j1]);
+
     }
 
     free(BF); free(NMBF); free(NMBF_BF); free(NMBF_NMBF);
 
     return 0;
+}
+
+// Same as last test, but using recombine2d machinery
+int T04a_recombine2d() {
+
+    const int nfacet = 3;
+    const int nsubgrid = 3;
+    const int BF_batch = 16;
+
+    struct recombine2d_config cfg;
+    if (!recombine2d_set_config(&cfg, 2000, "../../data/grid/T04_pswf.in",
+                                400, 480, 900, 400, 500, 247))
+		return 1;
+
+    double complex *BF = (double complex *)malloc(cfg.BF_size);
+    double complex *NMBF_NMBF = (double complex *)malloc(cfg.NMBF_NMBF_size);
+
+    struct recombine2d_worker worker;
+    fftw_plan BF_plan = recombine2d_bf_plan(&cfg, BF_batch, BF);
+    recombine2d_init_worker(&worker, &cfg, BF_batch, BF_plan);
+
+    int j0, j1; int ret = 0;
+    for (j0 = 0; j0 < nfacet; j0++) for(j1 = 0; j1 < nfacet; j1++) {
+
+        double complex *facet = read_dump(cfg.F_size, "../../data/grid/T04_facet%d%d.in", j0, j1);
+
+        recombine2d_pf0_ft0_omp(&worker, facet, BF);
+        int i0, i1;
+        for (i0 = 0; i0 < nsubgrid; i0++) {
+            recombine2d_es0_pf1_ft1(&worker, i0, BF);
+            for (i1 = 0; i1 < nsubgrid; i1++) {
+                recombine2d_es1(&worker, i0, i1, NMBF_NMBF);
+
+                double complex *ref = read_dump(cfg.NMBF_NMBF_size,
+                                                "../../data/grid/T04_nmbf%d%d%d%d.in",
+                                                i1, i0, j0, j1);
+                if (!ref) { ret = 1; break; }
+                int y;
+                for (y = 0; y < cfg.xM_yN_size * cfg.xM_yN_size; y++)
+                    assert(fabs(NMBF_NMBF[y] - ref[y]) < 2e-9);
+                free(ref);
+            }
+            if(ret) break;
+        }
+
+        free(facet);
+        if(ret) break;
+    }
+
+    recombine2d_free_worker(&worker);
+    recombine2d_free(&cfg);
+    free(BF); free(NMBF_NMBF);
+
+    return ret;
 }
 
 int T05_frac_coord()
@@ -380,6 +437,101 @@ int T05_frac_coord()
 
     return 0;
 }
+
+
+int T05_degrid() {
+
+    const int nfacet = 4;
+    const int nsubgrid = 4;
+    const int BF_batch = 16;
+
+    struct recombine2d_config cfg;
+    if (!recombine2d_set_config(&cfg, 512, "../../data/grid/T05_pswf.in",
+                                128, 140, 216, 128, 256, 136))
+		return 1;
+
+    double complex *BF = (double complex *)malloc(cfg.BF_size);
+    double complex *all_NMBF_NMBF = (double complex *)
+        malloc(cfg.NMBF_NMBF_size * nfacet * nfacet * nsubgrid * nsubgrid);
+
+    struct recombine2d_worker worker;
+    fftw_plan BF_plan = recombine2d_bf_plan(&cfg, BF_batch, BF);
+    recombine2d_init_worker(&worker, &cfg, BF_batch, BF_plan);
+
+    int j0, j1; int ret = 0;
+    for (j0 = 0; j0 < nfacet; j0++) for(j1 = 0; j1 < nfacet; j1++) {
+
+        double complex *facet = read_dump(cfg.F_size, "../../data/grid/T05_facet%d%d.in", j0, j1);
+
+        recombine2d_pf0_ft0_omp(&worker, facet, BF);
+        int i0, i1;
+        for (i0 = 0; i0 < nsubgrid; i0++) {
+            recombine2d_es0_pf1_ft1(&worker, i0, BF);
+            for (i1 = 0; i1 < nsubgrid; i1++) {
+                int ix = ((i0 * nsubgrid + i1) * nfacet + j0) * nfacet + j1;
+                double complex *nmbf_nmbf = all_NMBF_NMBF +
+                    ix * (cfg.NMBF_NMBF_size / sizeof(double complex));
+                recombine2d_es1(&worker, i0, i1, nmbf_nmbf);
+
+                double complex *ref = read_dump(cfg.NMBF_NMBF_size,
+                                                "../../data/grid/T05_nmbf%d%d%d%d.in",
+                                                i1, i0, j0, j1);
+                if (!ref) { ret = 1; break; }
+                int y;
+                for (y = 0; y < cfg.xM_yN_size * cfg.xM_yN_size; y++)
+                    assert(cabs(nmbf_nmbf[y] - ref[y]) / cabs(nmbf_nmbf[y]) < 3e-7);
+                free(ref);
+            }
+            if(ret) break;
+        }
+
+        free(facet);
+        if(ret) break;
+    }
+
+    recombine2d_free_worker(&worker);
+
+    double complex *subgrid = (double complex *)malloc(cfg.SG_size);
+    fftw_plan subgrid_plan = fftw_plan_dft_2d(cfg.xM_size, cfg.xM_size,
+                                              subgrid, subgrid, FFTW_BACKWARD, FFTW_MEASURE);
+
+    int i0, i1;
+    for (i0 = 0; i0 < nsubgrid; i0++) for (i1 = 0; i1 < nsubgrid; i1++) {
+
+        // Accumulate contributions to this subgrid
+        memset(subgrid, 0, cfg.SG_size);
+        int j0, j1;
+        for (j0 = 0; j0 < nfacet; j0++) for (j1 = 0; j1 < nfacet; j1++) {
+
+            int ix = ((i0 * nsubgrid + i1) * nfacet + j0) * nfacet + j1;
+            double complex *nmbf_nmbf = all_NMBF_NMBF +
+                ix * (cfg.NMBF_NMBF_size / sizeof(double complex));
+
+            const int xM_yB_size = cfg.xM_size * cfg.yB_size / cfg.image_size;
+            recombine2d_af0_af1(&cfg, subgrid, j0 * xM_yB_size, j1 * xM_yB_size, nmbf_nmbf);
+
+        }
+
+        // Perform Fourier transform
+        fftw_execute(subgrid_plan);
+
+        // Check result
+        double complex *approx_ref = read_dump(cfg.SG_size, "../../data/grid/T05_approx%d%d.in",
+                                               i1, i0);
+        int y;
+        for (y = 0; y < cfg.xM_size * cfg.xM_size; y++)
+            assert(cabs(subgrid[y] - approx_ref[y]) / cabs(subgrid[y]) < 2e-7);
+
+    }
+
+    fftw_free(subgrid_plan);
+
+    recombine2d_free(&cfg);
+    free(BF); free(all_NMBF_NMBF);
+
+    return ret;
+}
+
 int main(int argc, char *argv[]) {
 
     int count = 0,fails = 0;
@@ -395,9 +547,11 @@ int main(int argc, char *argv[]) {
 
     RUN_TEST(T01_generate_m);
     RUN_TEST(T02_extract_subgrid);
-    RUN_TEST(T03_add_subgrid);
+    RUN_TEST(T03_add_facet);
     RUN_TEST(T04_test_2d);
+    RUN_TEST(T04a_recombine2d);
     RUN_TEST(T05_frac_coord);
+    RUN_TEST(T05_degrid);
 #undef RUN_TEST
 
     printf(" *** %d/%d tests passed ***\n", count-fails, count);
