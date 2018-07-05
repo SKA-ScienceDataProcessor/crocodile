@@ -345,14 +345,59 @@ int T04_test_2d() {
     return 0;
 }
 
+int T05_frac_coord()
+{
+    double cs[] = {
+       -2.    , -1.9375, -1.875 , -1.8125, -1.75  , -1.6875, -1.625 , -1.5625, -1.5   ,
+       -1.4375, -1.375 , -1.3125, -1.25  , -1.1875, -1.125 , -1.0625, -1.    , -0.9375,
+       -0.875 , -0.8125, -0.75  , -0.6875, -0.625 , -0.5625, -0.5   , -0.4375, -0.375 ,
+       -0.3125, -0.25  , -0.1875, -0.125 , -0.0625,  0.    ,  0.0625,  0.125 ,  0.1875,
+       0.25   , 0.3125 , 0.375  , 0.4375 , 0.5    , 0.5625 , 0.625  , 0.6875 , 0.75   ,
+       0.8125 , 0.875  , 0.9375 , 1.     , 1.0625 , 1.125  , 1.1875 , 1.25   , 1.3125 ,
+       1.375  , 1.4375 , 1.5    , 1.5625 , 1.625  , 1.6875 , 1.75   , 1.8125 , 1.875  ,
+       1.9375
+    };
+    int cs_count = sizeof(cs) / sizeof(*cs);
+
+    // Note the 3/5 pattern with ref_fx due to 0.5 getting rounded
+    // towards even numbers (banker's rounding).
+    double ref_x[] = {
+        0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4 };
+    double ref_fx[] = {
+        0, 0, 0, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 3, 3, 3, 2, 2,
+        2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0,
+        0, 0, 0, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0 };
+
+    int i, x, fx;
+    int grid_size = 4, oversample = 4;
+    for (i = 0; i < cs_count; i++) {
+        frac_coord(grid_size, oversample, cs[i], &x, &fx);
+        assert(x == ref_x[i]);
+        assert(fx == ref_fx[i]);
+    }
+
+    return 0;
+}
 int main(int argc, char *argv[]) {
 
     int count = 0,fails = 0;
-#define RUN_TEST(t) count++; printf(#t"..."); fflush(stdout); if (!t()) puts(" ok"); else { puts("failed"); fails++; }
+
+#define RUN_TEST(t)                               \
+      count++;                                    \
+      printf(#t"...");                            \
+      fflush(stdout);                             \
+      if (!t())                                   \
+          puts(" ok");                            \
+      else                                        \
+          { puts("failed"); fails++; }
+
     RUN_TEST(T01_generate_m);
     RUN_TEST(T02_extract_subgrid);
     RUN_TEST(T03_add_subgrid);
     RUN_TEST(T04_test_2d);
+    RUN_TEST(T05_frac_coord);
 #undef RUN_TEST
 
     printf(" *** %d/%d tests passed ***\n", count-fails, count);
