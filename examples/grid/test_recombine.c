@@ -67,11 +67,11 @@ int T01_generate_m() {
     write_dump(m_trunc, yP_size * sizeof(double), "../../data/grid/T01a_m_trunc.out");
     int i;
     for (i = 0; i < xMxN_yP_size; i++)
-        assert(fabs(m_trunc[i] - m_trunc_ref[i]) < 1e-12);
+        assert(fabs(m_trunc[i] - m_trunc_ref[i]) < 1e-14);
     for (i = 0; i < yP_size; i++)
-        assert(fabs(m_trunc_a[i] - m_trunc_ref_a[i]) < 1e-12);
+        assert(fabs(m_trunc_a[i] - m_trunc_ref_a[i]) < 1e-14);
     for (i = 0; i < yP_size / 2; i++)
-        assert(fabs(m_trunc_b[i] - m_trunc_ref_b[i]) < 1e-12);
+        assert(fabs(m_trunc_b[i] - m_trunc_ref_b[i]) < 1e-14);
     free(pswf); free(m_trunc_ref); free(m_trunc); free(m_trunc_ref_a); free(m_trunc_a);
 
     return 0;
@@ -147,8 +147,8 @@ int T02_extract_subgrid() {
         // we alter intermediate array sizes. However, those would still lead
         // to the same sub-grids after reassembly, to the accuracy of the approximation!
         for (y = 0; y < xM_yN_size; y++) {
-            assert(fabs(nmbf[y] - nmbf_ref[y]) < 2e-10);
-            assert(fabs(nmbf_b[y] - nmbf_ref_b[y]) < 2e-10);
+            assert(fabs(nmbf[y] - nmbf_ref[y]) < 2e-11);
+            assert(fabs(nmbf_b[y] - nmbf_ref_b[y]) < 2e-11);
         }
         free(nmbf_ref); free(nmbf_ref_b);
     }
@@ -222,7 +222,7 @@ int T03_add_subgrid() {
         write_dump(subgrid, xM_size * sizeof(double complex), "../../data/grid/T03_approx%d.out", i);
         int y;
         for (y = 0; y < xM_size; y++) {
-            assert(fabs(subgrid[y] * xM_size - approx_ref[y]) < 2e-10);
+            assert(fabs(subgrid[y] * xM_size - approx_ref[y]) < 3e-11);
         }
 
         fftw_execute(subgrid_plan);
@@ -333,7 +333,7 @@ int T04_test_2d() {
                 if (!ref) { free(BF); free(NMBF); free(NMBF_BF); free(NMBF_NMBF); return 1; }
 
                 for (y = 0; y < xM_yN_size * xM_yN_size; y++)
-                    assert(fabs(NMBF_NMBF[y] - ref[y]) < 1.5e-8);
+                    assert(fabs(NMBF_NMBF[y] - ref[y]) < 2e-9);
                 free(ref);
             }
         }

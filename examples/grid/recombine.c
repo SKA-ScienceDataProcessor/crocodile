@@ -33,7 +33,7 @@ double *generate_m(int image_size, int yP_size, int yN_size, int xM_size, int xM
     double *m = (double *)malloc(sizeof(double) * (yP_size/2+1));
 
     // Fourier transform of rectangular function with size xM, truncated by PSWF
-    m[0] = (double)(xM_size) / image_size;
+    m[0] = pswf[0] * (double)(xM_size) / image_size;
     int i;
     for (i = 1; i < yN_size/2; i++) {
         double x = (double)(i) * xM_size / image_size;
