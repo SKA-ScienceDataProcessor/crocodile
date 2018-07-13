@@ -17,34 +17,28 @@
 #include <string.h>
 #include <omp.h>
 
-void *read_dump(int size, char *name, ...) {
+void *read_hdf5(int size, char *file, char *name, ...) {
+    hid_t f = H5Fopen(file, H5F_ACC_RDONLY, H5P_DEFAULT);
     va_list ap;
     va_start(ap, name);
-    char fname[256];
-    vsnprintf(fname, 256, name, ap);
-    int fd = open(fname, O_RDONLY, 0666);
+    char dname[256];
+    vsnprintf(dname, 256, name, ap);
+    hid_t dset = H5Dopen(f, dname, H5P_DEFAULT);
+    // Check element size
+    int elem_size = H5Tget_size(H5Dget_type(dset));
+    // Check overall size
+    int npoints = H5Sget_simple_extent_npoints(H5Dget_space(dset));
+    if (npoints * elem_size != size) {
+        printf("Dataset %s in %s has wrong extend (%d*%d != %d)",
+               dname, file, npoints, elem_size, size);
+        H5Dclose(dset); H5Fclose(f);
+        return NULL;
+    }
+    // Read data
     char *data = malloc(size);
-    if (read(fd, data, size) != size) {
-        fprintf(stderr, "failed to read enough data from %s!\n", fname);
-        return 0;
-    }
-    close(fd);
+    H5Dread(dset, H5Dget_type(dset), H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
+    H5Dclose(dset); H5Fclose(f);
     return data;
-}
-
-int write_dump(void *data, int size, char *name, ...) {
-    va_list ap;
-    va_start(ap, name);
-    char fname[256];
-    vsnprintf(fname, 256, name, ap);
-    int fd = open(fname, O_CREAT | O_TRUNC | O_WRONLY, 0666);
-    if (write(fd, data, size) != size) {
-        fprintf(stderr, "failed to write data to %s!\n", fname);
-        close(fd);
-        return 1;
-    }
-    close(fd);
-    return 0;
 }
 
 int T01_generate_m() {
@@ -445,10 +439,13 @@ int T05_degrid() {
     const int nsubgrid = 4;
     const int BF_batch = 16;
 
+    char *in_file = "../data/grid/T05_in.h5";
+
     struct recombine2d_config cfg;
     if (!recombine2d_set_config(&cfg, 512, "../data/grid/T05_pswf.in",
-                                128, 140, 216, 128, 256, 136))
-		return 1;
+                                128, 140, 216, 128, 256, 136)) {
+        return 1;
+    }
 
     double complex *BF = (double complex *)malloc(cfg.BF_size);
     double complex *all_NMBF_NMBF = (double complex *)
@@ -461,7 +458,7 @@ int T05_degrid() {
     int j0, j1; int ret = 0;
     for (j0 = 0; j0 < nfacet; j0++) for(j1 = 0; j1 < nfacet; j1++) {
 
-        double complex *facet = read_dump(cfg.F_size, "../data/grid/T05_facet%d%d.in", j0, j1);
+        double complex *facet = read_hdf5(cfg.F_size, in_file, "j0=%d/j1=%d/facet", j0, j1);
 
         recombine2d_pf0_ft0_omp(&worker, facet, BF);
         int i0, i1;
@@ -473,13 +470,13 @@ int T05_degrid() {
                     ix * (cfg.NMBF_NMBF_size / sizeof(double complex));
                 recombine2d_es1(&worker, i0, i1, nmbf_nmbf);
 
-                double complex *ref = read_dump(cfg.NMBF_NMBF_size,
-                                                "../data/grid/T05_nmbf%d%d%d%d.in",
-                                                i1, i0, j0, j1);
+                double complex *ref = read_hdf5(cfg.NMBF_NMBF_size, in_file,
+                                                "i0=%d/i1=%d/j0=%d/j1=%d/nmbf", i1, i0, j0, j1);
+
                 if (!ref) { ret = 1; break; }
                 int y;
                 for (y = 0; y < cfg.xM_yN_size * cfg.xM_yN_size; y++)
-                    assert(cabs(nmbf_nmbf[y] - ref[y]) / cabs(nmbf_nmbf[y]) < 3e-7);
+                    assert(cabs(nmbf_nmbf[y] - ref[y]) / cabs(nmbf_nmbf[y]) < 2e-7);
                 free(ref);
             }
             if(ret) break;
@@ -516,8 +513,8 @@ int T05_degrid() {
         fftw_execute(subgrid_plan);
 
         // Check result
-        double complex *approx_ref = read_dump(cfg.SG_size, "../data/grid/T05_approx%d%d.in",
-                                               i1, i0);
+        double complex *approx_ref = read_hdf5(cfg.SG_size, in_file,
+                                               "i0=%d/i1=%d/approx", i1, i0);
         int y;
         for (y = 0; y < cfg.xM_size * cfg.xM_size; y++)
             assert(cabs(subgrid[y] - approx_ref[y]) / cabs(subgrid[y]) < 2e-7);
