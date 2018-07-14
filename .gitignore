@@ -7,7 +7,12 @@
 /crocodile.egg-info
 
 *.pyc
+*.o
+*~
+\#*\#
+perf.data
 /build
+/_build
 
 /examples/**/*.rst
 /examples/**/*.html
@@ -18,6 +23,9 @@
 /examples/pyweave/docset.zip
 /examples/anna/simulated_data.txt
 
+/examples/**/*.h5
+/examples/**/*.grid
+
 /docs/build
 /docs/pyweave
 /docs/notebooks
@@ -26,9 +34,7 @@
 /docs/arl
 .ipynb_checkpoints
 
-out.fits
-dirty.fits
-psf.fits
+/*.fits
 
 /doc
 /.ipynb_checkpoints
