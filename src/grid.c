@@ -318,7 +318,7 @@ static uint64_t w_project_bin(double complex *subgrid, int subgrid_size, double 
 
 // How is this not in the standard library somewhere?
 // (stolen from Stack Overflow)
-inline double complex cipow(double complex base, int exp)
+inline static double complex cipow(double complex base, int exp)
 {
     double complex result = 1;
     if (exp < 0) return 1 / cipow(base, -exp);
@@ -333,7 +333,7 @@ inline double complex cipow(double complex base, int exp)
     return result;
 }
 
-inline int cipow_flops(int exp)
+inline static int cipow_flops(int exp)
 {
     // Popcount, basically. Yes, there are really clever algorithms for
     // this *and* a builtin, but we are more interested in clarity here.

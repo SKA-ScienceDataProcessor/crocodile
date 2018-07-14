@@ -1,6 +1,7 @@
 
 #include "grid.h"
 #include "recombine.h"
+#include "hdf5/serial/hdf5.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -16,30 +17,6 @@
 #include <stdarg.h>
 #include <string.h>
 #include <omp.h>
-
-void *read_hdf5(int size, char *file, char *name, ...) {
-    hid_t f = H5Fopen(file, H5F_ACC_RDONLY, H5P_DEFAULT);
-    va_list ap;
-    va_start(ap, name);
-    char dname[256];
-    vsnprintf(dname, 256, name, ap);
-    hid_t dset = H5Dopen(f, dname, H5P_DEFAULT);
-    // Check element size
-    int elem_size = H5Tget_size(H5Dget_type(dset));
-    // Check overall size
-    int npoints = H5Sget_simple_extent_npoints(H5Dget_space(dset));
-    if (npoints * elem_size != size) {
-        printf("Dataset %s in %s has wrong extend (%d*%d != %d)",
-               dname, file, npoints, elem_size, size);
-        H5Dclose(dset); H5Fclose(f);
-        return NULL;
-    }
-    // Read data
-    char *data = malloc(size);
-    H5Dread(dset, H5Dget_type(dset), H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
-    H5Dclose(dset); H5Fclose(f);
-    return data;
-}
 
 int T01_generate_m() {
 
@@ -352,7 +329,7 @@ int T04a_recombine2d() {
     struct recombine2d_config cfg;
     if (!recombine2d_set_config(&cfg, 2000, "../data/grid/T04_pswf.in",
                                 400, 480, 900, 400, 500, 247))
-		return 1;
+        return 1;
 
     double complex *BF = (double complex *)malloc(cfg.BF_size);
     double complex *NMBF_NMBF = (double complex *)malloc(cfg.NMBF_NMBF_size);
@@ -433,13 +410,19 @@ int T05_frac_coord()
 }
 
 
-int T05_degrid() {
+int T05_degrid()
+{
 
     const int nfacet = 4;
     const int nsubgrid = 4;
     const int BF_batch = 16;
 
     char *in_file = "../data/grid/T05_in.h5";
+
+    struct sep_kernel_data kern;
+    if (load_sep_kern(in_file, &kern)) {
+        return 1;
+    }
 
     struct recombine2d_config cfg;
     if (!recombine2d_set_config(&cfg, 512, "../data/grid/T05_pswf.in",
@@ -475,8 +458,11 @@ int T05_degrid() {
 
                 if (!ref) { ret = 1; break; }
                 int y;
-                for (y = 0; y < cfg.xM_yN_size * cfg.xM_yN_size; y++)
-                    assert(cabs(nmbf_nmbf[y] - ref[y]) / cabs(nmbf_nmbf[y]) < 2e-7);
+                for (y = 0; y < cfg.xM_yN_size * cfg.xM_yN_size; y++) {
+                    double scale = cabs(nmbf_nmbf[y]);
+                    if (scale < 1e-6) scale = 1e-6;
+                    assert(cabs(nmbf_nmbf[y] - ref[y]) / scale < 3.5e-7);
+                }
                 free(ref);
             }
             if(ret) break;
@@ -518,7 +504,33 @@ int T05_degrid() {
         int y;
         for (y = 0; y < cfg.xM_size * cfg.xM_size; y++)
             assert(cabs(subgrid[y] - approx_ref[y]) / cabs(subgrid[y]) < 2e-7);
+        free(approx_ref);
 
+        // Read visibilities, set up baseline data
+        int nvis = get_npoints_hdf5(in_file, "i0=%d/i1=%d/vis", i1, i0);
+        double *uvw = read_hdf5(3 * sizeof(double) * nvis, in_file,
+                                "i0=%d/i1=%d/uvw_subgrid", i1, i0);
+        int vis_size = sizeof(double complex) * nvis;
+        double complex *vis = read_hdf5(vis_size, in_file,
+                                        "i0=%d/i1=%d/vis", i1, i0);
+
+        struct bl_data bl;
+        bl.antenna1 = bl.antenna2 = 0;
+        bl.time_count = nvis;
+        bl.freq_count = 1;
+        double freq[] = { c }; // 1 m wavelength
+        bl.freq = freq;
+        bl.uvw_m = uvw;
+        bl.vis = (double complex *)calloc(1, vis_size);
+
+        // Degrid and compare
+        fft_shift(subgrid, cfg.xM_size);
+        degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, 0, 0, &bl, 0, nvis, 0, 1, &kern);
+
+        for (y = 0; y < nvis; y++) {
+            assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
+        }
+        free(uvw); free(vis);
     }
 
     fftw_free(subgrid_plan);
