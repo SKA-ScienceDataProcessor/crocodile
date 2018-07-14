@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <hdf5.h>
 #include <stdbool.h>
+#include <stdarg.h>
 
 #include "grid.h"
 
@@ -468,7 +469,8 @@ bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
 }
 
 
-int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern) {
+int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern)
+{
 
     // Open file
     hid_t sepkern_f = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -477,41 +479,29 @@ int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern) {
         return 1;
     }
 
-    // Access group
-    hid_t sepkern_g = H5Gopen(sepkern_f, "sepkern", H5P_DEFAULT);
-    if (sepkern_g < 0) {
-        fprintf(stderr, "Could not open 'sepkern' group in separable kernel file %s!\n", filename);
-        H5Fclose(sepkern_f);
-        return 1;
-    }
-
-
     // Open the data set
-    hid_t dset = H5Dopen(sepkern_g, "sepkern", H5P_DEFAULT);
+    hid_t dset = H5Dopen(sepkern_f, "sepkern/kern", H5P_DEFAULT);
     if (dset < 0) {
         fprintf(stderr, "'sepkern/kern' dataset could not be opened from file %s!\n", filename);
-        H5Gclose(sepkern_g);
         H5Fclose(sepkern_f);
         return 1;
     }
 
     // Check that it has the expected format
     hsize_t dims[4];
-    if (H5Sget_simple_extent_ndims(H5Dget_space(dset)) != 4 ||
+    if (H5Sget_simple_extent_ndims(H5Dget_space(dset)) != 2 ||
         H5Tget_size(H5Dget_type(dset)) != sizeof(double) ||
-        H5Sget_simple_extent_dims(H5Dget_space(dset), dims, NULL) < 0 ||
-        dims[0] != dims[1] || dims[2] != dims[3]) {
+        H5Sget_simple_extent_dims(H5Dget_space(dset), dims, NULL) < 0) {
 
         fprintf(stderr, "'sepkern/kern' dataset has wrong format in file %s!\n", filename);
         H5Dclose(dset);
-        H5Gclose(sepkern_g);
         H5Fclose(sepkern_f);
         return 1;
     }
 
     // Read dimensions
     sepkern->oversampling = dims[0];
-    sepkern->size = dims[2];
+    sepkern->size = dims[1];
 
     // Read kernel
     hsize_t total_size = sepkern->oversampling * sepkern->oversampling *
@@ -523,10 +513,9 @@ int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern) {
 
     // Close file
     H5Dclose(dset);
-    H5Gclose(sepkern_g);
     H5Fclose(sepkern_f);
 
-    printf("seperable kernel: %d (%d oversampled)",
+    printf("seperable kernel: support %d (x%d oversampled)\n",
            sepkern->size, sepkern->oversampling);
 
     return 0;
@@ -813,3 +802,44 @@ int load_akern(const char *filename, double theta, struct a_kernel_data *akern) 
 
     return 0;
 }
+
+// Quick routines for extracting single files (test support)
+
+int get_npoints_hdf5(char *file, char *name, ...)
+{
+    hid_t f = H5Fopen(file, H5F_ACC_RDONLY, H5P_DEFAULT);
+    va_list ap;
+    va_start(ap, name);
+    char dname[256];
+    vsnprintf(dname, 256, name, ap);
+    hid_t dset = H5Dopen(f, dname, H5P_DEFAULT);
+    int npoints = H5Sget_simple_extent_npoints(H5Dget_space(dset));
+    H5Dclose(dset); H5Fclose(f);
+    return npoints;
+}
+
+void *read_hdf5(int size, char *file, char *name, ...)
+{
+    hid_t f = H5Fopen(file, H5F_ACC_RDONLY, H5P_DEFAULT);
+    va_list ap;
+    va_start(ap, name);
+    char dname[256];
+    vsnprintf(dname, 256, name, ap);
+    hid_t dset = H5Dopen(f, dname, H5P_DEFAULT);
+    // Check element size
+    int elem_size = H5Tget_size(H5Dget_type(dset));
+    // Check overall size
+    int npoints = H5Sget_simple_extent_npoints(H5Dget_space(dset));
+    if (npoints * elem_size != size) {
+        printf("Dataset %s in %s has wrong extend (%d*%d != %d)",
+               dname, file, npoints, elem_size, size);
+        H5Dclose(dset); H5Fclose(f);
+        return NULL;
+    }
+    // Read data
+    char *data = malloc(size);
+    H5Dread(dset, H5Dget_type(dset), H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
+    H5Dclose(dset); H5Fclose(f);
+    return data;
+}
+

@@ -49,21 +49,11 @@ struct ant_config
 static const double c = 299792458.0;
 
 static inline double uvw_m_to_l(double u, double f) {
-	return u * f / c;
+    return u * f / c;
 }
 static inline double uvw_l_to_m(double u, double f) {
-	return u / f * c;
+    return u / f * c;
 }
-
-// Subgrid/facet configurations
-struct subgrid
-{
-	double mid_u, mid_v;
-};
-struct facet
-{
-	double mid_l, mid_m;
-};
 
 // Separable kernel data
 struct sep_kernel_data
@@ -130,6 +120,7 @@ int load_wkern(const char *filename, double theta,
                struct w_kernel_data *wkern);
 int load_akern(const char *filename, double theta,
                struct a_kernel_data *akern);
+int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern);
 
 void frac_coord(int grid_size, int oversample,
                 double u, int *x, int *fx);
@@ -137,6 +128,10 @@ void weight(unsigned int *wgrid, int grid_size, double theta,
             struct vis_data *vis);
 uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
                      struct vis_data *vis);
+uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
+                        double d_u, double d_v,
+                        struct bl_data *bl, int time0, int time1, int freq0, int freq1,
+                        struct sep_kernel_data *kernel);
 uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
                           struct vis_data *vis, struct w_kernel_data *wkern);
 uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
@@ -164,5 +159,7 @@ void print_perf_counters(struct perf_counters *counter,
 
 int run_tests();
 void *read_dump(int size, char *name, ...);
+int get_npoints_hdf5(char *file, char *name, ...);
+void *read_hdf5(int size, char *file, char *name, ...);
 
 #endif // GRID_H

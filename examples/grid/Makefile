@@ -1,11 +1,14 @@
 
-CFLAGS += -g -Wall -fopenmp -ffast-math
+HDF5_INCLUDE=/usr/include/hdf5/serial
+HDF5_LIB=/usr/lib/x86_64-linux-gnu/hdf5/serial
+
+CFLAGS += -g -Wall -fopenmp -ffast-math -I$(HDF5_INCLUDE)
 LDFLAGS += -fopenmp -g
-LDLIBS = -L$(subst :, -L,$(LIBRARY_PATH)) -lm -lhdf5 -lfftw3
+LDLIBS = -L$(HDF5_LIB) -lm -lhdf5 -lfftw3
 CC = mpicc
 
 GRID_OBJS = main.o grid.o hdf5.o perf.o
-TEST_RECOMBINE_OBJS = recombine.o test_recombine.o grid.o
+TEST_RECOMBINE_OBJS = recombine.o test_recombine.o grid.o hdf5.o
 BENCH_RECOMBINE_OBJS = recombine.o bench_recombine.o
 CONFIG_OBJS = test_config.o hdf5.o
 
