@@ -272,10 +272,10 @@ int T04_test_2d() {
         }
         fftw_execute(BF_plan);
 
-        for (i0 = 0; i0 < nsubgrid; i0++) {
+        for (i1 = 0; i1 < nsubgrid; i1++) {
 
             for (x = 0; x < yB_size; x++) {
-                extract_subgrid(yP_size, xM_yP_size, xMxN_yP_size, xM_yN_size, i0*xA_yP_size, m_trunc, Fn,
+                extract_subgrid(yP_size, xM_yP_size, xMxN_yP_size, xM_yN_size, i1*xA_yP_size, m_trunc, Fn,
                                 BF+x*BF_stride0, BF_stride1,
                                 MBF, MBF_plan,
                                 NMBF+x*NMBF_stride0, NMBF_stride1);
@@ -288,10 +288,10 @@ int T04_test_2d() {
             }
             fftw_execute(NMBF_BF_plan);
 
-            for (i1 = 0; i1 < nsubgrid; i1++) {
+            for (i0 = 0; i0 < nsubgrid; i0++) {
 
                 for (y = 0; y < xM_yN_size; y++) {
-                    extract_subgrid(yP_size, xM_yP_size, xMxN_yP_size, xM_yN_size, i1*xA_yP_size, m_trunc, Fn,
+                    extract_subgrid(yP_size, xM_yP_size, xMxN_yP_size, xM_yN_size, i0*xA_yP_size, m_trunc, Fn,
                                     NMBF_BF+y*NMBF_BF_stride1, NMBF_BF_stride0,
                                     MBF, MBF_plan,
                                     NMBF_NMBF+y*NMBF_NMBF_stride1, NMBF_NMBF_stride0);
@@ -301,7 +301,7 @@ int T04_test_2d() {
                            "../../data/grid/T04_nmbf%d%d%d%d.out", i0, i1, j0, j1);
                 double complex *ref = read_dump(sizeof(double complex) * xM_yN_size * xM_yN_size,
                                                 "../../data/grid/T04_nmbf%d%d%d%d.in",
-                                                i1, i0, j0, j1);
+                                                i0, i1, j0, j1);
                 if (!ref) { free(BF); free(NMBF); free(NMBF_BF); free(NMBF_NMBF); return 1; }
 
                 for (y = 0; y < xM_yN_size * xM_yN_size; y++)
@@ -343,16 +343,16 @@ int T04a_recombine2d() {
 
         double complex *facet = read_dump(cfg.F_size, "../../data/grid/T04_facet%d%d.in", j0, j1);
 
-        recombine2d_pf0_ft0_omp(&worker, facet, BF);
+        recombine2d_pf1_ft1_omp(&worker, facet, BF);
         int i0, i1;
-        for (i0 = 0; i0 < nsubgrid; i0++) {
-            recombine2d_es0_pf1_ft1(&worker, i0, BF);
-            for (i1 = 0; i1 < nsubgrid; i1++) {
-                recombine2d_es1(&worker, i0, i1, NMBF_NMBF);
+        for (i1 = 0; i1 < nsubgrid; i1++) {
+            recombine2d_es1_pf0_ft0(&worker, i1, BF);
+            for (i0 = 0; i0 < nsubgrid; i0++) {
+                recombine2d_es0(&worker, i0, i1, NMBF_NMBF);
 
                 double complex *ref = read_dump(cfg.NMBF_NMBF_size,
                                                 "../../data/grid/T04_nmbf%d%d%d%d.in",
-                                                i1, i0, j0, j1);
+                                                i0, i1, j0, j1);
                 if (!ref) { ret = 1; break; }
                 int y;
                 for (y = 0; y < cfg.xM_yN_size * cfg.xM_yN_size; y++)
@@ -443,18 +443,18 @@ int T05_degrid()
 
         double complex *facet = read_hdf5(cfg.F_size, in_file, "j0=%d/j1=%d/facet", j0, j1);
 
-        recombine2d_pf0_ft0_omp(&worker, facet, BF);
+        recombine2d_pf1_ft1_omp(&worker, facet, BF);
         int i0, i1;
-        for (i0 = 0; i0 < nsubgrid; i0++) {
-            recombine2d_es0_pf1_ft1(&worker, i0, BF);
-            for (i1 = 0; i1 < nsubgrid; i1++) {
-                int ix = ((i0 * nsubgrid + i1) * nfacet + j0) * nfacet + j1;
+        for (i1 = 0; i1 < nsubgrid; i1++) {
+            recombine2d_es1_pf0_ft0(&worker, i1, BF);
+            for (i0 = 0; i0 < nsubgrid; i0++) {
+                int ix = ((i1 * nsubgrid + i0) * nfacet + j0) * nfacet + j1;
                 double complex *nmbf_nmbf = all_NMBF_NMBF +
                     ix * (cfg.NMBF_NMBF_size / sizeof(double complex));
-                recombine2d_es1(&worker, i0, i1, nmbf_nmbf);
+                recombine2d_es0(&worker, i0, i1, nmbf_nmbf);
 
                 double complex *ref = read_hdf5(cfg.NMBF_NMBF_size, in_file,
-                                                "i0=%d/i1=%d/j0=%d/j1=%d/nmbf", i1, i0, j0, j1);
+                                                "i0=%d/i1=%d/j0=%d/j1=%d/nmbf", i0, i1, j0, j1);
 
                 if (!ref) { ret = 1; break; }
                 int y;
@@ -486,7 +486,7 @@ int T05_degrid()
         int j0, j1;
         for (j0 = 0; j0 < nfacet; j0++) for (j1 = 0; j1 < nfacet; j1++) {
 
-            int ix = ((i0 * nsubgrid + i1) * nfacet + j0) * nfacet + j1;
+            int ix = ((i1 * nsubgrid + i0) * nfacet + j0) * nfacet + j1;
             double complex *nmbf_nmbf = all_NMBF_NMBF +
                 ix * (cfg.NMBF_NMBF_size / sizeof(double complex));
 
@@ -500,19 +500,21 @@ int T05_degrid()
 
         // Check result
         double complex *approx_ref = read_hdf5(cfg.SG_size, in_file,
-                                               "i0=%d/i1=%d/approx", i1, i0);
+                                               "i0=%d/i1=%d/approx", i0, i1);
         int y;
         for (y = 0; y < cfg.xM_size * cfg.xM_size; y++)
             assert(cabs(subgrid[y] - approx_ref[y]) / cabs(subgrid[y]) < 2e-7);
         free(approx_ref);
 
         // Read visibilities, set up baseline data
-        int nvis = get_npoints_hdf5(in_file, "i0=%d/i1=%d/vis", i1, i0);
+        int nvis = get_npoints_hdf5(in_file, "i0=%d/i1=%d/vis", i0, i1);
         double *uvw = read_hdf5(3 * sizeof(double) * nvis, in_file,
-                                "i0=%d/i1=%d/uvw_subgrid", i1, i0);
+                                "i0=%d/i1=%d/uvw", i0, i1);
+        double *uvw_sg = read_hdf5(3 * sizeof(double) * nvis, in_file,
+								   "i0=%d/i1=%d/uvw_subgrid", i0, i1);
         int vis_size = sizeof(double complex) * nvis;
         double complex *vis = read_hdf5(vis_size, in_file,
-                                        "i0=%d/i1=%d/vis", i1, i0);
+                                        "i0=%d/i1=%d/vis", i0, i1);
 
         struct bl_data bl;
         bl.antenna1 = bl.antenna2 = 0;
@@ -520,17 +522,30 @@ int T05_degrid()
         bl.freq_count = 1;
         double freq[] = { c }; // 1 m wavelength
         bl.freq = freq;
-        bl.uvw_m = uvw;
         bl.vis = (double complex *)calloc(1, vis_size);
 
         // Degrid and compare
         fft_shift(subgrid, cfg.xM_size);
-        degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, 0, 0, &bl, 0, nvis, 0, 1, &kern);
-
+        bl.uvw_m = uvw_sg;
+		degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, 0, 0, &bl, 0, nvis, 0, 1, &kern);
         for (y = 0; y < nvis; y++) {
             assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
         }
-        free(uvw); free(vis);
+
+		// Degrid with shift and compare - doesn't quite work for
+		// subgrids overlapping the border
+		double dv = (double)((i0 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
+		double du = (double)((i1 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
+		if (fabs(dv) < 0.5 && fabs(du) < 0.5) {
+			bl.uvw_m = uvw;
+			degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
+					   &bl, 0, nvis, 0, 1, &kern);
+
+			for (y = 0; y < nvis; y++) {
+				assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
+			}
+		}
+        free(uvw); free(uvw_sg); free(vis);
     }
 
     fftw_free(subgrid_plan);

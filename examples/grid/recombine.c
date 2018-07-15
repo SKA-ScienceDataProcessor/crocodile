@@ -282,7 +282,7 @@ void recombine2d_free_worker(struct recombine2d_worker *worker)
     free(worker->NMBF_BF);
 }
 
-void recombine2d_pf0_ft0_omp(struct recombine2d_worker *worker,
+void recombine2d_pf1_ft1_omp(struct recombine2d_worker *worker,
                              complex double *F,
                              complex double *BF)
 {
@@ -309,8 +309,8 @@ void recombine2d_pf0_ft0_omp(struct recombine2d_worker *worker,
 
 }
 
-void recombine2d_es0_pf1_ft1(struct recombine2d_worker *worker,
-                             int i0, complex double *BF)
+void recombine2d_es1_pf0_ft0(struct recombine2d_worker *worker,
+                             int i1, complex double *BF)
 {
     struct recombine2d_config *cfg = worker->cfg;
     int x,y;
@@ -319,7 +319,7 @@ void recombine2d_es0_pf1_ft1(struct recombine2d_worker *worker,
     double start = get_time_ns();
     for (x = 0; x < cfg->yB_size; x++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
-                        i0*cfg->xA_yP_size, cfg->m, cfg->Fn,
+                        i1*cfg->xA_yP_size, cfg->m, cfg->Fn,
                         BF+x*cfg->BF_stride0, cfg->BF_stride1,
                         worker->MBF, worker->MBF_plan,
                         worker->NMBF+x*cfg->NMBF_stride0, cfg->NMBF_stride1);
@@ -342,7 +342,7 @@ void recombine2d_es0_pf1_ft1(struct recombine2d_worker *worker,
 
 }
 
-void recombine2d_es1(struct recombine2d_worker *worker,
+void recombine2d_es0(struct recombine2d_worker *worker,
                      int i0, int i1, double complex *NMBF_NMBF)
 {
     struct recombine2d_config *cfg = worker->cfg;
@@ -352,7 +352,7 @@ void recombine2d_es1(struct recombine2d_worker *worker,
     double start = get_time_ns();
     for (y = 0; y < cfg->xM_yN_size; y++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
-                        i1*cfg->xA_yP_size, cfg->m, cfg->Fn,
+                        i0*cfg->xA_yP_size, cfg->m, cfg->Fn,
                         worker->NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0,
                         worker->MBF, worker->MBF_plan,
                         NMBF_NMBF+y*cfg->NMBF_NMBF_stride1, cfg->NMBF_NMBF_stride0);
@@ -361,7 +361,7 @@ void recombine2d_es1(struct recombine2d_worker *worker,
 
     // Check stream contents if requested
     if (cfg->stream_check) {
-        double complex *NMBF_NMBF_check = read_dump(cfg->NMBF_NMBF_size, cfg->stream_check, i1, i0);
+        double complex *NMBF_NMBF_check = read_dump(cfg->NMBF_NMBF_size, cfg->stream_check, i0, i1);
         if (NMBF_NMBF_check) {
             int x0; int errs = 0;
             for (x0 = 0; x0 < cfg->xM_yN_size * cfg->xM_yN_size; x0++) {
