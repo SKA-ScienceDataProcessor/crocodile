@@ -94,11 +94,22 @@ void recombine2d_init_worker(struct recombine2d_worker *worker, struct recombine
                              int BF_batch, fftw_plan BF_plan);
 void recombine2d_free_worker(struct recombine2d_worker *worker);
 
-void recombine2d_pf0_ft0_omp(struct recombine2d_worker *worker,
+// Recombination steps:
+//
+// 1. Prepare facet, Fourier Transform (axis 1)
+// 2. Extract subgrid (axis 1) + Prepare facet, Fourier Transform (axis 0)
+// 3. Extract subgrid (axis 0)
+//
+// Note that axes are numbered in numpy order - so axis 0 is Y and
+// axis 1 is X. This is why we start with axis 1 for locality. Step 1
+// increases the amount of data that has to be held, step 2 typically
+// reduces, step 3 reduces further.
+void recombine2d_pf1_ft1_omp(struct recombine2d_worker *worker,
                              complex double *F, complex double *BF);
-void recombine2d_es0_pf1_ft1(struct recombine2d_worker *worker,
+// ^^ OpenMP "parallel for" inside, good to call with multiple threads
+void recombine2d_es1_pf0_ft0(struct recombine2d_worker *worker,
                              int i0, complex double *BF);
-void recombine2d_es1(struct recombine2d_worker *worker,
+void recombine2d_es0(struct recombine2d_worker *worker,
                      int i0, int i1, double complex *NMBF_NMBF);
 
 void recombine2d_af0_af1(struct recombine2d_config *cfg,
