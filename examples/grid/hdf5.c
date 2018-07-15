@@ -1,14 +1,15 @@
 
+#include "grid.h"
+
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
 #include <float.h>
 #include <assert.h>
 #include <hdf5.h>
-#include <stdbool.h>
 #include <stdarg.h>
-
-#include "grid.h"
+#include <fcntl.h>
+#include <unistd.h>
 
 // Complex data type
 hid_t dtype_cpx;
@@ -805,6 +806,36 @@ int load_akern(const char *filename, double theta, struct a_kernel_data *akern) 
 
 // Quick routines for extracting single files (test support)
 
+void *read_dump(int size, char *name, ...) {
+    va_list ap;
+    va_start(ap, name);
+    char fname[256];
+    vsnprintf(fname, 256, name, ap);
+    int fd = open(fname, O_RDONLY, 0666);
+    char *data = malloc(size);
+    if (read(fd, data, size) != size) {
+        fprintf(stderr, "failed to read enough data from %s!\n", fname);
+        return 0;
+    }
+    close(fd);
+    return data;
+}
+
+int write_dump(void *data, int size, char *name, ...) {
+    va_list ap;
+    va_start(ap, name);
+    char fname[256];
+    vsnprintf(fname, 256, name, ap);
+    int fd = open(fname, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+    if (write(fd, data, size) != size) {
+        fprintf(stderr, "failed to write data to %s!\n", fname);
+        close(fd);
+        return 1;
+    }
+    close(fd);
+    return 0;
+}
+
 int get_npoints_hdf5(char *file, char *name, ...)
 {
     hid_t f = H5Fopen(file, H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -842,4 +873,3 @@ void *read_hdf5(int size, char *file, char *name, ...)
     H5Dclose(dset); H5Fclose(f);
     return data;
 }
-
