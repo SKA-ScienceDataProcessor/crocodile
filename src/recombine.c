@@ -3,47 +3,9 @@
 
 #include <stdlib.h>
 #include <assert.h>
-#include <complex.h>
 #include <math.h>
-#include <fftw3.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <time.h>
 #include <omp.h>
-
-void *read_dump(int size, char *name, ...) {
-    va_list ap;
-    va_start(ap, name);
-    char fname[256];
-    vsnprintf(fname, 256, name, ap);
-    int fd = open(fname, O_RDONLY, 0666);
-    char *data = malloc(size);
-    if (read(fd, data, size) != size) {
-        fprintf(stderr, "failed to read enough data from %s!\n", fname);
-        return 0;
-    }
-    close(fd);
-    return data;
-}
-
-int write_dump(void *data, int size, char *name, ...) {
-    va_list ap;
-    va_start(ap, name);
-    char fname[256];
-    vsnprintf(fname, 256, name, ap);
-    int fd = open(fname, O_CREAT | O_TRUNC | O_WRONLY, 0666);
-    if (write(fd, data, size) != size) {
-        fprintf(stderr, "failed to write data to %s!\n", fname);
-        close(fd);
-        return 1;
-    }
-    close(fd);
-    return 0;
-}
 
 double *generate_Fb(int yN_size, int yB_size, double *pswf) {
     double *Fb = (double *)malloc(sizeof(double) * yB_size);
