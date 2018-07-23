@@ -35,8 +35,13 @@ struct recombine2d_config {
     char *stream_check; // Check stream contents (debugging)
     double stream_check_threshold;
     char *stream_dump; // File dump I/O (debugging)
+    // Fundamental dimensions
+    double lam; // size of entire grid in wavelenghts
+    double theta; // size of image in radians
+    int image_size; // total image size (lam * theta)
+    int subgrid_spacing; // valid sub-grid mid-points (Nx)
+    int facet_spacing; // valid facet mid-points (Ny)
     // Sizings
-    int image_size; // total image size
     int yB_size; // facet size
     int yN_size; //  ", padded to avoid inaccurate regions of PSWF
     int yP_size; //  ", further padded to minimal size of accurate "m" mask multiplication
@@ -61,7 +66,8 @@ struct recombine2d_config {
 };
 
 bool recombine2d_set_config(struct recombine2d_config *cfg,
-                            int image_size, char *pswf_file,
+                            double theta, int image_size, int subgrid_spacing,
+                            char *pswf_file,
                             int yB_size, int yN_size, int yP_size,
                             int xA_size, int xM_size, int xMxN_yP_size);
 void recombine2d_free(struct recombine2d_config *cfg);
