@@ -20,12 +20,13 @@
 
 bool set_default_recombine2d_config(struct recombine2d_config *cfg)
 {
-    return recombine2d_set_config(cfg, 98304, "../data/grid/pswf5.00-33728.in", 24576, 33728, 49152, 1405, 1536, 282);
+    return recombine2d_set_config(cfg, 98304, 98304, 1536, "../data/grid/pswf5.00-33728.in",
+								  24576, 33728, 49152, 1405, 1536, 282);
 }
 
 bool set_test_recombine2d_config(struct recombine2d_config *cfg, int rank)
 {
-    if (!recombine2d_set_config(cfg, 2000, "../data/grid/T04_pswf.in", 400, 480, 900, 400, 500, 247))
+    if (!recombine2d_set_config(cfg, 2000, 2000, 5, "../data/grid/T04_pswf.in", 400, 480, 900, 400, 500, 247))
 		return false;
 	// Use data from test suite. Note that not all "nmbf" reference
 	// files exist in the repository, so this will show a few errors.
@@ -41,7 +42,7 @@ bool set_test_recombine2d_config(struct recombine2d_config *cfg, int rank)
 
 bool recombine2d_set_test5_config(struct recombine2d_config *cfg, int rank)
 {
-    if (!recombine2d_set_config(cfg, 512, "../data/grid/T05_pswf.in", 128, 140, 216, 128, 256, 136))
+    if (!recombine2d_set_config(cfg, 512, 512, 256, "../data/grid/T05_pswf.in", 128, 140, 216, 128, 256, 136))
 		return false;
 	// Use data from test suite. Note that not all "nmbf" reference
 	// files exist in the repository, so this will show a few errors.
@@ -100,7 +101,7 @@ void init_producer_stream(struct recombine2d_config *cfg, struct producer_stream
     // Create buffers, initialise worker
     prod->NMBF_NMBF_queue =
         (double complex *)malloc(cfg->NMBF_NMBF_size * send_queue_length);
-    recombine2d_init_worker(&prod->worker, cfg, BF_batch, BF_plan);
+    recombine2d_init_worker(&prod->worker, cfg, BF_batch, BF_plan, FFTW_MEASURE);
 
     // Initialise statistics
     prod->bytes_sent = 0;
@@ -168,7 +169,7 @@ void producer_ES0_PF1_FT1_ES1(struct recombine2d_config *cfg, struct producer_st
 
     // Extract subgrids along first axis, then prepare and Fourier
     // transform along second axis
-    recombine2d_es0_pf1_ft1(&prod->worker, i0, BF);
+    recombine2d_es1_pf0_ft0(&prod->worker, i0, BF);
     int i1;
     const int nsubgrid = cfg->image_size / cfg->xA_size;
     for (i1 = 0; i1 < nsubgrid; i1++) {
@@ -191,7 +192,7 @@ void producer_ES0_PF1_FT1_ES1(struct recombine2d_config *cfg, struct producer_st
 
         // Extract subgrids along second axis
         double complex *NMBF_NMBF = prod->NMBF_NMBF_queue + indx * cfg->xM_yN_size * cfg->xM_yN_size;
-        recombine2d_es1(&prod->worker, i0, i1, NMBF_NMBF);
+        recombine2d_es0(&prod->worker, i0, i1, NMBF_NMBF);
 
         // Spread data evenly across streamers
         if (prod->streamer_count > 0) {
@@ -298,7 +299,7 @@ int producer(struct recombine2d_config *cfg, int streamer_count, int *streamer_r
 
             // Do global planning
             printf("Planning...\n"); double planning_start = get_time_ns();
-            fftw_plan BF_plan = recombine2d_bf_plan(cfg, BF_batch, BF);
+            fftw_plan BF_plan = recombine2d_bf_plan(cfg, BF_batch, BF, FFTW_MEASURE);
 
             // Create producers (which involves planning, and therefore is not parallelised)
             producers = (struct producer_stream *) malloc(sizeof(struct producer_stream) * producer_count);
@@ -316,7 +317,7 @@ int producer(struct recombine2d_config *cfg, int streamer_count, int *streamer_r
         struct producer_stream *prod = producers + omp_get_thread_num();
 
         // Do first stage preparation and Fourier Transform
-        recombine2d_pf0_ft0_omp(&prod->worker, F, BF);
+        recombine2d_pf1_ft1_omp(&prod->worker, F, BF);
         // TODO: Generate facet on the fly
 
         int i0;

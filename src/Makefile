@@ -9,7 +9,7 @@ CC = mpicc
 
 GRID_OBJS = main.o grid.o hdf5.o perf.o
 TEST_RECOMBINE_OBJS = recombine.o test_recombine.o grid.o hdf5.o
-BENCH_RECOMBINE_OBJS = recombine.o bench_recombine.o
+BENCH_RECOMBINE_OBJS = recombine.o bench_recombine.o hdf5.o
 CONFIG_OBJS = test_config.o hdf5.o
 
 grid : $(GRID_OBJS)
@@ -19,4 +19,4 @@ test_config : $(CONFIG_OBJS)
 
 .PHONY: clean
 clean :
-	rm -f $(GRID_OBJS) $(RECOMBINE_OBJS) $(CONFIG_OBJS) grid test_recombine recombine test_config
+	rm -f $(GRID_OBJS) $(BENCH_RECOMBINE_OBJS) $(TEST_RECOMBINE_OBJS) $(CONFIG_OBJS) grid test_recombine recombine test_config
