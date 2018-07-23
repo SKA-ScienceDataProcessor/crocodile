@@ -1,5 +1,6 @@
 
 #include "recombine.h"
+#include "grid.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -125,7 +126,8 @@ void add_facet(int xM_size, int xM_yN_size, int facet_offset,
 
 
 bool recombine2d_set_config(struct recombine2d_config *cfg,
-                            int image_size, char *pswf_file,
+                            double theta, int image_size, int subgrid_spacing,
+                            char *pswf_file,
                             int yB_size, int yN_size, int yP_size,
                             int xA_size, int xM_size, int xMxN_yP_size) {
 
@@ -134,13 +136,25 @@ bool recombine2d_set_config(struct recombine2d_config *cfg,
     cfg->stream_check_threshold = 0;
     cfg->stream_dump = NULL;
 
+    cfg->lam = image_size / theta;
+    cfg->theta = theta;
     cfg->image_size = image_size;
+    cfg->subgrid_spacing = subgrid_spacing;
+    assert(image_size % subgrid_spacing == 0);
+    cfg->facet_spacing = image_size / subgrid_spacing;
+
     cfg->yB_size    = yB_size;
     cfg->yN_size    = yN_size;
     cfg->yP_size    = yP_size;
     cfg->xA_size    = xA_size;
     cfg->xM_size    = xM_size;
     cfg->xMxN_yP_size = xMxN_yP_size;
+
+    // Check some side conditions...
+    assert(image_size % xM_size == 0);
+    int xM_step = image_size / xM_size;
+    assert(cfg->facet_spacing % xM_step == 0);
+    assert((cfg->facet_spacing * cfg->yP_size) % image_size == 0);
 
     cfg->xA_yP_size = cfg->xA_size * cfg->yP_size / cfg->image_size;
     assert((cfg->xM_size * cfg->yP_size) % cfg->image_size == 0);

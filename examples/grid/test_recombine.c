@@ -327,7 +327,8 @@ int T04a_recombine2d() {
     const int BF_batch = 16;
 
     struct recombine2d_config cfg;
-    if (!recombine2d_set_config(&cfg, 2000, "../../data/grid/T04_pswf.in",
+    if (!recombine2d_set_config(&cfg, 2000, 2000, 100,
+                                "../../data/grid/T04_pswf.in",
                                 400, 480, 900, 400, 500, 247))
         return 1;
 
@@ -425,7 +426,8 @@ int T05_degrid()
     }
 
     struct recombine2d_config cfg;
-    if (!recombine2d_set_config(&cfg, 512, "../../data/grid/T05_pswf.in",
+    if (!recombine2d_set_config(&cfg, 512, 512, 8,
+                                "../../data/grid/T05_pswf.in",
                                 128, 140, 216, 128, 256, 136)) {
         return 1;
     }
