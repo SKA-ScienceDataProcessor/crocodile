@@ -26,7 +26,8 @@ bool set_default_recombine2d_config(struct recombine2d_config *cfg)
 
 bool set_test_recombine2d_config(struct recombine2d_config *cfg, int rank)
 {
-    if (!recombine2d_set_config(cfg, 2000, 2000, 5, "../data/grid/T04_pswf.in", 400, 480, 900, 400, 500, 247))
+    if (!recombine2d_set_config(cfg, 2000, 2000, 100, "../data/grid/T04_pswf.in",
+                                400, 480, 900, 400, 500, 247))
 		return false;
 	// Use data from test suite. Note that not all "nmbf" reference
 	// files exist in the repository, so this will show a few errors.
@@ -164,15 +165,15 @@ double get_time_ns()
 }
 
 void producer_ES0_PF1_FT1_ES1(struct recombine2d_config *cfg, struct producer_stream *prod,
-                              int i0, complex double *BF)
+                              int i1, complex double *BF)
 {
 
     // Extract subgrids along first axis, then prepare and Fourier
     // transform along second axis
-    recombine2d_es1_pf0_ft0(&prod->worker, i0, BF);
-    int i1;
+    recombine2d_es1_pf0_ft0(&prod->worker, i1, BF);
+    int i0;
     const int nsubgrid = cfg->image_size / cfg->xA_size;
-    for (i1 = 0; i1 < nsubgrid; i1++) {
+    for (i0 = 0; i0 < nsubgrid; i0++) {
 
         // Select send slot if running in distributed mode
         int indx; MPI_Status status;
@@ -320,10 +321,10 @@ int producer(struct recombine2d_config *cfg, int streamer_count, int *streamer_r
         recombine2d_pf1_ft1_omp(&prod->worker, F, BF);
         // TODO: Generate facet on the fly
 
-        int i0;
+        int i1;
         #pragma omp for schedule(dynamic)
-        for (i0 = 0; i0 < cfg->image_size / cfg->xA_size; i0++) {
-            producer_ES0_PF1_FT1_ES1(cfg, prod, i0, BF);
+        for (i1 = 0; i1 < cfg->image_size / cfg->xA_size; i1++) {
+            producer_ES0_PF1_FT1_ES1(cfg, prod, i1, BF);
 
         }
 
