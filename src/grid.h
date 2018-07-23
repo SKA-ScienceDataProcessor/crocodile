@@ -8,6 +8,7 @@
 #include <fftw3.h>
 #include <stdbool.h>
 #include <hdf5.h>
+#include <assert.h>
 
 // Visibility data
 struct bl_data
@@ -46,6 +47,31 @@ struct ant_config
     double *xyz; // x geographical east, z celestial north
 };
 
+// Specification of a visibility set
+struct vis_spec
+{
+    struct ant_config *cfg;
+    double dec; // declination (radian)
+    double time_start; int time_count; int time_chunk; double time_step; // hour angle (radian)
+    double freq_start; int freq_count; int freq_chunk; double freq_step; // (Hz)
+};
+
+struct work
+{
+    int iu, iv;
+    double d_u, d_v;
+    int nvis;
+};
+
+struct work_assignment
+{
+    double lam; // size of grid in wavelenghts
+    double theta; // size of image in radians
+    double xA; // size of sub-grid (fraction of lam)
+    int nworkers; // number of workers
+    int max_work; // work list length per worker
+    struct work *work; // work list
+};
 static const double c = 299792458.0;
 
 static inline double uvw_m_to_l(double u, double f) {
@@ -54,6 +80,40 @@ static inline double uvw_m_to_l(double u, double f) {
 static inline double uvw_l_to_m(double u, double f) {
     return u / f * c;
 }
+
+// Convert hour angle / declination to UVW and back for a certain baseline
+static inline void ha_to_uvw(struct ant_config *cfg, int a1, int a2,
+                             double ha, double dec,
+                             double *uvw_m)
+{
+    double x = cfg->xyz[3*a2+0] - cfg->xyz[3*a1+0];
+    double y = cfg->xyz[3*a2+1] - cfg->xyz[3*a1+1];
+    double z = cfg->xyz[3*a2+2] - cfg->xyz[3*a1+2];
+    // Rotate around z axis (hour angle)
+    uvw_m[0] = x * cos(ha) - y * sin(ha);
+    double v0 = x * sin(ha) + y * cos(ha);
+    // Rotate around x axis (declination)
+    uvw_m[2] = z * sin(dec) - v0 * cos(dec);
+    uvw_m[1] = z * cos(dec) + v0 * sin(dec);
+}
+
+static inline double uv_to_ha(struct ant_config *cfg, int a1, int a2,
+                              double dec, double *uv_m)
+{
+    double x = cfg->xyz[3*a2+0] - cfg->xyz[3*a1+0];
+    double y = cfg->xyz[3*a2+1] - cfg->xyz[3*a1+1];
+    double z = cfg->xyz[3*a2+2] - cfg->xyz[3*a1+2];
+
+    assert(dec != 0 && y*y + x*x != 0);
+    double v0  = (uv_m[1] - z*cos(dec)) / sin(dec);
+    return asin((x*v0 - y*uv_m[0]) / (y*y + x*x));
+}
+
+void bl_bounding_box(struct ant_config *cfg, struct bl_data *bl, double dec,
+                     double *uvw_l_min, double *uvw_l_max);
+void bl_bounding_box_int(struct ant_config *cfg, struct bl_data *bl,
+                         double dec, double lam, double xA,
+                         int *sg_min, int *sg_max);
 
 // Separable kernel data
 struct sep_kernel_data

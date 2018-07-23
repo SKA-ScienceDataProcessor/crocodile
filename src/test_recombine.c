@@ -557,6 +557,31 @@ int T05_degrid()
     return ret;
 }
 
+int T05_config()
+{
+    struct ant_config cfg;
+    load_ant_config("../data/grid/VLAA_north_cfg.h5", &cfg);
+
+    int bl_count = 2 * (cfg.ant_count * (cfg.ant_count - 1) / 2);
+    double *uvw_ref = read_dump(sizeof(double) * bl_count * 3, "../data/grid/T05_uvw.in");
+
+    const double ha = 10 * M_PI / 180;
+    const double ha_step = M_PI / 24 / 180;
+    const double dec = 80 * M_PI / 180;
+    int j = 0;
+    for (int t = 0; t < 2; t++)
+        for (int a1 = 0; a1 < cfg.ant_count; a1++)
+            for (int a2 = a1+1; a2 < cfg.ant_count; a2++) {
+                double uvw[3];
+                ha_to_uvw(&cfg, a1, a2, ha + t * ha_step, dec, uvw);
+                assert(fabs(uvw[0] - uvw_ref[j++] < 1e-11));
+                assert(fabs(uvw[1] - uvw_ref[j++] < 1e-11));
+                assert(fabs(uvw[2] - uvw_ref[j++] < 1e-11));
+            }
+
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
 
     int count = 0,fails = 0;
@@ -577,6 +602,8 @@ int main(int argc, char *argv[]) {
     RUN_TEST(T04a_recombine2d);
     RUN_TEST(T05_frac_coord);
     RUN_TEST(T05_degrid);
+    RUN_TEST(T05_config);
+
 #undef RUN_TEST
 
     printf(" *** %d/%d tests passed ***\n", count-fails, count);
