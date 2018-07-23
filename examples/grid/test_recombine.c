@@ -1,7 +1,7 @@
 
 #include "grid.h"
 #include "recombine.h"
-#include "hdf5/serial/hdf5.h"
+#include "hdf5.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -570,10 +570,10 @@ int T05_config()
     const double ha = 10 * M_PI / 180;
     const double ha_step = M_PI / 24 / 180;
     const double dec = 80 * M_PI / 180;
-    int j = 0;
-    for (int t = 0; t < 2; t++)
-        for (int a1 = 0; a1 < cfg.ant_count; a1++)
-            for (int a2 = a1+1; a2 < cfg.ant_count; a2++) {
+    int j = 0, t, a1, a2;
+    for (t = 0; t < 2; t++)
+        for (a1 = 0; a1 < cfg.ant_count; a1++)
+            for (a2 = a1+1; a2 < cfg.ant_count; a2++) {
                 double uvw[3];
                 ha_to_uvw(&cfg, a1, a2, ha + t * ha_step, dec, uvw);
                 assert(fabs(uvw[0] - uvw_ref[j++] < 1e-11));

@@ -357,7 +357,7 @@ void recombine2d_es0(struct recombine2d_worker *worker,
 
     // Similarly, write dump on request
     if (cfg->stream_dump) {
-        write_dump(NMBF_NMBF, cfg->NMBF_NMBF_size, cfg->stream_dump, i1, i0);
+        write_dump(NMBF_NMBF, cfg->NMBF_NMBF_size, cfg->stream_dump, i0, i1);
     }
 
 }
