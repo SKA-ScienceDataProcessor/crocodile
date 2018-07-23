@@ -530,24 +530,24 @@ int T05_degrid()
         // Degrid and compare
         fft_shift(subgrid, cfg.xM_size);
         bl.uvw_m = uvw_sg;
-		degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, 0, 0, &bl, 0, nvis, 0, 1, &kern);
+        degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, 0, 0, &bl, 0, nvis, 0, 1, &kern);
         for (y = 0; y < nvis; y++) {
             assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
         }
 
-		// Degrid with shift and compare - doesn't quite work for
-		// subgrids overlapping the border
-		double dv = (double)((i0 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
-		double du = (double)((i1 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
-		if (fabs(dv) < 0.5 && fabs(du) < 0.5) {
-			bl.uvw_m = uvw;
-			degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
-					   &bl, 0, nvis, 0, 1, &kern);
+        // Degrid with shift and compare - doesn't quite work for
+        // subgrids overlapping the border
+        double dv = (double)((i0 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
+        double du = (double)((i1 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
+        if (fabs(dv) < 0.5 && fabs(du) < 0.5) {
+            bl.uvw_m = uvw;
+            degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
+                       &bl, 0, nvis, 0, 1, &kern);
 
-			for (y = 0; y < nvis; y++) {
-				assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
-			}
-		}
+            for (y = 0; y < nvis; y++) {
+                assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
+            }
+        }
         free(uvw); free(uvw_sg); free(vis);
     }
 
