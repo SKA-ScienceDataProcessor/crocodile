@@ -89,9 +89,10 @@ struct recombine2d_worker {
 
 };
 
-fftw_plan recombine2d_bf_plan(struct recombine2d_config *cfg, int BF_batch, double complex *BF);
+fftw_plan recombine2d_bf_plan(struct recombine2d_config *cfg, int BF_batch,
+                              double complex *BF, unsigned planner_flags);
 void recombine2d_init_worker(struct recombine2d_worker *worker, struct recombine2d_config *cfg,
-                             int BF_batch, fftw_plan BF_plan);
+                             int BF_batch, fftw_plan BF_plan, unsigned planner_flags);
 void recombine2d_free_worker(struct recombine2d_worker *worker);
 
 // Recombination steps:

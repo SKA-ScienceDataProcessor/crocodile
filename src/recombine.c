@@ -199,16 +199,16 @@ static double get_time_ns()
 }
 
 fftw_plan recombine2d_bf_plan(struct recombine2d_config *cfg, int BF_batch,
-                              double complex *BF)
+                              double complex *BF, unsigned planner_flags)
 {
     return fftw_plan_many_dft(1, &cfg->yP_size, BF_batch,
                               BF, 0, cfg->BF_stride1, cfg->BF_stride0,
                               BF, 0, cfg->BF_stride1, cfg->BF_stride0,
-                              FFTW_BACKWARD, FFTW_MEASURE);
+                              FFTW_BACKWARD, planner_flags);
 }
 
 void recombine2d_init_worker(struct recombine2d_worker *worker, struct recombine2d_config *cfg,
-                             int BF_batch, fftw_plan BF_plan)
+                             int BF_batch, fftw_plan BF_plan, unsigned planner_flags)
 {
 
     // Set configuration
@@ -222,11 +222,11 @@ void recombine2d_init_worker(struct recombine2d_worker *worker, struct recombine
     // Plan Fourier Transforms
     worker->BF_batch = BF_batch; worker->BF_plan = BF_plan;
     worker->MBF_plan = fftw_plan_dft_1d(cfg->xM_yP_size, worker->MBF, worker->MBF,
-                                      FFTW_FORWARD, FFTW_MEASURE);
+                                      FFTW_FORWARD, planner_flags);
     worker->NMBF_BF_plan = fftw_plan_many_dft(1, &cfg->yP_size, cfg->xM_yN_size,
                                             worker->NMBF_BF, 0, cfg->NMBF_BF_stride0, cfg->NMBF_BF_stride1,
                                             worker->NMBF_BF, 0, cfg->NMBF_BF_stride0, cfg->NMBF_BF_stride1,
-                                            FFTW_BACKWARD, FFTW_MEASURE);
+                                            FFTW_BACKWARD, planner_flags);
     // Initialise statistics
     worker->pf1_time = worker->es1_time = worker->ft1_time =
         worker->pf2_time = worker->es2_time = worker->ft2_time = 0;
