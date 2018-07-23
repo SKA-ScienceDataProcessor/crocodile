@@ -335,8 +335,8 @@ int T04a_recombine2d() {
     double complex *NMBF_NMBF = (double complex *)malloc(cfg.NMBF_NMBF_size);
 
     struct recombine2d_worker worker;
-    fftw_plan BF_plan = recombine2d_bf_plan(&cfg, BF_batch, BF);
-    recombine2d_init_worker(&worker, &cfg, BF_batch, BF_plan);
+    fftw_plan BF_plan = recombine2d_bf_plan(&cfg, BF_batch, BF, FFTW_ESTIMATE);
+    recombine2d_init_worker(&worker, &cfg, BF_batch, BF_plan, FFTW_ESTIMATE);
 
     int j0, j1; int ret = 0;
     for (j0 = 0; j0 < nfacet; j0++) for(j1 = 0; j1 < nfacet; j1++) {
@@ -435,8 +435,8 @@ int T05_degrid()
         malloc(cfg.NMBF_NMBF_size * nfacet * nfacet * nsubgrid * nsubgrid);
 
     struct recombine2d_worker worker;
-    fftw_plan BF_plan = recombine2d_bf_plan(&cfg, BF_batch, BF);
-    recombine2d_init_worker(&worker, &cfg, BF_batch, BF_plan);
+    fftw_plan BF_plan = recombine2d_bf_plan(&cfg, BF_batch, BF, FFTW_ESTIMATE);
+    recombine2d_init_worker(&worker, &cfg, BF_batch, BF_plan, FFTW_ESTIMATE);
 
     int j0, j1; int ret = 0;
     for (j0 = 0; j0 < nfacet; j0++) for(j1 = 0; j1 < nfacet; j1++) {
@@ -502,8 +502,9 @@ int T05_degrid()
         double complex *approx_ref = read_hdf5(cfg.SG_size, in_file,
                                                "i0=%d/i1=%d/approx", i0, i1);
         int y;
-        for (y = 0; y < cfg.xM_size * cfg.xM_size; y++)
+        for (y = 0; y < cfg.xM_size * cfg.xM_size; y++) {
             assert(cabs(subgrid[y] - approx_ref[y]) / cabs(subgrid[y]) < 2e-7);
+        }
         free(approx_ref);
 
         // Read visibilities, set up baseline data
@@ -511,7 +512,7 @@ int T05_degrid()
         double *uvw = read_hdf5(3 * sizeof(double) * nvis, in_file,
                                 "i0=%d/i1=%d/uvw", i0, i1);
         double *uvw_sg = read_hdf5(3 * sizeof(double) * nvis, in_file,
-								   "i0=%d/i1=%d/uvw_subgrid", i0, i1);
+                                   "i0=%d/i1=%d/uvw_subgrid", i0, i1);
         int vis_size = sizeof(double complex) * nvis;
         double complex *vis = read_hdf5(vis_size, in_file,
                                         "i0=%d/i1=%d/vis", i0, i1);
