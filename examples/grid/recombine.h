@@ -30,17 +30,16 @@ void add_facet(int xM_size, int xM_yN_size, int facet_offset,
 
 // Configuration for 2D recombination
 struct recombine2d_config {
+
     // Local configuration (might depend on rank)
     char *facet_file; // Facet (debugging)
     char *stream_check; // Check stream contents (debugging)
     double stream_check_threshold;
     char *stream_dump; // File dump I/O (debugging)
-    // Fundamental dimensions
-    double lam; // size of entire grid in wavelenghts
-    double theta; // size of image in radians
+
     int image_size; // total image size (lam * theta)
-    int subgrid_spacing; // valid sub-grid mid-points (Nx)
-    int facet_spacing; // valid facet mid-points (Ny)
+    int subgrid_spacing; // valid sub-grid mid-points (Nx) in cells
+    int facet_spacing; // valid facet mid-points (Ny) in pixels
     // Sizings
     int yB_size; // facet size
     int yN_size; //  ", padded to avoid inaccurate regions of PSWF
@@ -49,7 +48,7 @@ struct recombine2d_config {
     int xM_size; //  ", padded to prevent PSWF convolution from aliasing
     int xMxN_yP_size; // subgrid/facet size, with extra padding for "m" to allow us to work within yP limit
     // Derived sizes
-    int xA_yP_size; // Distance between facets (TODO: replace by more flexible facets)
+    int xA_yP_size; // Distance between subgrids (TODO: replace by more flexible subgrids)
     int xM_yP_size; // Buffer size for "m" mask multiplication
     int xM_yN_size; // Size of subgrid/facet pieces to exchange
     // Derived data layout (F, b*F, m(b*F), n*m(b*F) respectively for two axes)
@@ -66,7 +65,7 @@ struct recombine2d_config {
 };
 
 bool recombine2d_set_config(struct recombine2d_config *cfg,
-                            double theta, int image_size, int subgrid_spacing,
+                            int image_size, int subgrid_spacing,
                             char *pswf_file,
                             int yB_size, int yN_size, int yP_size,
                             int xA_size, int xM_size, int xMxN_yP_size);

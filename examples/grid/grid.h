@@ -47,31 +47,6 @@ struct ant_config
     double *xyz; // x geographical east, z celestial north
 };
 
-// Specification of a visibility set
-struct vis_spec
-{
-    struct ant_config *cfg;
-    double dec; // declination (radian)
-    double time_start; int time_count; int time_chunk; double time_step; // hour angle (radian)
-    double freq_start; int freq_count; int freq_chunk; double freq_step; // (Hz)
-};
-
-struct work
-{
-    int iu, iv;
-    double d_u, d_v;
-    int nvis;
-};
-
-struct work_assignment
-{
-    double lam; // size of grid in wavelenghts
-    double theta; // size of image in radians
-    double xA; // size of sub-grid (fraction of lam)
-    int nworkers; // number of workers
-    int max_work; // work list length per worker
-    struct work *work; // work list
-};
 static const double c = 299792458.0;
 
 static inline double uvw_m_to_l(double u, double f) {
@@ -108,12 +83,6 @@ static inline double uv_to_ha(struct ant_config *cfg, int a1, int a2,
     double v0  = (uv_m[1] - z*cos(dec)) / sin(dec);
     return asin((x*v0 - y*uv_m[0]) / (y*y + x*x));
 }
-
-void bl_bounding_box(struct ant_config *cfg, struct bl_data *bl, double dec,
-                     double *uvw_l_min, double *uvw_l_max);
-void bl_bounding_box_int(struct ant_config *cfg, struct bl_data *bl,
-                         double dec, double lam, double xA,
-                         int *sg_min, int *sg_max);
 
 // Separable kernel data
 struct sep_kernel_data
@@ -173,6 +142,16 @@ void init_dtype_cpx();
 int load_ant_config(const char *filename, struct ant_config *ant);
 bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
                       struct bl_data *bl);
+bool read_vis_chunk(hid_t vis_group,
+                    struct bl_data *bl,
+                    int time_chunk_size, int freq_chunk_size,
+                    int time_chunk_ix, int freq_chunk_ix,
+                    double complex *buf);
+bool write_vis_chunk(hid_t vis_group,
+                    struct bl_data *bl,
+                    int time_chunk_size, int freq_chunk_size,
+                    int time_chunk_ix, int freq_chunk_ix,
+                     double complex *buf);
 
 int load_vis(const char *filename, struct vis_data *vis,
              double min_len, double max_len);

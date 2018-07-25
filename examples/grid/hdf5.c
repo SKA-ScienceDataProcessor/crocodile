@@ -469,6 +469,67 @@ bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
     return true;
 }
 
+static bool _rw_vis_chunk(hid_t vis_group,
+                          struct bl_data *bl,
+                          int time_chunk_size, int freq_chunk_size,
+                          int time_chunk_ix, int freq_chunk_ix,
+                          bool write, double complex *buf)
+{
+
+    // Generate name
+    char name[128];
+    sprintf(name, "%d/%d/vis", bl->antenna1, bl->antenna2);
+
+    // Open dataset
+    hid_t vis_ds = H5Dopen2(vis_group, name, H5P_DEFAULT);
+
+    // Create memory and file data spaces
+    hsize_t chunk_dims[] = { time_chunk_size, freq_chunk_size, 1 };
+    hid_t chunk_dsp = H5Screate_simple(3, chunk_dims, chunk_dims);
+    hsize_t vis_dims[] = { bl->time_count, bl->freq_count, 1 };
+    hid_t vis_dsp = H5Screate_simple(3, vis_dims, vis_dims);
+
+    // Select chunk (as one "block")
+    hsize_t start[] = { time_chunk_ix * time_chunk_size,
+                        freq_chunk_ix * freq_chunk_size, 0 };
+    hsize_t stride[] = { 1,1,1 };
+    assert(H5Sselect_hyperslab(vis_dsp, H5S_SELECT_SET, start, stride, stride, chunk_dims) >= 0);
+
+    // Read or write chunk
+    bool success = false;
+    if (write) {
+        success = H5Dwrite(vis_ds, dtype_cpx, chunk_dsp, vis_dsp, H5P_DEFAULT, buf) >= 0;
+        assert(success);
+    } else {
+        success = H5Dread(vis_ds, dtype_cpx, chunk_dsp, vis_dsp, H5P_DEFAULT, buf) >= 0;
+        assert(success);
+    }
+
+    H5Sclose(chunk_dsp);
+    H5Sclose(vis_dsp);
+    H5Dclose(vis_ds);
+    return success;
+}
+
+bool read_vis_chunk(hid_t vis_group,
+                    struct bl_data *bl,
+                    int time_chunk_size, int freq_chunk_size,
+                    int time_chunk_ix, int freq_chunk_ix,
+                    double complex *buf)
+{
+    return _rw_vis_chunk(vis_group, bl, time_chunk_size, freq_chunk_size, time_chunk_ix, freq_chunk_ix,
+                         false, buf);
+}
+
+bool write_vis_chunk(hid_t vis_group,
+                    struct bl_data *bl,
+                    int time_chunk_size, int freq_chunk_size,
+                    int time_chunk_ix, int freq_chunk_ix,
+                    double complex *buf)
+{
+    return _rw_vis_chunk(vis_group, bl, time_chunk_size, freq_chunk_size, time_chunk_ix, freq_chunk_ix,
+                         true, buf);
+}
 
 int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern)
 {

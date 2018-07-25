@@ -20,13 +20,13 @@
 
 bool set_default_recombine2d_config(struct recombine2d_config *cfg)
 {
-    return recombine2d_set_config(cfg, 98304, 98304, 1536, "../../data/grid/pswf5.00-33728.in",
+    return recombine2d_set_config(cfg, 98304, 1536, "../../data/grid/pswf5.00-33728.in",
 								  24576, 33728, 49152, 1405, 1536, 282);
 }
 
 bool set_test_recombine2d_config(struct recombine2d_config *cfg, int rank)
 {
-    if (!recombine2d_set_config(cfg, 2000, 2000, 100, "../../data/grid/T04_pswf.in",
+    if (!recombine2d_set_config(cfg, 2000, 100, "../../data/grid/T04_pswf.in",
                                 400, 480, 900, 400, 500, 247))
 		return false;
 	// Use data from test suite. Note that not all "nmbf" reference
@@ -43,11 +43,9 @@ bool set_test_recombine2d_config(struct recombine2d_config *cfg, int rank)
 
 bool recombine2d_set_test5_config(struct recombine2d_config *cfg, int rank)
 {
-    if (!recombine2d_set_config(cfg, 512, 512, 256, "../../data/grid/T05_pswf.in", 128, 140, 216, 128, 256, 136))
+    if (!recombine2d_set_config(cfg, 512, 8, "../../data/grid/T05_pswf.in",
+                                128, 140, 216, 128, 256, 136))
 		return false;
-	// Use data from test suite. Note that not all "nmbf" reference
-	// files exist in the repository, so this will show a few errors.
-	// As long as no value mismatches occur this is fine
     char file[256];
     sprintf(file, "../../data/grid/T05_facet%d%d.in", rank / 3, rank % 3);
     cfg->facet_file = strdup(file);
@@ -429,8 +427,8 @@ int main(int argc, char *argv[]) {
     // Make imaging configuration
     struct recombine2d_config config;
     //if (!set_default_recombine2d_config(&config)) {
-    if (!set_test_recombine2d_config(&config, rank)) {
-        //if (!recombine2d_set_test5_config(&config, rank)) {
+    //if (!set_test_recombine2d_config(&config, rank)) {
+    if (!recombine2d_set_test5_config(&config, rank)) {
         fprintf(stderr, "Could not set imaging configuration!\n");
         return 1;
     }
