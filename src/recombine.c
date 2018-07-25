@@ -126,7 +126,7 @@ void add_facet(int xM_size, int xM_yN_size, int facet_offset,
 
 
 bool recombine2d_set_config(struct recombine2d_config *cfg,
-                            double theta, int image_size, int subgrid_spacing,
+                            int image_size, int subgrid_spacing,
                             char *pswf_file,
                             int yB_size, int yN_size, int yP_size,
                             int xA_size, int xM_size, int xMxN_yP_size) {
@@ -136,8 +136,6 @@ bool recombine2d_set_config(struct recombine2d_config *cfg,
     cfg->stream_check_threshold = 0;
     cfg->stream_dump = NULL;
 
-    cfg->lam = image_size / theta;
-    cfg->theta = theta;
     cfg->image_size = image_size;
     cfg->subgrid_spacing = subgrid_spacing;
     assert(image_size % subgrid_spacing == 0);
@@ -155,6 +153,11 @@ bool recombine2d_set_config(struct recombine2d_config *cfg,
     int xM_step = image_size / xM_size;
     assert(cfg->facet_spacing % xM_step == 0);
     assert((cfg->facet_spacing * cfg->yP_size) % image_size == 0);
+
+    // Only needed if we want to tile facets+subgrids without overlaps.
+    // Could be generalised once we get smarter about this.
+    assert(cfg->yB_size % cfg->facet_spacing == 0);
+    assert(cfg->xA_size % cfg->subgrid_spacing == 0);
 
     cfg->xA_yP_size = cfg->xA_size * cfg->yP_size / cfg->image_size;
     assert((cfg->xM_size * cfg->yP_size) % cfg->image_size == 0);
@@ -292,10 +295,11 @@ void recombine2d_es1_pf0_ft0(struct recombine2d_worker *worker,
     int x,y;
 
     // Extract subgrids along first axis
+    int subgrid_offset = i1*cfg->xA_yP_size;
     double start = get_time_ns();
     for (x = 0; x < cfg->yB_size; x++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
-                        i1*cfg->xA_yP_size, cfg->m, cfg->Fn,
+                        subgrid_offset, cfg->m, cfg->Fn,
                         BF+x*cfg->BF_stride0, cfg->BF_stride1,
                         worker->MBF, worker->MBF_plan,
                         worker->NMBF+x*cfg->NMBF_stride0, cfg->NMBF_stride1);
@@ -325,10 +329,11 @@ void recombine2d_es0(struct recombine2d_worker *worker,
     int y;
 
     // Extract subgrids along second axis
+    int subgrid_offset = i0*cfg->xA_yP_size;
     double start = get_time_ns();
     for (y = 0; y < cfg->xM_yN_size; y++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
-                        i0*cfg->xA_yP_size, cfg->m, cfg->Fn,
+                        subgrid_offset, cfg->m, cfg->Fn,
                         worker->NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0,
                         worker->MBF, worker->MBF_plan,
                         NMBF_NMBF+y*cfg->NMBF_NMBF_stride1, cfg->NMBF_NMBF_stride0);

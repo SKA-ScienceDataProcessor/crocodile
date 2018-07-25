@@ -327,7 +327,7 @@ int T04a_recombine2d() {
     const int BF_batch = 16;
 
     struct recombine2d_config cfg;
-    if (!recombine2d_set_config(&cfg, 2000, 2000, 100,
+    if (!recombine2d_set_config(&cfg, 2000, 100,
                                 "../data/grid/T04_pswf.in",
                                 400, 480, 900, 400, 500, 247))
         return 1;
@@ -410,6 +410,12 @@ int T05_frac_coord()
     return 0;
 }
 
+double get_time_ns()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
+}
 
 int T05_degrid()
 {
@@ -426,7 +432,7 @@ int T05_degrid()
     }
 
     struct recombine2d_config cfg;
-    if (!recombine2d_set_config(&cfg, 512, 512, 8,
+    if (!recombine2d_set_config(&cfg, 512, 8,
                                 "../data/grid/T05_pswf.in",
                                 128, 140, 216, 128, 256, 136)) {
         return 1;
@@ -504,9 +510,8 @@ int T05_degrid()
         double complex *approx_ref = read_hdf5(cfg.SG_size, in_file,
                                                "i0=%d/i1=%d/approx", i0, i1);
         int y;
-        for (y = 0; y < cfg.xM_size * cfg.xM_size; y++) {
-            assert(cabs(subgrid[y] - approx_ref[y]) / cabs(subgrid[y]) < 2e-7);
-        }
+        for (y = 0; y < cfg.xM_size * cfg.xM_size; y++)
+            assert(cabs(subgrid[y] - approx_ref[y]) / cabs(subgrid[y]) < 2.11e-7);
         free(approx_ref);
 
         // Read visibilities, set up baseline data
@@ -541,8 +546,12 @@ int T05_degrid()
         double du = (double)((i1 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
         if (fabs(dv) < 0.5 && fabs(du) < 0.5) {
             bl.uvw_m = uvw;
-            degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
-                       &bl, 0, nvis, 0, 1, &kern);
+            double t0 = get_time_ns();
+            for (int i = 0; i < 1000; i++) {
+                degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
+                               &bl, 0, nvis, 0, 1, &kern);
+            }
+            printf("%f\n", 16 * nvis * 1000 / (get_time_ns() - t0));
 
             for (y = 0; y < nvis; y++) {
                 assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
