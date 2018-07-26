@@ -7,6 +7,7 @@
 #include <math.h>
 #include <time.h>
 #include <omp.h>
+#include <sys/stat.h>
 
 double *generate_Fb(int yN_size, int yB_size, double *pswf) {
     double *Fb = (double *)malloc(sizeof(double) * yB_size);
@@ -159,7 +160,7 @@ bool recombine2d_set_config(struct recombine2d_config *cfg,
     assert(cfg->yB_size % cfg->facet_spacing == 0);
     assert(cfg->xA_size % cfg->subgrid_spacing == 0);
 
-    cfg->xA_yP_size = cfg->xA_size * cfg->yP_size / cfg->image_size;
+    cfg->yP_spacing = cfg->facet_spacing * cfg->yP_size / image_size;
     assert((cfg->xM_size * cfg->yP_size) % cfg->image_size == 0);
     cfg->xM_yP_size = cfg->xM_size * cfg->yP_size / cfg->image_size;
     assert((cfg->xM_size * cfg->yN_size) % cfg->image_size == 0);
@@ -288,14 +289,66 @@ void recombine2d_pf1_ft1_omp(struct recombine2d_worker *worker,
 
 }
 
+void recombine2d_pf1_ft1_es1_omp(struct recombine2d_worker *worker,
+                                 int subgrid_off1,
+                                 complex double *F,
+                                 complex double *NMBF)
+{
+    struct recombine2d_config *cfg = worker->cfg;
+    int y;
+
+    int BF_chunk_size = sizeof(double complex) * cfg->yP_size * worker->BF_batch;
+    double complex *BF_chunk = malloc(BF_chunk_size);
+    assert(cfg->BF_stride1 == 1);
+    assert(cfg->NMBF_BF_stride0 = 1);
+    assert(cfg->BF_stride0 == cfg->NMBF_BF_stride1);
+    assert(subgrid_off1 % cfg->subgrid_spacing == 0);
+
+#pragma omp for schedule(dynamic)
+    for (y = 0; y < cfg->yB_size; y+=worker->BF_batch) {
+
+        // Facet preparation along first axis
+        double start = get_time_ns();
+        int y2;
+        for (y2 = y; y2 < y+worker->BF_batch && y2 < cfg->yB_size; y2++) {
+            prepare_facet(cfg->yB_size, cfg->yP_size, cfg->Fb,
+                          F+y2*cfg->F_stride0, cfg->F_stride1,
+                          BF_chunk+(y2-y)*cfg->BF_stride0, cfg->BF_stride1);
+        }
+        worker->pf1_time += get_time_ns() - start;
+
+        // Fourier transform along first axis
+        start = get_time_ns();
+        fftw_execute_dft(worker->BF_plan, BF_chunk, BF_chunk);
+        worker->ft1_time += get_time_ns() - start;
+
+        // Extract subgrids along first axis
+        assert(subgrid_off1 % cfg->facet_spacing == 0);
+        int subgrid_offset = subgrid_off1 / cfg->facet_spacing * cfg->yP_spacing;
+        start = get_time_ns();
+        for (y2 = y; y2 < y+worker->BF_batch && y2 < cfg->yB_size; y2++) {
+            extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
+                            subgrid_offset, cfg->m, cfg->Fn,
+                            BF_chunk+(y2-y)*cfg->BF_stride0, cfg->BF_stride1,
+                            worker->MBF, worker->MBF_plan,
+                            NMBF+y2*cfg->NMBF_stride0, cfg->NMBF_stride1);
+        }
+        worker->es1_time += get_time_ns() - start;
+
+    }
+
+    free(BF_chunk);
+}
+
 void recombine2d_es1_pf0_ft0(struct recombine2d_worker *worker,
-                             int i1, complex double *BF)
+                             int subgrid_off1, complex double *BF, double complex *NMBF_BF)
 {
     struct recombine2d_config *cfg = worker->cfg;
     int x,y;
 
     // Extract subgrids along first axis
-    int subgrid_offset = i1*cfg->xA_yP_size;
+    assert(subgrid_off1 % cfg->facet_spacing == 0);
+    int subgrid_offset = subgrid_off1 / cfg->facet_spacing * cfg->yP_spacing;
     double start = get_time_ns();
     for (x = 0; x < cfg->yB_size; x++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
@@ -311,51 +364,140 @@ void recombine2d_es1_pf0_ft0(struct recombine2d_worker *worker,
     for (y = 0; y < cfg->xM_yN_size; y++) {
         prepare_facet(cfg->yB_size, cfg->yP_size, cfg->Fb,
                       worker->NMBF+y*cfg->NMBF_stride1, cfg->NMBF_stride0,
-                      worker->NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0);
+                      NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0);
     }
     worker->pf2_time += get_time_ns() - start;
 
     // Fourier transform along second axis
     start = get_time_ns();
-    fftw_execute(worker->NMBF_BF_plan);
+    if (NMBF_BF == worker->NMBF_BF)
+        fftw_execute(worker->NMBF_BF_plan);
+    else
+        fftw_execute_dft(worker->NMBF_BF_plan, NMBF_BF, NMBF_BF);
     worker->ft2_time += get_time_ns() - start;
 
 }
 
+void recombine2d_es1_omp(struct recombine2d_worker *worker,
+                         int subgrid_off1,
+                         complex double *BF,
+                         double complex *NMBF)
+{
+    struct recombine2d_config *cfg = worker->cfg;
+    int x;
+
+    // Extract subgrids along first axis
+    assert(subgrid_off1 % cfg->facet_spacing == 0);
+    int subgrid_offset = subgrid_off1 / cfg->facet_spacing * cfg->yP_spacing;;
+    double start = get_time_ns();
+#pragma omp for schedule(dynamic, worker->BF_batch)
+    for (x = 0; x < cfg->yB_size; x++) {
+        extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
+                        subgrid_offset, cfg->m, cfg->Fn,
+                        BF+x*cfg->BF_stride0, cfg->BF_stride1,
+                        worker->MBF, worker->MBF_plan,
+                        NMBF+x*cfg->NMBF_stride0, cfg->NMBF_stride1);
+    }
+    worker->es1_time += get_time_ns() - start;
+
+}
+
+void recombine2d_pf0_ft0_omp(struct recombine2d_worker *worker,
+                             double complex *NMBF,
+                             double complex *NMBF_BF)
+{
+    struct recombine2d_config *cfg = worker->cfg;
+
+    assert(cfg->BF_stride1 == 1);
+    assert(cfg->NMBF_BF_stride0 = 1);
+    assert(cfg->BF_stride0 == cfg->NMBF_BF_stride1);
+
+    int y;
+#pragma omp for schedule(dynamic)
+    for (y = 0; y < cfg->xM_yN_size; y+=worker->BF_batch) {
+
+        // Facet preparation along second axis
+        double start = get_time_ns();
+        int y2;
+        for (y2 = y; y2 < y+worker->BF_batch && y2 < cfg->xM_yN_size; y2++) {
+            prepare_facet(cfg->yB_size, cfg->yP_size, cfg->Fb,
+                          NMBF+y2*cfg->NMBF_stride1, cfg->NMBF_stride0,
+                          NMBF_BF+y2*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0);
+        }
+        worker->pf2_time += get_time_ns() - start;
+
+        // Fourier transform along second axis.
+
+        // Note 1: We are re-using the BF FFTW plan, which happens to
+        // work because we switched strides (see assertions at start
+        // of routine).
+
+        // Note 2: We do not want to assume that xM_yN_size gets
+        // evenly divided by BF_batch, the quick hack here is to just
+        // make an on-the-fly plan for the last bit
+        start = get_time_ns();
+        fftw_plan plan = worker->BF_plan;
+        if (y+worker->BF_batch >= cfg->xM_yN_size) {
+            plan = recombine2d_bf_plan(worker->cfg, cfg->xM_yN_size - y,
+                                       NMBF_BF+y*cfg->NMBF_BF_stride1,
+                                       FFTW_ESTIMATE);
+        }
+        fftw_execute_dft(plan,
+                         NMBF_BF+y*cfg->NMBF_BF_stride1,
+                         NMBF_BF+y*cfg->NMBF_BF_stride1);
+        if (plan != worker->BF_plan)
+            fftw_free(plan);
+        worker->ft2_time += get_time_ns() - start;
+
+    }
+}
+
 void recombine2d_es0(struct recombine2d_worker *worker,
-                     int i0, int i1, double complex *NMBF_NMBF)
+                     int subgrid_off0, int subgrid_off1,
+                     double complex *NMBF_BF,
+                     double complex *NMBF_NMBF)
 {
     struct recombine2d_config *cfg = worker->cfg;
     int y;
 
     // Extract subgrids along second axis
-    int subgrid_offset = i0*cfg->xA_yP_size;
+    assert(subgrid_off0 % cfg->facet_spacing == 0);
+    int subgrid_offset = subgrid_off0 / cfg->facet_spacing * cfg->yP_spacing;
     double start = get_time_ns();
     for (y = 0; y < cfg->xM_yN_size; y++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
                         subgrid_offset, cfg->m, cfg->Fn,
-                        worker->NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0,
+                        NMBF_BF+y*cfg->NMBF_BF_stride1, cfg->NMBF_BF_stride0,
                         worker->MBF, worker->MBF_plan,
                         NMBF_NMBF+y*cfg->NMBF_NMBF_stride1, cfg->NMBF_NMBF_stride0);
     }
     worker->es2_time += get_time_ns() - start;
 
     // Check stream contents if requested
+    int i0 = subgrid_off0 / worker->cfg->xA_size;
+    int i1 = subgrid_off1 / worker->cfg->xA_size;
     if (cfg->stream_check) {
-        double complex *NMBF_NMBF_check = read_dump(cfg->NMBF_NMBF_size, cfg->stream_check, i0, i1);
-        if (NMBF_NMBF_check) {
-            int x0; int errs = 0;
-            for (x0 = 0; x0 < cfg->xM_yN_size * cfg->xM_yN_size; x0++) {
-                if (cabs(NMBF_NMBF[x0] - NMBF_NMBF_check[x0]) > cabs(NMBF_NMBF[x0]) * cfg->stream_check_threshold) {
-                    fprintf(stderr, "stream check failed: subgrid %d/%d at position %d/%d (%f%+f != %f%+f)\n",
-                            i0, i1, x0 / cfg->xM_yN_size, x0 % cfg->xM_yN_size,
-                            creal(NMBF_NMBF[x0]), cimag(NMBF_NMBF[x0]),
-                            creal(NMBF_NMBF_check[x0]), cimag(NMBF_NMBF_check[x0]));
-                    errs+=1;
+
+        // Check whether it exists
+        char filename[256]; struct stat st;
+        sprintf(filename, cfg->stream_check, i0, i1);
+        if (stat(filename, &st) == 0) {
+
+            double complex *NMBF_NMBF_check = read_dump(cfg->NMBF_NMBF_size, cfg->stream_check, i0, i1);
+            if (NMBF_NMBF_check) {
+                int x0; int errs = 0;
+                for (x0 = 0; x0 < cfg->xM_yN_size * cfg->xM_yN_size; x0++) {
+                    if (cabs(NMBF_NMBF[x0] - NMBF_NMBF_check[x0]) > cabs(NMBF_NMBF[x0]) * cfg->stream_check_threshold) {
+                        fprintf(stderr, "stream check failed: subgrid %d/%d at position %d/%d (%f%+f != %f%+f)\n",
+                                i0, i1, x0 / cfg->xM_yN_size, x0 % cfg->xM_yN_size,
+                                creal(NMBF_NMBF[x0]), cimag(NMBF_NMBF[x0]),
+                                creal(NMBF_NMBF_check[x0]), cimag(NMBF_NMBF_check[x0]));
+                        errs+=1;
+                    }
                 }
-            }
-            if (!errs) {
-                printf("stream check for subgrid %d/%d passed\n", i0, i1);
+                if (!errs) {
+                    printf("stream check for subgrid %d/%d passed\n", i0, i1);
+                }
             }
         }
     }
