@@ -24,20 +24,20 @@ void init_dtype_cpx() {
 
 }
 
-int load_ant_config(const char *filename, struct ant_config *cfg) {
+bool load_ant_config(const char *filename, struct ant_config *cfg) {
 
     // Open file
     printf("Reading %s...\n", filename);
     hid_t cfg_f = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
     if (cfg_f < 0) {
         fprintf(stderr, "Could not open antenna configuration file %s!\n", filename);
-        return 1;
+        return false;
     }
     hid_t cfg_g = H5Gopen(cfg_f, "cfg", H5P_DEFAULT);
     if (cfg_g < 0) {
         H5Fclose(cfg_f);
         fprintf(stderr, "Could not open 'cfg' group in antenna configuration file %s!\n", filename);
-        return 1;
+        return false;
     }
 
     // Read name
@@ -49,7 +49,7 @@ int load_ant_config(const char *filename, struct ant_config *cfg) {
         H5Gclose(cfg_g);
         H5Fclose(cfg_f);
         fprintf(stderr, "Could not read 'name' attribute from antenna configuration file %s!\n", filename);
-        return 1;
+        return false;
     }
 
     // Read data, verify shape (... quite verbose ...)
@@ -76,7 +76,7 @@ int load_ant_config(const char *filename, struct ant_config *cfg) {
     H5Dclose(xyz_ds);
     H5Gclose(cfg_g);
     H5Fclose(cfg_f);
-    return 0;
+    return true;
 }
 
 struct bl_stats {
