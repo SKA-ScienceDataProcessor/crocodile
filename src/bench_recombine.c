@@ -1,6 +1,7 @@
 
 #include "grid.h"
 #include "recombine.h"
+#include "config.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -18,43 +19,99 @@
 #include <omp.h>
 #include <mpi.h>
 
-bool set_default_recombine2d_config(struct recombine2d_config *cfg)
+bool set_default_vis_spec(const char *ant_cfg_file, struct vis_spec *spec, double fov)
 {
-    return recombine2d_set_config(cfg, 98304, 1536, "../data/grid/pswf5.00-33728.in",
-								  24576, 33728, 49152, 1405, 1536, 282);
+    spec->cfg = malloc(sizeof(struct ant_config));
+    if (!load_ant_config(ant_cfg_file, spec->cfg))
+        return false;
+
+    spec->fov = fov;
+    spec->dec = 90 * atan(1) * 4 / 180;
+    spec->time_start = 10 * -45 / 3600; // h
+    spec->time_count = 64;
+    spec->time_chunk = 16;
+    spec->time_step = 0.9 / 3600; // h
+    spec->freq_start = 250e6; // Hz
+    spec->freq_count = 64;
+    spec->freq_chunk = 16;
+    spec->freq_step = 50.e6 / spec->freq_count; // Hz
+
+    return true;
 }
 
-bool set_test_recombine2d_config(struct recombine2d_config *cfg, int rank)
+bool set_default_recombine2d_config(struct work_config *cfg,
+                                    int facet_workers, int subgrid_workers)
 {
-    if (!recombine2d_set_config(cfg, 2000, 100, "../data/grid/T04_pswf.in",
-                                400, 480, 900, 400, 500, 247))
-		return false;
-	// Use data from test suite. Note that not all "nmbf" reference
-	// files exist in the repository, so this will show a few errors.
-	// As long as no value mismatches occur this is fine
+
+    struct vis_spec *spec = malloc(sizeof(struct vis_spec));
+    if (!set_default_vis_spec("../data/grid/LOWBD2_north_cfg.h5", spec, 0.1))
+        return false;
+
+    return work_config_set(cfg, spec, facet_workers, subgrid_workers,
+                           spec->fov * 1. / 0.75,
+                           98304, 1536, "../data/grid/pswf5.00-33728.in",
+                           24576, 33728, 49152, 1405, 1536, 282);
+}
+
+bool set_test_recombine2d_config(struct work_config *cfg,
+                                 int facet_workers, int subgrid_workers,
+                                 int rank)
+{
+
+    if (!work_config_set(cfg, 0, facet_workers, subgrid_workers,
+                         0.15,
+                         2000, 100, "../data/grid/T04_pswf.in",
+                         400, 480, 900, 400, 500, 247))
+        return false;
+    // Use data from test suite. Note that not all "nmbf" reference
+    // files exist in the repository, so this will show a few errors.
+    // As long as no value mismatches occur this is fine
     char file[256];
     sprintf(file, "../data/grid/T04_facet%d%d.in", rank / 3, rank % 3);
-    cfg->facet_file = strdup(file);
+    cfg->recombine.facet_file = strdup(file);
     sprintf(file, "../data/grid/T04_nmbf%%d%%d%d%d.in", rank / 3, rank % 3);
-    cfg->stream_check = strdup(file);
-    cfg->stream_check_threshold = 1e-9;
-	return true;
+    cfg->recombine.stream_check = strdup(file);
+    cfg->recombine.stream_check_threshold = 1e-9;
+    return true;
 }
 
-bool recombine2d_set_test5_config(struct recombine2d_config *cfg, int rank)
+bool recombine2d_set_test5_config(struct work_config *cfg,
+                                  int facet_workers, int subgrid_workers,
+                                  int rank)
 {
-    if (!recombine2d_set_config(cfg, 512, 8, "../data/grid/T05_pswf.in",
-                                128, 140, 216, 128, 256, 136))
-		return false;
+    struct vis_spec *spec = malloc(sizeof(struct vis_spec));
+    if (!set_default_vis_spec("../data/grid/VLAA_north_cfg.h5", spec, 0.002))
+        return false;
+
+    if (!work_config_set(cfg, spec, facet_workers, subgrid_workers,
+                         spec->fov * 1. / 0.75,
+                         512, 8, "../data/grid/T05_pswf.in",
+                         128, 140, 216, 128, 256, 136))
+        return false;
     char file[256];
     sprintf(file, "../data/grid/T05_facet%d%d.in", rank / 3, rank % 3);
-    cfg->facet_file = strdup(file);
-    sprintf(file, "../data/grid/T05_nmbf%%d%%d%d%d.in", rank / 3, rank % 3);
-    cfg->stream_check = strdup(file);
-    cfg->stream_check_threshold = 1e-6;
-    //sprintf(file, "../data/grid/T05_nmbf%%d%%d%d%d.out", rank / 3, rank % 3);
-    //cfg->stream_dump = strdup(file);
-	return true;
+    cfg->recombine.facet_file = strdup(file);
+    // TODO: Test reference values are in HDF5 now, so can't easily
+    // check any more...
+    return true;
+}
+
+bool set_serious_test_config(struct work_config *cfg,
+                             int facet_workers, int subgrid_workers,
+                             int rank)
+{
+    struct vis_spec *spec = malloc(sizeof(struct vis_spec));
+    if (!set_default_vis_spec("../data/grid/LOWBD2_north_cfg.h5", spec, 0.1))
+        return false;
+
+    if (!work_config_set(cfg, spec, facet_workers, subgrid_workers,
+                         spec->fov * 1. / 0.75,
+                         32768, 4, "../data/grid/T06_pswf.in",
+                         8192, 8640, 16384,
+                         384, 512, 276))
+        return false;
+
+    return true;
 }
 
 struct producer_stream {
@@ -162,16 +219,41 @@ double get_time_ns()
     return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
 }
 
-void producer_ES0_PF1_FT1_ES1(struct recombine2d_config *cfg, struct producer_stream *prod,
-                              int i1, complex double *BF)
+void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *prod,
+                           double complex *NMBF_BF,
+                           int subgrid_off_u, int subgrid_off_v,
+                           int iv, int iu)
 {
+    struct recombine2d_config *cfg = &wcfg->recombine;
 
-    // Extract subgrids along first axis, then prepare and Fourier
-    // transform along second axis
-    recombine2d_es1_pf0_ft0(&prod->worker, i1, BF);
-    int i0;
-    const int nsubgrid = cfg->image_size / cfg->xA_size;
-    for (i0 = 0; i0 < nsubgrid; i0++) {
+    // Extract subgrids along second axis
+    double complex *NMBF_NMBF = NULL;
+
+    // Find streamer (subgrid workers) to send to
+    int iworker;
+    for (iworker = 0; iworker < wcfg->subgrid_workers; iworker++) {
+
+        int iwork = 0;
+        if (wcfg->subgrid_work) {
+
+            // Check whether it is in streamer's work list. Note that
+            // it can appear for multiple workers if the subgrid was
+            // split in work assignment (typically at the grid centre).
+            struct subgrid_work *work_list = wcfg->subgrid_work +
+                iworker * wcfg->subgrid_max_work;
+            for (iwork = 0; iwork < wcfg->subgrid_max_work; iwork++) {
+                if (work_list[iwork].iu == iu && work_list[iwork].iv == iv) break;
+            }
+            if (iwork >= wcfg->subgrid_max_work)
+                continue;
+
+        } else {
+
+            // Send to randomly selected streamer
+            const int nsubgrid = cfg->image_size / cfg->xA_size;
+            if (iworker != (iu + iv * nsubgrid) % wcfg->subgrid_workers)
+                continue;
+        }
 
         // Select send slot if running in distributed mode
         int indx; MPI_Status status;
@@ -189,16 +271,20 @@ void producer_ES0_PF1_FT1_ES1(struct recombine2d_config *cfg, struct producer_st
             assert (indx >= 0 && indx < prod->send_queue_length);
         }
 
-        // Extract subgrids along second axis
-        double complex *NMBF_NMBF = prod->NMBF_NMBF_queue + indx * cfg->xM_yN_size * cfg->xM_yN_size;
-        recombine2d_es0(&prod->worker, i0, i1, NMBF_NMBF);
+        // Calculate or copy sub-grid data
+        double complex *send_buf = prod->NMBF_NMBF_queue + indx * cfg->xM_yN_size * cfg->xM_yN_size;
+        if (!NMBF_NMBF) {
+            NMBF_NMBF = send_buf;
+            recombine2d_es0(&prod->worker, subgrid_off_v, subgrid_off_u, NMBF_BF, NMBF_NMBF);
+        } else {
+            memcpy(send_buf, NMBF_NMBF, cfg->NMBF_NMBF_size);
+        }
 
-        // Spread data evenly across streamers
+        // Send
         if (prod->streamer_count > 0) {
-            int target_rank = prod->streamer_ranks[(i1 + i0 * nsubgrid) % prod->streamer_count];
             double start = get_time_ns();
             MPI_Isend(NMBF_NMBF, cfg->xM_yN_size * cfg->xM_yN_size, MPI_DOUBLE_COMPLEX,
-                      target_rank, 0, MPI_COMM_WORLD, &prod->requests[indx]);
+                      prod->streamer_ranks[iworker], iwork, MPI_COMM_WORLD, &prod->requests[indx]);
             prod->mpi_send_time += get_time_ns() - start;
             prod->bytes_sent += sizeof(double complex) * cfg->xM_yN_size * cfg->xM_yN_size;
         }
@@ -206,6 +292,7 @@ void producer_ES0_PF1_FT1_ES1(struct recombine2d_config *cfg, struct producer_st
     }
 
 }
+
 
 bool producer_fill_facet(struct recombine2d_config *cfg, double complex *F, int x0_start, int x0_end) {
 
@@ -243,7 +330,140 @@ bool producer_fill_facet(struct recombine2d_config *cfg, double complex *F, int 
     return true;
 }
 
-int producer(struct recombine2d_config *cfg, int streamer_count, int *streamer_ranks) {
+// Gets subgrid offset for given column/rpw. Returns INT_MIN if no work was found.
+int get_subgrid_off_u(struct work_config *wcfg, int iu)
+{
+
+    // No telescope set? Fill everything for test purposes
+    if (!wcfg->subgrid_work)
+        return iu * wcfg->recombine.xA_size;
+
+    // Somewhat inefficiently walk entire work list
+    int iwork;
+    for (iwork = 0; iwork < wcfg->subgrid_workers * wcfg->subgrid_max_work; iwork++) {
+        if (wcfg->subgrid_work[iwork].iu == iu) break;
+    }
+    if (iwork >= wcfg->subgrid_workers * wcfg->subgrid_max_work)
+        return INT_MIN;
+
+    return wcfg->subgrid_work[iwork].subgrid_off_u;
+}
+int get_subgrid_off_v(struct work_config *wcfg, int iu, int iv)
+{
+
+    // No telescope set? Fill everything for test purposes
+    if (!wcfg->subgrid_work)
+        return iv * wcfg->recombine.xA_size;
+
+    // Somewhat inefficiently walk entire work list
+    int iwork;
+    for (iwork = 0; iwork < wcfg->subgrid_workers * wcfg->subgrid_max_work; iwork++) {
+        if (wcfg->subgrid_work[iwork].iu == iu &&
+            wcfg->subgrid_work[iwork].iv == iv) break;
+    }
+    if (iwork >= wcfg->subgrid_workers * wcfg->subgrid_max_work) return INT_MIN;
+
+    return wcfg->subgrid_work[iwork].subgrid_off_v;
+}
+
+
+void producer_work(struct work_config *wcfg,
+                   struct producer_stream *prod,
+                   struct producer_stream *producers,
+                   double complex *F, double complex *BF)
+{
+
+    struct recombine2d_config *cfg = &wcfg->recombine;
+
+    // Determine number of subgrids
+    int iu_min = INT_MAX, iu_max = INT_MIN;
+    int iv_min = INT_MAX, iv_max = INT_MIN;
+    if (wcfg->subgrid_work) {
+        int iwork;
+        for (iwork = 0; iwork < wcfg->subgrid_workers * wcfg->subgrid_max_work; iwork++) {
+            if (wcfg->subgrid_work[iwork].iu < iu_min)
+                iu_min = wcfg->subgrid_work[iwork].iu;
+            if (wcfg->subgrid_work[iwork].iu > iu_max)
+                iu_max = wcfg->subgrid_work[iwork].iu;
+            if (wcfg->subgrid_work[iwork].iv < iv_min)
+                iv_min = wcfg->subgrid_work[iwork].iv;
+            if (wcfg->subgrid_work[iwork].iv > iv_max)
+                iv_max = wcfg->subgrid_work[iwork].iv;
+        }
+    } else {
+        // If no antenna configuration was set, just will entire grid
+        // with subgrids
+        iu_min = iv_min = 0;
+        iu_max = iv_max = cfg->image_size / cfg->xA_size;
+    }
+
+    const bool PARALLEL_COLS = false;
+    const bool SHARE_BF = true;
+    assert(!PARALLEL_COLS || SHARE_BF); // sequential w/o sharing not implemented yet
+
+    // Do first stage preparation and Fourier Transform
+    if (SHARE_BF)
+        recombine2d_pf1_ft1_omp(&prod->worker, F, BF);
+    // TODO: Generate facet on the fly
+
+    int iu;
+    if (PARALLEL_COLS) {
+        // Go through columns in parallel
+        #pragma omp for schedule(dynamic)
+        for (iu = iu_min; iu <= iu_max ; iu++) {
+
+            // Determine column offset / check whether column actually has work
+            int subgrid_off_u = get_subgrid_off_u(wcfg, iu);
+            if (subgrid_off_u == INT_MIN) continue;
+
+            // Extract subgrids along first axis, then prepare and Fourier
+            // transform along second axis
+            recombine2d_es1_pf0_ft0(&prod->worker, iu, BF, prod->worker.NMBF_BF);
+
+            // Go through rows in sequence
+            int iv;
+            for (iv = iv_min; iv <= iv_max; iv++) {
+                int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
+                if (subgrid_off_v == INT_MIN) continue;
+                producer_send_subgrid(wcfg, prod, prod->worker.NMBF_BF,
+                                      subgrid_off_u, subgrid_off_v, iv, iu);
+            }
+        }
+    } else {
+        // Go through columns in sequence
+        for (iu = iu_min; iu <= iu_max; iu++) {
+
+            // Determine column offset / check whether column actually has work
+            int subgrid_off_u = get_subgrid_off_u(wcfg, iu);
+            if (subgrid_off_u == INT_MIN) continue;
+
+            // Extract subgrids along first axis, then prepare and Fourier
+            // transform along second axis
+            double complex *NMBF = producers->worker.NMBF;
+            double complex *NMBF_BF = producers->worker.NMBF_BF;
+            if (SHARE_BF)
+                recombine2d_es1_omp(&prod->worker, subgrid_off_u, BF, NMBF);
+            else
+                recombine2d_pf1_ft1_es1_omp(&prod->worker, subgrid_off_u, F, NMBF);
+            recombine2d_pf0_ft0_omp(&prod->worker, NMBF, NMBF_BF);
+
+            // Go through rows in parallel
+            int iv;
+            #pragma omp for schedule(dynamic)
+            for (iv = iv_min; iv <= iv_max; iv++) {
+                int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
+                if (subgrid_off_v == INT_MIN) continue;
+                producer_send_subgrid(wcfg, prod, NMBF_BF,
+                                      subgrid_off_u, subgrid_off_v, iv, iu);
+            }
+        }
+    }
+}
+
+int producer(struct work_config *wcfg, int facet_worker, int streamer_count, int *streamer_ranks)
+{
+
+    struct recombine2d_config *cfg = &wcfg->recombine;
 
     printf("Using %.1f GB global, %.1f GB per thread\n",
            (double)recombine2d_global_memory(cfg) / 1000000000,
@@ -313,18 +533,10 @@ int producer(struct recombine2d_config *cfg, int streamer_count, int *streamer_r
             run_start = get_time_ns();
             printf("Streaming...\n");
         }
+
+        // Do work
         struct producer_stream *prod = producers + omp_get_thread_num();
-
-        // Do first stage preparation and Fourier Transform
-        recombine2d_pf1_ft1_omp(&prod->worker, F, BF);
-        // TODO: Generate facet on the fly
-
-        int i1;
-        #pragma omp for schedule(dynamic)
-        for (i1 = 0; i1 < cfg->image_size / cfg->xA_size; i1++) {
-            producer_ES0_PF1_FT1_ES1(cfg, prod, i1, BF);
-
-        }
+        producer_work(wcfg, prod, producers, F, BF);
 
         // Wait for remaining packets to be sent
         MPI_Status statuses[send_queue_length];
@@ -347,7 +559,9 @@ int producer(struct recombine2d_config *cfg, int streamer_count, int *streamer_r
     return 0;
 }
 
-void streamer(struct recombine2d_config *cfg, int rank, int streamer_count, int *producer_ranks, int producer_count) {
+void streamer(struct work_config *wcfg, int rank, int streamer_count, int *producer_ranks, int producer_count) {
+
+    struct recombine2d_config *cfg = &wcfg->recombine;
     const int recv_queue_length = 16;
 
     const int gather_size = cfg->NMBF_NMBF_size * producer_count;
@@ -408,12 +622,12 @@ void streamer(struct recombine2d_config *cfg, int rank, int streamer_count, int 
 int main(int argc, char *argv[]) {
 
     // Initialise MPI, read configuration (we need multi-threading support)
-    int thread_support, rank, size;
+    int thread_support, world_rank, world_size;
     char proc_name[MPI_MAX_PROCESSOR_NAME];
     int proc_name_length = 0;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &thread_support);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     if (thread_support < MPI_THREAD_MULTIPLE) {
         fprintf(stderr, "Need full thread support from MPI!\n");
         return 1;
@@ -424,46 +638,52 @@ int main(int argc, char *argv[]) {
     // Read FFTW wisdom to get through planning quicker
     fftw_import_wisdom_from_filename("recombine.wisdom");
 
+    // Decide number of workers
+    int facet_worker_count = 9;
+    int subgrid_worker_count = world_size - facet_worker_count;
+
     // Make imaging configuration
-    struct recombine2d_config config;
+    struct work_config config;
     //if (!set_default_recombine2d_config(&config)) {
-    //if (!set_test_recombine2d_config(&config, rank)) {
-    if (!recombine2d_set_test5_config(&config, rank)) {
+    if (!set_test_recombine2d_config(&config, 9, 1, world_rank)) {
+    //if (!recombine2d_set_test5_config(&config, 9, 1, rank)) {
+    //if (!set_serious_test_config(&config, 9, 1, world_rank)) {
         fprintf(stderr, "Could not set imaging configuration!\n");
         return 1;
     }
 
     // Local run?
-    if (size == 1) {
+    if (world_size == 1) {
         printf("%s pid %d role: Single\n", proc_name, getpid());
-        producer(&config, 0, 0);
+
+        producer(&config, 0, 0, 0);
 
     } else {
 
         // Determine number of producers and streamers (pretty arbitrary for now)
-        int producer_count = size / 2;
-        int streamer_count = size - producer_count;
+        int producer_count = world_size / 2;
+        int streamer_count = world_size - producer_count;
         int i;
 
-        if (rank < producer_count) {
-            printf("%s pid %d role: Producer %d\n", proc_name, getpid(), rank);
+        if (world_rank < producer_count) {
+            printf("%s pid %d role: Producer %d\n", proc_name, getpid(), world_rank);
 
             int *streamer_ranks = (int *)malloc(sizeof(int) * streamer_count);
             for (i = 0; i < streamer_count; i++) {
                 streamer_ranks[i] = producer_count + i;
             }
 
-            producer(&config, streamer_count, streamer_ranks);
+            producer(&config, world_rank, streamer_count, streamer_ranks);
 
-        } else if (rank - producer_count < streamer_count) {
-            printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), rank - producer_count);
+        } else if (world_rank - producer_count < streamer_count) {
+            printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), world_rank - producer_count);
 
             int *producer_ranks = (int *)malloc(sizeof(int) * producer_count);
             for (i = 0; i < producer_count; i++) {
                 producer_ranks[i] = i;
             }
 
-            streamer(&config, rank-producer_count, streamer_count, producer_ranks, producer_count);
+            streamer(&config, world_rank-producer_count, streamer_count, producer_ranks, producer_count);
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
@@ -471,7 +691,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Master: Write wisdom
-    if (rank == 0) {
+    if (world_rank == 0) {
         fftw_export_wisdom_to_filename("recombine.wisdom");
     }
     return 0;
