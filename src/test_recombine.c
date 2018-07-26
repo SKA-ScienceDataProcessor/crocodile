@@ -347,9 +347,9 @@ int T04a_recombine2d() {
         recombine2d_pf1_ft1_omp(&worker, facet, BF);
         int i0, i1;
         for (i1 = 0; i1 < nsubgrid; i1++) {
-            recombine2d_es1_pf0_ft0(&worker, i1, BF);
+            recombine2d_es1_pf0_ft0(&worker, i1*cfg.xA_size, BF, worker.NMBF_BF);
             for (i0 = 0; i0 < nsubgrid; i0++) {
-                recombine2d_es0(&worker, i0, i1, NMBF_NMBF);
+                recombine2d_es0(&worker, i0*cfg.xA_size, i1*cfg.xA_size, worker.NMBF_BF, NMBF_NMBF);
 
                 double complex *ref = read_dump(cfg.NMBF_NMBF_size,
                                                 "../data/grid/T04_nmbf%d%d%d%d.in",
@@ -454,12 +454,12 @@ int T05_degrid()
         recombine2d_pf1_ft1_omp(&worker, facet, BF);
         int i0, i1;
         for (i1 = 0; i1 < nsubgrid; i1++) {
-            recombine2d_es1_pf0_ft0(&worker, i1, BF);
+            recombine2d_es1_pf0_ft0(&worker, i1*cfg.xA_size, BF, worker.NMBF_BF);
             for (i0 = 0; i0 < nsubgrid; i0++) {
                 int ix = ((i1 * nsubgrid + i0) * nfacet + j0) * nfacet + j1;
                 double complex *nmbf_nmbf = all_NMBF_NMBF +
                     ix * (cfg.NMBF_NMBF_size / sizeof(double complex));
-                recombine2d_es0(&worker, i0, i1, nmbf_nmbf);
+                recombine2d_es0(&worker, i0*cfg.xA_size, i1*cfg.xA_size, worker.NMBF_BF, nmbf_nmbf);
 
                 double complex *ref = read_hdf5(cfg.NMBF_NMBF_size, in_file,
                                                 "i0=%d/i1=%d/j0=%d/j1=%d/nmbf", i0, i1, j0, j1);
@@ -551,7 +551,6 @@ int T05_degrid()
                 degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
                                &bl, 0, nvis, 0, 1, &kern);
             }
-            printf("%f\n", 16 * nvis * 1000 / (get_time_ns() - t0));
 
             for (y = 0; y < nvis; y++) {
                 assert(cabs(vis[y] - bl.vis[y]) < 4e-7);

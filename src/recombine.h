@@ -48,7 +48,7 @@ struct recombine2d_config {
     int xM_size; //  ", padded to prevent PSWF convolution from aliasing
     int xMxN_yP_size; // subgrid/facet size, with extra padding for "m" to allow us to work within yP limit
     // Derived sizes
-    int xA_yP_size; // Distance between subgrids (TODO: replace by more flexible subgrids)
+    int yP_spacing; // Facet spacing in yP grid
     int xM_yP_size; // Buffer size for "m" mask multiplication
     int xM_yN_size; // Size of subgrid/facet pieces to exchange
     // Derived data layout (F, b*F, m(b*F), n*m(b*F) respectively for two axes)
@@ -113,10 +113,17 @@ void recombine2d_free_worker(struct recombine2d_worker *worker);
 void recombine2d_pf1_ft1_omp(struct recombine2d_worker *worker,
                              complex double *F, complex double *BF);
 // ^^ OpenMP "parallel for" inside, good to call with multiple threads
+void recombine2d_pf1_ft1_es1_omp(struct recombine2d_worker *worker,
+                                 int subgrid_off1, complex double *F, complex double *NMBF);
 void recombine2d_es1_pf0_ft0(struct recombine2d_worker *worker,
-                             int i0, complex double *BF);
+                             int subgrid_off0, complex double *BF, double complex *NMBF_BF);
+void recombine2d_es1_omp(struct recombine2d_worker *worker,
+                         int subgrid_off1, complex double *BF, double complex *NMBF);
+void recombine2d_pf0_ft0_omp(struct recombine2d_worker *worker,
+                             double complex *NMBF, double complex *NMBF_BF);
 void recombine2d_es0(struct recombine2d_worker *worker,
-                     int i0, int i1, double complex *NMBF_NMBF);
+                     int subgrid_off0, int subgrid_off1,
+                     double complex *NMBF_BF, double complex *NMBF_NMBF);
 
 void recombine2d_af0_af1(struct recombine2d_config *cfg,
                          double complex *subgrid,
