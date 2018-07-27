@@ -116,6 +116,9 @@ bool set_serious_test_config(struct work_config *cfg,
 
 struct producer_stream {
 
+    // Facet worker id
+    int facet_worker;
+
     // Stream targets
     int streamer_count;
     int *streamer_ranks;
@@ -137,10 +140,13 @@ struct producer_stream {
 };
 
 void init_producer_stream(struct recombine2d_config *cfg, struct producer_stream *prod,
+                          int facet_worker,
                           int streamer_count, int *streamer_ranks,
                           int BF_batch, fftw_plan BF_plan,
                           int send_queue_length)
 {
+
+    prod->facet_worker = facet_worker;
 
     // Set streamers
     prod->streamer_count = streamer_count;
@@ -219,6 +225,15 @@ double get_time_ns()
     return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
 }
 
+int make_subgrid_tag(struct work_config *wcfg,
+                     int subgrid_worker_ix, int subgrid_work_ix,
+                     int facet_worker_ix, int facet_work_ix) {
+    // Need to encode everything but the subgrid worker, which will be
+    // the message receiver, and thus uniquely identified already
+    return (facet_worker_ix * wcfg->facet_max_work + facet_work_ix) * wcfg->facet_workers +
+        subgrid_work_ix;
+}
+
 void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *prod,
                            double complex *NMBF_BF,
                            int subgrid_off_u, int subgrid_off_v,
@@ -233,27 +248,17 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
     int iworker;
     for (iworker = 0; iworker < wcfg->subgrid_workers; iworker++) {
 
-        int iwork = 0;
-        if (wcfg->subgrid_work) {
-
-            // Check whether it is in streamer's work list. Note that
-            // it can appear for multiple workers if the subgrid was
-            // split in work assignment (typically at the grid centre).
-            struct subgrid_work *work_list = wcfg->subgrid_work +
-                iworker * wcfg->subgrid_max_work;
-            for (iwork = 0; iwork < wcfg->subgrid_max_work; iwork++) {
-                if (work_list[iwork].iu == iu && work_list[iwork].iv == iv) break;
-            }
-            if (iwork >= wcfg->subgrid_max_work)
-                continue;
-
-        } else {
-
-            // Send to randomly selected streamer
-            const int nsubgrid = cfg->image_size / cfg->xA_size;
-            if (iworker != (iu + iv * nsubgrid) % wcfg->subgrid_workers)
-                continue;
+        // Check whether it is in streamer's work list. Note that
+        // it can appear for multiple workers if the subgrid was
+        // split in work assignment (typically at the grid centre).
+        struct subgrid_work *work_list = wcfg->subgrid_work +
+            iworker * wcfg->subgrid_max_work;
+        int iwork;
+        for (iwork = 0; iwork < wcfg->subgrid_max_work; iwork++) {
+            if (work_list[iwork].nbl && work_list[iwork].iu == iu && work_list[iwork].iv == iv) break;
         }
+        if (iwork >= wcfg->subgrid_max_work)
+            continue;
 
         // Select send slot if running in distributed mode
         int indx; MPI_Status status;
@@ -282,9 +287,11 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
 
         // Send
         if (prod->streamer_count > 0) {
+            int tag = make_subgrid_tag(wcfg, iworker, iwork,
+                                       prod->facet_worker, 0);
             double start = get_time_ns();
             MPI_Isend(NMBF_NMBF, cfg->xM_yN_size * cfg->xM_yN_size, MPI_DOUBLE_COMPLEX,
-                      prod->streamer_ranks[iworker], iwork, MPI_COMM_WORLD, &prod->requests[indx]);
+                      prod->streamer_ranks[iworker], tag, MPI_COMM_WORLD, &prod->requests[indx]);
             prod->mpi_send_time += get_time_ns() - start;
             prod->bytes_sent += sizeof(double complex) * cfg->xM_yN_size * cfg->xM_yN_size;
         }
@@ -334,14 +341,11 @@ bool producer_fill_facet(struct recombine2d_config *cfg, double complex *F, int 
 int get_subgrid_off_u(struct work_config *wcfg, int iu)
 {
 
-    // No telescope set? Fill everything for test purposes
-    if (!wcfg->subgrid_work)
-        return iu * wcfg->recombine.xA_size;
-
     // Somewhat inefficiently walk entire work list
     int iwork;
     for (iwork = 0; iwork < wcfg->subgrid_workers * wcfg->subgrid_max_work; iwork++) {
-        if (wcfg->subgrid_work[iwork].iu == iu) break;
+        if (wcfg->subgrid_work[iwork].nbl > 0 &&
+            wcfg->subgrid_work[iwork].iu == iu) break;
     }
     if (iwork >= wcfg->subgrid_workers * wcfg->subgrid_max_work)
         return INT_MIN;
@@ -351,14 +355,11 @@ int get_subgrid_off_u(struct work_config *wcfg, int iu)
 int get_subgrid_off_v(struct work_config *wcfg, int iu, int iv)
 {
 
-    // No telescope set? Fill everything for test purposes
-    if (!wcfg->subgrid_work)
-        return iv * wcfg->recombine.xA_size;
-
     // Somewhat inefficiently walk entire work list
     int iwork;
     for (iwork = 0; iwork < wcfg->subgrid_workers * wcfg->subgrid_max_work; iwork++) {
-        if (wcfg->subgrid_work[iwork].iu == iu &&
+        if (wcfg->subgrid_work[iwork].nbl > 0 &&
+            wcfg->subgrid_work[iwork].iu == iu &&
             wcfg->subgrid_work[iwork].iv == iv) break;
     }
     if (iwork >= wcfg->subgrid_workers * wcfg->subgrid_max_work) return INT_MIN;
@@ -373,30 +374,6 @@ void producer_work(struct work_config *wcfg,
                    double complex *F, double complex *BF)
 {
 
-    struct recombine2d_config *cfg = &wcfg->recombine;
-
-    // Determine number of subgrids
-    int iu_min = INT_MAX, iu_max = INT_MIN;
-    int iv_min = INT_MAX, iv_max = INT_MIN;
-    if (wcfg->subgrid_work) {
-        int iwork;
-        for (iwork = 0; iwork < wcfg->subgrid_workers * wcfg->subgrid_max_work; iwork++) {
-            if (wcfg->subgrid_work[iwork].iu < iu_min)
-                iu_min = wcfg->subgrid_work[iwork].iu;
-            if (wcfg->subgrid_work[iwork].iu > iu_max)
-                iu_max = wcfg->subgrid_work[iwork].iu;
-            if (wcfg->subgrid_work[iwork].iv < iv_min)
-                iv_min = wcfg->subgrid_work[iwork].iv;
-            if (wcfg->subgrid_work[iwork].iv > iv_max)
-                iv_max = wcfg->subgrid_work[iwork].iv;
-        }
-    } else {
-        // If no antenna configuration was set, just will entire grid
-        // with subgrids
-        iu_min = iv_min = 0;
-        iu_max = iv_max = cfg->image_size / cfg->xA_size;
-    }
-
     const bool PARALLEL_COLS = false;
     const bool SHARE_BF = true;
     assert(!PARALLEL_COLS || SHARE_BF); // sequential w/o sharing not implemented yet
@@ -410,7 +387,7 @@ void producer_work(struct work_config *wcfg,
     if (PARALLEL_COLS) {
         // Go through columns in parallel
         #pragma omp for schedule(dynamic)
-        for (iu = iu_min; iu <= iu_max ; iu++) {
+        for (iu = wcfg->iu_min; iu <= wcfg->iu_max ; iu++) {
 
             // Determine column offset / check whether column actually has work
             int subgrid_off_u = get_subgrid_off_u(wcfg, iu);
@@ -422,7 +399,7 @@ void producer_work(struct work_config *wcfg,
 
             // Go through rows in sequence
             int iv;
-            for (iv = iv_min; iv <= iv_max; iv++) {
+            for (iv = wcfg->iv_min; iv <= wcfg->iv_max; iv++) {
                 int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
                 if (subgrid_off_v == INT_MIN) continue;
                 producer_send_subgrid(wcfg, prod, prod->worker.NMBF_BF,
@@ -431,7 +408,7 @@ void producer_work(struct work_config *wcfg,
         }
     } else {
         // Go through columns in sequence
-        for (iu = iu_min; iu <= iu_max; iu++) {
+        for (iu = wcfg->iu_min; iu <= wcfg->iu_max; iu++) {
 
             // Determine column offset / check whether column actually has work
             int subgrid_off_u = get_subgrid_off_u(wcfg, iu);
@@ -450,7 +427,7 @@ void producer_work(struct work_config *wcfg,
             // Go through rows in parallel
             int iv;
             #pragma omp for schedule(dynamic)
-            for (iv = iv_min; iv <= iv_max; iv++) {
+            for (iv = wcfg->iv_min; iv <= wcfg->iv_max; iv++) {
                 int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
                 if (subgrid_off_v == INT_MIN) continue;
                 producer_send_subgrid(wcfg, prod, NMBF_BF,
@@ -524,7 +501,7 @@ int producer(struct work_config *wcfg, int facet_worker, int streamer_count, int
             producers = (struct producer_stream *) malloc(sizeof(struct producer_stream) * producer_count);
             int i;
             for (i = 0; i < producer_count; i++) {
-                init_producer_stream(cfg, producers + i, streamer_count, streamer_ranks,
+                init_producer_stream(cfg, producers + i, facet_worker, streamer_count, streamer_ranks,
                                      BF_batch, BF_plan, send_queue_length);
             }
 
@@ -645,7 +622,7 @@ int main(int argc, char *argv[]) {
     // Make imaging configuration
     struct work_config config;
     //if (!set_default_recombine2d_config(&config)) {
-    if (!set_test_recombine2d_config(&config, 9, 1, world_rank)) {
+    if (!set_test_recombine2d_config(&config, 1, 1, world_rank)) {
     //if (!recombine2d_set_test5_config(&config, 9, 1, rank)) {
     //if (!set_serious_test_config(&config, 9, 1, world_rank)) {
         fprintf(stderr, "Could not set imaging configuration!\n");
