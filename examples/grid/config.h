@@ -73,4 +73,6 @@ void vis_spec_to_bl_data(struct bl_data *bl, struct vis_spec *spec,
                          int a1, int a2);
 bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker);
 
+int producer(struct work_config *wcfg, int facet_worker, int streamer_count, int *streamer_ranks);
+
 #endif // CONFIG_H
