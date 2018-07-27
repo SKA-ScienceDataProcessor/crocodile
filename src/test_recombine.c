@@ -432,7 +432,7 @@ int T05_degrid()
     }
 
     struct recombine2d_config cfg;
-    if (!recombine2d_set_config(&cfg, 512, 8,
+    if (!recombine2d_set_config(&cfg, 512, 128,
                                 "../data/grid/T05_pswf.in",
                                 128, 140, 216, 128, 256, 136)) {
         return 1;

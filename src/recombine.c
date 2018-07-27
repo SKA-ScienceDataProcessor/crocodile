@@ -153,14 +153,14 @@ bool recombine2d_set_config(struct recombine2d_config *cfg,
     assert(image_size % xM_size == 0);
     int xM_step = image_size / xM_size;
     assert(cfg->facet_spacing % xM_step == 0);
-    assert((cfg->facet_spacing * cfg->yP_size) % image_size == 0);
+    assert((cfg->subgrid_spacing * cfg->yP_size) % image_size == 0);
 
     // Only needed if we want to tile facets+subgrids without overlaps.
     // Could be generalised once we get smarter about this.
     assert(cfg->yB_size % cfg->facet_spacing == 0);
     assert(cfg->xA_size % cfg->subgrid_spacing == 0);
 
-    cfg->yP_spacing = cfg->facet_spacing * cfg->yP_size / image_size;
+    cfg->yP_spacing = cfg->subgrid_spacing * cfg->yP_size / image_size;
     assert((cfg->xM_size * cfg->yP_size) % cfg->image_size == 0);
     cfg->xM_yP_size = cfg->xM_size * cfg->yP_size / cfg->image_size;
     assert((cfg->xM_size * cfg->yN_size) % cfg->image_size == 0);
@@ -323,8 +323,8 @@ void recombine2d_pf1_ft1_es1_omp(struct recombine2d_worker *worker,
         worker->ft1_time += get_time_ns() - start;
 
         // Extract subgrids along first axis
-        assert(subgrid_off1 % cfg->facet_spacing == 0);
-        int subgrid_offset = subgrid_off1 / cfg->facet_spacing * cfg->yP_spacing;
+        assert(subgrid_off1 % cfg->subgrid_spacing == 0);
+        int subgrid_offset = subgrid_off1 / cfg->subgrid_spacing * cfg->yP_spacing;
         start = get_time_ns();
         for (y2 = y; y2 < y+worker->BF_batch && y2 < cfg->yB_size; y2++) {
             extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
@@ -347,8 +347,8 @@ void recombine2d_es1_pf0_ft0(struct recombine2d_worker *worker,
     int x,y;
 
     // Extract subgrids along first axis
-    assert(subgrid_off1 % cfg->facet_spacing == 0);
-    int subgrid_offset = subgrid_off1 / cfg->facet_spacing * cfg->yP_spacing;
+    assert(subgrid_off1 % cfg->subgrid_spacing == 0);
+    int subgrid_offset = subgrid_off1 / cfg->subgrid_spacing * cfg->yP_spacing;
     double start = get_time_ns();
     for (x = 0; x < cfg->yB_size; x++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
@@ -387,8 +387,8 @@ void recombine2d_es1_omp(struct recombine2d_worker *worker,
     int x;
 
     // Extract subgrids along first axis
-    assert(subgrid_off1 % cfg->facet_spacing == 0);
-    int subgrid_offset = subgrid_off1 / cfg->facet_spacing * cfg->yP_spacing;;
+    assert(subgrid_off1 % cfg->subgrid_spacing == 0);
+    int subgrid_offset = subgrid_off1 / cfg->subgrid_spacing * cfg->yP_spacing;;
     double start = get_time_ns();
 #pragma omp for schedule(dynamic, worker->BF_batch)
     for (x = 0; x < cfg->yB_size; x++) {
@@ -461,8 +461,8 @@ void recombine2d_es0(struct recombine2d_worker *worker,
     int y;
 
     // Extract subgrids along second axis
-    assert(subgrid_off0 % cfg->facet_spacing == 0);
-    int subgrid_offset = subgrid_off0 / cfg->facet_spacing * cfg->yP_spacing;
+    assert(subgrid_off0 % cfg->subgrid_spacing == 0);
+    int subgrid_offset = subgrid_off0 / cfg->subgrid_spacing * cfg->yP_spacing;
     double start = get_time_ns();
     for (y = 0; y < cfg->xM_yN_size; y++) {
         extract_subgrid(cfg->yP_size, cfg->xM_yP_size, cfg->xMxN_yP_size, cfg->xM_yN_size,
