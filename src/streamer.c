@@ -48,6 +48,29 @@ void streamer_work(struct work_config *wcfg,
     const int facets = wcfg->facet_workers * wcfg->facet_max_work;
     const int data_length = wcfg->recombine.NMBF_NMBF_size / sizeof(double complex);
 
+    // Compare with reference
+    if (work->check_fct_path) {
+
+        int i0 = work->iv, i1 = work->iu;
+        int ifacet;
+        for (ifacet = 0; ifacet < facets; ifacet++) {
+            if (!wcfg->facet_work[ifacet].set) continue;
+            int j0 = wcfg->facet_work[ifacet].im, j1 = wcfg->facet_work[ifacet].il;
+            double complex *ref = read_hdf5(wcfg->recombine.NMBF_NMBF_size, work->check_hdf5,
+                                            work->check_fct_path, j0, j1);
+            int x; double err_sum = 0;
+            for (x = 0; x < data_length; x++) {
+                double err = cabs(ref[x] - data[data_length*ifacet+x]); err_sum += err*err;
+            }
+            free(ref);
+            double rmse = sqrt(err_sum / data_length);
+            if (!work->check_fct_threshold || rmse > work->check_fct_threshold) {
+                printf("Subgrid %d/%d facet %d/%d checked: %g RMSE\n",
+                       i0, i1, j0, j1, rmse);
+            }
+        }
+    }
+
     // Accumulate contributions to this subgrid
     memset(subgrid, 0, cfg->SG_size);
     int ifacet;
@@ -59,6 +82,20 @@ void streamer_work(struct work_config *wcfg,
 
     // Perform Fourier transform
     fftw_execute(subgrid_plan);
+
+    // Check accumulated result
+    if (work->check_path) {
+        double complex *approx_ref = read_hdf5(cfg->SG_size, work->check_hdf5, work->check_path);
+        double err_sum = 0; int y;
+        for (y = 0; y < cfg->xM_size * cfg->xM_size; y++) {
+            double err = cabs(subgrid[y] - approx_ref[y]); err_sum += err * err;
+        }
+        free(approx_ref);
+        double rmse = sqrt(err_sum / cfg->xM_size / cfg->xM_size);
+        printf("%sSubgrid %d/%d RMSE %g\n", rmse > work->check_threshold ? "ERROR: " : "",
+               work->iu, work->iv, rmse);
+    }
+
 
 }
 
