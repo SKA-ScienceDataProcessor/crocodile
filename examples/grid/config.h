@@ -18,6 +18,8 @@ struct facet_work
 {
     int il, im;
     int facet_off_l, facet_off_m;
+    char *path, *hdf5; // random if not set
+    bool set;
 };
 
 // Work to do for a subgrid on a baseline
@@ -46,10 +48,10 @@ struct work_config {
     // Worker configuration
     int facet_workers; // number of facet workers
     int facet_max_work; // work list length per worker
-    struct facet_work *facet_work; // facet work list
+    struct facet_work *facet_work; // facet work list (2d array - worker x work)
     int subgrid_workers; // number of subgrid workers
     int subgrid_max_work; // work list length per worker
-    struct subgrid_work *subgrid_work; // subgrid work list
+    struct subgrid_work *subgrid_work; // subgrid work list (2d array - worker x work)
     int iu_min, iu_max, iv_min, iv_max; // subgrid columns/rows
 
     // Recombination configuration
@@ -68,11 +70,12 @@ bool work_config_set(struct work_config *cfg,
                      char *pswf_file,
                      int yB_size, int yN_size, int yP_size,
                      int xA_size, int xM_size, int xMxN_yP_size);
+void load_facets_from(struct work_config *cfg, const char *path_fmt, const char *hdf5);
 
 void vis_spec_to_bl_data(struct bl_data *bl, struct vis_spec *spec,
                          int a1, int a2);
 bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker);
 
-int producer(struct work_config *wcfg, int facet_worker, int streamer_count, int *streamer_ranks);
+int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks);
 
 #endif // CONFIG_H

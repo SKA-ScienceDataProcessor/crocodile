@@ -12,8 +12,9 @@
 
 struct producer_stream {
 
-    // Facet worker id
+    // Facet worker id, number of facets to work on
     int facet_worker;
+    int facet_work_count;
 
     // Stream targets
     int streamer_count;
@@ -36,13 +37,14 @@ struct producer_stream {
 };
 
 void init_producer_stream(struct recombine2d_config *cfg, struct producer_stream *prod,
-                          int facet_worker,
+                          int facet_worker, int facet_work_count,
                           int streamer_count, int *streamer_ranks,
                           int BF_batch, fftw_plan BF_plan,
                           int send_queue_length)
 {
 
     prod->facet_worker = facet_worker;
+    prod->facet_work_count = facet_work_count;
 
     // Set streamers
     prod->streamer_count = streamer_count;
@@ -124,13 +126,13 @@ double get_time_ns()
 int make_subgrid_tag(struct work_config *wcfg,
                      int subgrid_worker_ix, int subgrid_work_ix,
                      int facet_worker_ix, int facet_work_ix) {
-    // Need to encode everything but the subgrid worker, which will be
-    // the message receiver, and thus uniquely identified already
-    return (facet_worker_ix * wcfg->facet_max_work + facet_work_ix) * wcfg->facet_workers +
-        subgrid_work_ix;
+    // Need to encode only the work items, as with MPI both the sender
+    // and the receiver will be identified already by the message.
+    return facet_work_ix * wcfg->facet_max_work + subgrid_work_ix;
 }
 
 void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *prod,
+                           int facet_work_ix,
                            double complex *NMBF_BF,
                            int subgrid_off_u, int subgrid_off_v,
                            int iv, int iu)
@@ -182,9 +184,9 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
         }
 
         // Send
-        if (prod->streamer_count > 0) {
+        if (prod->streamer_ranks) {
             int tag = make_subgrid_tag(wcfg, iworker, iwork,
-                                       prod->facet_worker, 0);
+                                       prod->facet_worker, facet_work_ix);
             double start = get_time_ns();
             MPI_Isend(NMBF_NMBF, cfg->xM_yN_size * cfg->xM_yN_size, MPI_DOUBLE_COMPLEX,
                       prod->streamer_ranks[iworker], tag, MPI_COMM_WORLD, &prod->requests[indx]);
@@ -197,9 +199,47 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
 }
 
 
-bool producer_fill_facet(struct recombine2d_config *cfg, double complex *F, int x0_start, int x0_end) {
+bool producer_fill_facet(struct recombine2d_config *cfg,
+                         struct facet_work *work,
+                         double complex *F, int x0_start, int x0_end) {
 
-    if (!cfg->facet_file) {
+    int offset = sizeof(double complex) *x0_start * cfg->yB_size;
+    int size = sizeof(double complex) *(x0_end - x0_start) * cfg->yB_size;
+
+    if (work->path && !work->hdf5) {
+
+        printf("Reading facet data from %s (%d-%d)...\n", work->path, x0_start, x0_end);
+
+        // Make sure strides are compatible
+        assert (cfg->F_stride0 == cfg->yB_size && cfg->F_stride1 == 1);
+
+        // Load data from file
+        int fd = open(work->path, O_RDONLY, 0666);
+        if (fd > 0) {
+            lseek(fd, offset, SEEK_SET);
+            if (read(fd, F, size) != size) {
+                fprintf(stderr, "failed to read enough data from %s for range %d-%d!\n", work->path, x0_start, x0_end);
+                return false;
+            }
+            close(fd);
+        } else {
+            fprintf(stderr, "Failed to read facet data!\n");
+        }
+
+    } else if (work->path && work->hdf5) {
+
+        printf("Reading facet data from %s:%s (%d-%d)...\n", work->hdf5, work->path, x0_start, x0_end);
+
+        // Make sure strides are as expected, then read
+        // TODO: Clearly HDF5 can do partial reads, optimise
+        assert (cfg->F_stride0 == cfg->yB_size && cfg->F_stride1 == 1);
+        double complex *data = read_hdf5(cfg->F_size, work->hdf5, work->path);
+
+        // Copy
+        memcpy(F, data + offset / sizeof(double complex), size);
+        free(data);
+
+    } else {
 
         // Fill facet with deterministic pseudo-random numbers
         int x0, x1;
@@ -208,24 +248,6 @@ bool producer_fill_facet(struct recombine2d_config *cfg, double complex *F, int 
             for (x1 = 0; x1 < cfg->yB_size; x1++) {
                 F[(x0-x0_start)*cfg->F_stride0+x1*cfg->F_stride1] = (double)rand_r(&seed) / RAND_MAX;
             }
-        }
-
-    } else {
-
-        // Make sure strides are compatible
-        assert (cfg->F_stride0 == cfg->yB_size && cfg->F_stride1 == 1);
-        int offset = sizeof(double complex) * x0_start * cfg->yB_size;
-        int size = sizeof(double complex) * (x0_end - x0_start) * cfg->yB_size;
-
-        // Load data from file
-        int fd = open(cfg->facet_file, O_RDONLY, 0666);
-        if (fd > 0) {
-            lseek(fd, offset, SEEK_SET);
-            if (read(fd, F, size) != size) {
-                fprintf(stderr, "failed to read enough data from %s for range %d-%d!\n", cfg->facet_file, x0_start, x0_end);
-                return false;
-            }
-            close(fd);
         }
 
     }
@@ -247,6 +269,7 @@ static int get_subgrid_off_u(struct work_config *wcfg, int iu)
 
     return wcfg->subgrid_work[iwork].subgrid_off_u;
 }
+
 static int get_subgrid_off_v(struct work_config *wcfg, int iu, int iv)
 {
 
@@ -272,10 +295,14 @@ static void producer_work(struct work_config *wcfg,
     const bool PARALLEL_COLS = false;
     const bool SHARE_BF = true;
     assert(!PARALLEL_COLS || SHARE_BF); // sequential w/o sharing not implemented yet
+    int ifacet;
 
     // Do first stage preparation and Fourier Transform
     if (SHARE_BF)
-        recombine2d_pf1_ft1_omp(&prod->worker, F, BF);
+        for (ifacet = 0; ifacet < prod->facet_work_count; ifacet++)
+            recombine2d_pf1_ft1_omp(&prod->worker,
+                                    F + ifacet * wcfg->recombine.F_size / sizeof(*F),
+                                    BF + ifacet * wcfg->recombine.BF_size / sizeof(*BF));
     // TODO: Generate facet on the fly
 
     int iu;
@@ -288,17 +315,24 @@ static void producer_work(struct work_config *wcfg,
             int subgrid_off_u = get_subgrid_off_u(wcfg, iu);
             if (subgrid_off_u == INT_MIN) continue;
 
-            // Extract subgrids along first axis, then prepare and Fourier
-            // transform along second axis
-            recombine2d_es1_pf0_ft0(&prod->worker, iu, BF, prod->worker.NMBF_BF);
+            // Loop through facets sequentially (inefficient, as it
+            // introduces a time delay on when we touch facets)
+            for (ifacet = 0; ifacet < prod->facet_work_count; ifacet++) {
 
-            // Go through rows in sequence
-            int iv;
-            for (iv = wcfg->iv_min; iv <= wcfg->iv_max; iv++) {
-                int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
-                if (subgrid_off_v == INT_MIN) continue;
-                producer_send_subgrid(wcfg, prod, prod->worker.NMBF_BF,
-                                      subgrid_off_u, subgrid_off_v, iv, iu);
+                // Extract subgrids along first axis, then prepare and Fourier
+                // transform along second axis
+                recombine2d_es1_pf0_ft0(&prod->worker, iu,
+                                        BF + ifacet * wcfg->recombine.BF_size / sizeof(*BF),
+                                        prod->worker.NMBF_BF);
+
+                // Go through rows in sequence
+                int iv;
+                for (iv = wcfg->iv_min; iv <= wcfg->iv_max; iv++) {
+                    int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
+                    if (subgrid_off_v == INT_MIN) continue;
+                    producer_send_subgrid(wcfg, prod, ifacet, prod->worker.NMBF_BF,
+                                          subgrid_off_u, subgrid_off_v, iv, iu);
+                }
             }
         }
     } else {
@@ -309,58 +343,77 @@ static void producer_work(struct work_config *wcfg,
             int subgrid_off_u = get_subgrid_off_u(wcfg, iu);
             if (subgrid_off_u == INT_MIN) continue;
 
-            // Extract subgrids along first axis, then prepare and Fourier
-            // transform along second axis
-            double complex *NMBF = producers->worker.NMBF;
-            double complex *NMBF_BF = producers->worker.NMBF_BF;
-            if (SHARE_BF)
-                recombine2d_es1_omp(&prod->worker, subgrid_off_u, BF, NMBF);
-            else
-                recombine2d_pf1_ft1_es1_omp(&prod->worker, subgrid_off_u, F, NMBF);
-            recombine2d_pf0_ft0_omp(&prod->worker, NMBF, NMBF_BF);
+            // Loop through facets (inefficient, see above)
+            for (ifacet = 0; ifacet < prod->facet_work_count; ifacet++) {
 
-            // Go through rows in parallel
-            int iv;
-            #pragma omp for schedule(dynamic)
-            for (iv = wcfg->iv_min; iv <= wcfg->iv_max; iv++) {
+                // Extract subgrids along first axis, then prepare and Fourier
+                // transform along second axis
+                double complex *NMBF = producers->worker.NMBF;
+                double complex *NMBF_BF = producers->worker.NMBF_BF;
+                if (SHARE_BF)
+                    recombine2d_es1_omp(&prod->worker, subgrid_off_u,
+                                        BF + ifacet * wcfg->recombine.BF_size / sizeof(*BF),
+                                        NMBF);
+                else
+                    recombine2d_pf1_ft1_es1_omp(&prod->worker, subgrid_off_u,
+                                                F + ifacet * wcfg->recombine.F_size / sizeof(*F),
+                                                NMBF);
+                recombine2d_pf0_ft0_omp(&prod->worker, NMBF, NMBF_BF);
 
-                int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
-
-                if (subgrid_off_v == INT_MIN) continue;
-                producer_send_subgrid(wcfg, prod, NMBF_BF,
-                                      subgrid_off_u, subgrid_off_v, iv, iu);
+                // Go through rows in parallel
+                int iv;
+                #pragma omp for schedule(dynamic)
+                for (iv = wcfg->iv_min; iv <= wcfg->iv_max; iv++) {
+                    int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
+                    if (subgrid_off_v == INT_MIN) continue;
+                    producer_send_subgrid(wcfg, prod, ifacet, NMBF_BF,
+                                          subgrid_off_u, subgrid_off_v, iv, iu);
+                }
             }
         }
     }
 }
 
-int producer(struct work_config *wcfg, int facet_worker, int streamer_count, int *streamer_ranks)
+int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
 {
 
     struct recombine2d_config *cfg = &wcfg->recombine;
+    struct facet_work *fwork = wcfg->facet_work + facet_worker * wcfg->facet_max_work;
+
+    // Get number of facets we need to cover, warn if it is bigger than 1
+    int facet_work_count = 0; int ifacet;
+    for (ifacet = 0; ifacet < wcfg->facet_max_work; ifacet++)
+        if (wcfg->facet_work[facet_worker * wcfg->facet_max_work + ifacet].set)
+            facet_work_count++;
 
     printf("Using %.1f GB global, %.1f GB per thread\n",
-           (double)recombine2d_global_memory(cfg) / 1000000000,
-           (double)recombine2d_worker_memory(cfg) / 1000000000);
+           facet_work_count * (double)recombine2d_global_memory(cfg) / 1000000000,
+           facet_work_count * (double)recombine2d_worker_memory(cfg) / 1000000000);
 
     // Create global memory buffers
-    double complex *F = (double complex *)calloc(cfg->F_size, 1);
-    double complex *BF = (double complex *)malloc(cfg->BF_size);
+    double complex *F = (double complex *)calloc(facet_work_count, cfg->F_size);
+    double complex *BF = (double complex *)malloc(facet_work_count * cfg->BF_size);
     if (!F || !BF) {
         free(F); free(BF);
         printf("Failed to allocate global buffers!\n");
         return 1;
     }
 
-    // Fill facet with random data
-    printf("Filling facet...\n"); double generate_start = get_time_ns();
+    // Fill facet with random data (TODO: Handle the case that we are
+    // meant to cover more than one facet...)
+    printf("Filling %d facet%s...\n", facet_work_count, facet_work_count != 1 ? "s" : "");
+    double generate_start = get_time_ns();
     int x0; const int x0_chunk = 256;
-    #pragma omp parallel for schedule(dynamic)
-    for (x0 = 0; x0 < cfg->yB_size; x0+=x0_chunk) {
-        int x0_end = x0 + x0+x0_chunk;
-        if (x0_end > cfg->yB_size) x0_end = cfg->yB_size;
-        producer_fill_facet(cfg, F+x0*cfg->F_stride0, x0, x0_end);
-    }
+    for (ifacet = 0; ifacet < facet_work_count; ifacet++)
+#pragma omp parallel for schedule(dynamic)
+        for (x0 = 0; x0 < cfg->yB_size; x0+=x0_chunk) {
+            int x0_end = x0 + x0+x0_chunk;
+            if (x0_end > cfg->yB_size) x0_end = cfg->yB_size;
+            double complex *pF =
+                F + ifacet * wcfg->recombine.F_size / sizeof(*F)
+                  + x0*cfg->F_stride0;
+            producer_fill_facet(cfg, fwork + ifacet, pF, x0, x0_end);
+        }
     printf(" %.2f s\n", get_time_ns() - generate_start);
 
     // Debugging (TODO: remove)
@@ -398,7 +451,8 @@ int producer(struct work_config *wcfg, int facet_worker, int streamer_count, int
             producers = (struct producer_stream *) malloc(sizeof(struct producer_stream) * producer_count);
             int i;
             for (i = 0; i < producer_count; i++) {
-                init_producer_stream(cfg, producers + i, facet_worker, streamer_count, streamer_ranks,
+                init_producer_stream(cfg, producers + i, facet_worker, facet_work_count,
+                                     wcfg->facet_workers, streamer_ranks,
                                      BF_batch, BF_plan, send_queue_length);
             }
 

@@ -54,12 +54,13 @@ bool set_test_recombine2d_config(struct work_config *cfg,
                          2000, 100, "../../data/grid/T04_pswf.in",
                          400, 480, 900, 400, 500, 247))
         return false;
+
+    load_facets_from(cfg, "../../data/grid/T04_facet%d%d.in", NULL);
+
     // Use data from test suite. Note that not all "nmbf" reference
     // files exist in the repository, so this will show a few errors.
     // As long as no value mismatches occur this is fine
     char file[256];
-    sprintf(file, "../../data/grid/T04_facet%d%d.in", rank / 3, rank % 3);
-    cfg->recombine.facet_file = strdup(file);
     sprintf(file, "../../data/grid/T04_nmbf%%d%%d%d%d.in", rank / 3, rank % 3);
     cfg->recombine.stream_check = strdup(file);
     cfg->recombine.stream_check_threshold = 1e-9;
@@ -70,20 +71,14 @@ bool recombine2d_set_test5_config(struct work_config *cfg,
                                   int facet_workers, int subgrid_workers,
                                   int rank)
 {
-    struct vis_spec *spec = malloc(sizeof(struct vis_spec));
-    if (!set_default_vis_spec("../../data/grid/VLAA_north_cfg.h5", spec, 0.002))
-        return false;
-
-    if (!work_config_set(cfg, spec, facet_workers, subgrid_workers,
-                         spec->fov * 1. / 0.75,
-                         512, 8, "../../data/grid/T05_pswf.in",
+    if (!work_config_set(cfg, NULL, facet_workers, subgrid_workers,
+                         0.1,
+                         512, 128, "../../data/grid/T05_pswf.in",
                          128, 140, 216, 128, 256, 136))
         return false;
-    char file[256];
-    sprintf(file, "../../data/grid/T05_facet%d%d.in", rank / 3, rank % 3);
-    cfg->recombine.facet_file = strdup(file);
-    // TODO: Test reference values are in HDF5 now, so can't easily
-    // check any more...
+
+    const char *hdf5 = "../../data/grid/T05_in.h5";
+    load_facets_from(cfg, "j0=%d/j1=%d/facet", hdf5);
     return true;
 }
 
@@ -185,15 +180,16 @@ int main(int argc, char *argv[]) {
     fftw_import_wisdom_from_filename("recombine.wisdom");
 
     // Decide number of workers
-    int facet_worker_count = 9;
-    int subgrid_worker_count = world_size - facet_worker_count;
+    int facet_workers = (world_size + 1) / 2;
+    int subgrid_workers = world_size - facet_workers;
+    if (subgrid_workers == 0) subgrid_workers = 1;
 
     // Make imaging configuration
     struct work_config config;
     //if (!set_default_recombine2d_config(&config)) {
-    if (!set_test_recombine2d_config(&config, 1, 1, world_rank)) {
-    //if (!recombine2d_set_test5_config(&config, 9, 1, rank)) {
-    //if (!set_serious_test_config(&config, 9, 1, world_rank)) {
+    //if (!set_test_recombine2d_config(&config, facet_workers, subgrid_workers, world_rank)) {
+    //if (!recombine2d_set_test5_config(&config, facet_workers, subgrid_workers, world_rank)) {
+    if (!set_serious_test_config(&config, facet_workers, subgrid_workers, world_rank)) {
         fprintf(stderr, "Could not set imaging configuration!\n");
         return 1;
     }
@@ -202,30 +198,28 @@ int main(int argc, char *argv[]) {
     if (world_size == 1) {
         printf("%s pid %d role: Single\n", proc_name, getpid());
 
-        producer(&config, 0, 0, 0);
+        producer(&config, 0, 0);
 
     } else {
 
         // Determine number of producers and streamers (pretty arbitrary for now)
-        int producer_count = world_size / 2;
-        int streamer_count = world_size - producer_count;
         int i;
 
-        if (world_rank < producer_count) {
+        if (world_rank < facet_workers) {
             printf("%s pid %d role: Producer %d\n", proc_name, getpid(), world_rank);
 
-            int *streamer_ranks = (int *)malloc(sizeof(int) * streamer_count);
-            for (i = 0; i < streamer_count; i++) {
-                streamer_ranks[i] = producer_count + i;
+            int *streamer_ranks = (int *)malloc(sizeof(int) * subgrid_workers);
+            for (i = 0; i < subgrid_workers; i++) {
+                streamer_ranks[i] = facet_workers + i;
             }
 
-            producer(&config, world_rank, streamer_count, streamer_ranks);
+            producer(&config, world_rank, streamer_ranks);
 
-        } else if (world_rank - producer_count < streamer_count) {
-            printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), world_rank - producer_count);
+        } else if (world_rank - facet_workers < subgrid_workers) {
+            printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), world_rank - facet_workers);
 
-            int *producer_ranks = (int *)malloc(sizeof(int) * producer_count);
-            for (i = 0; i < producer_count; i++) {
+            int *producer_ranks = (int *)malloc(sizeof(int) * facet_workers);
+            for (i = 0; i < facet_workers; i++) {
                 producer_ranks[i] = i;
             }
 
