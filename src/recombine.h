@@ -47,7 +47,8 @@ struct recombine2d_config {
     int xM_size; //  ", padded to prevent PSWF convolution from aliasing
     int xMxN_yP_size; // subgrid/facet size, with extra padding for "m" to allow us to work within yP limit
     // Derived sizes
-    int yP_spacing; // Facet spacing in yP grid
+    int yP_spacing; // Subgrid spacing in grid sampled at yP resolution
+    int xM_spacing; // Facet spacing in image sampled at xM resolution
     int xM_yP_size; // Buffer size for "m" mask multiplication
     int xM_yN_size; // Size of subgrid/facet pieces to exchange
     // Derived data layout (F, b*F, m(b*F), n*m(b*F) respectively for two axes)

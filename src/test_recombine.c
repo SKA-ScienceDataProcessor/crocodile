@@ -164,7 +164,7 @@ int T03_add_facet() {
     double complex *BF = (double complex *)malloc(sizeof(double complex) * yP_size);
     fftw_plan BF_plan = fftw_plan_dft_1d(yP_size, BF, BF, FFTW_BACKWARD, FFTW_ESTIMATE);
     double complex *MBF = (double complex *)malloc(sizeof(double complex) * xM_yP_size);
-    fftw_plan MBF_plan = fftw_plan_dft_1d(xM_yP_size, MBF, MBF, FFTW_FORWARD, FFTW_MEASURE);
+    fftw_plan MBF_plan = fftw_plan_dft_1d(xM_yP_size, MBF, MBF, FFTW_FORWARD, FFTW_ESTIMATE);
     for (j = 0; j < nfacet; j++) {
         double complex *facet = read_dump(yB_size * sizeof(double complex), "../data/grid/T03_facet%d.in", j);
         if (!facet) return 1;
@@ -180,7 +180,7 @@ int T03_add_facet() {
 
     // Recombine subgrids
     double complex *subgrid = (double complex *)malloc(xM_size * sizeof(double complex));
-    fftw_plan subgrid_plan = fftw_plan_dft_1d(xM_size, subgrid, subgrid, FFTW_BACKWARD, FFTW_MEASURE);
+    fftw_plan subgrid_plan = fftw_plan_dft_1d(xM_size, subgrid, subgrid, FFTW_BACKWARD, FFTW_ESTIMATE);
     for (i = 0; i < nsubgrid; i++) {
         double complex *subgrid_ref = read_dump(xA_size * sizeof(double complex), "../data/grid/T03_subgrid%d.in", i);
         double complex *approx_ref = read_dump(xM_size * sizeof(double complex), "../data/grid/T03_approx%d.in", i);
@@ -484,7 +484,7 @@ int T05_degrid()
 
     double complex *subgrid = (double complex *)malloc(cfg.SG_size);
     fftw_plan subgrid_plan = fftw_plan_dft_2d(cfg.xM_size, cfg.xM_size,
-                                              subgrid, subgrid, FFTW_BACKWARD, FFTW_MEASURE);
+                                              subgrid, subgrid, FFTW_BACKWARD, FFTW_ESTIMATE);
 
     int i0, i1;
     for (i0 = 0; i0 < nsubgrid; i0++) for (i1 = 0; i1 < nsubgrid; i1++) {
@@ -498,8 +498,7 @@ int T05_degrid()
             double complex *nmbf_nmbf = all_NMBF_NMBF +
                 ix * (cfg.NMBF_NMBF_size / sizeof(double complex));
 
-            const int xM_yB_size = cfg.xM_size * cfg.yB_size / cfg.image_size;
-            recombine2d_af0_af1(&cfg, subgrid, j0 * xM_yB_size, j1 * xM_yB_size, nmbf_nmbf);
+            recombine2d_af0_af1(&cfg, subgrid, j0 * cfg.yB_size, j1 * cfg.yB_size, nmbf_nmbf);
 
         }
 
@@ -546,12 +545,8 @@ int T05_degrid()
         double du = (double)((i1 + nsubgrid/2) % nsubgrid - nsubgrid/2) / nsubgrid;
         if (fabs(dv) < 0.5 && fabs(du) < 0.5) {
             bl.uvw_m = uvw;
-            double t0 = get_time_ns();
-            for (int i = 0; i < 1000; i++) {
-                degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
-                               &bl, 0, nvis, 0, 1, &kern);
-            }
-
+            degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
+                           &bl, 0, nvis, 0, 1, &kern);
             for (y = 0; y < nvis; y++) {
                 assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
             }
