@@ -100,66 +100,6 @@ bool set_serious_test_config(struct work_config *cfg,
     return true;
 }
 
-void streamer(struct work_config *wcfg, int rank, int streamer_count, int *producer_ranks, int producer_count) {
-
-    struct recombine2d_config *cfg = &wcfg->recombine;
-    const int recv_queue_length = 16;
-
-    const int gather_size = cfg->NMBF_NMBF_size * producer_count;
-    const int queue_size = gather_size * recv_queue_length;
-    printf("Allocating %d MB receive queue\n", queue_size / 1000000);
-
-    double complex *NMBF_NMBF = (double complex *)malloc(queue_size);
-    MPI_Request *requests = (MPI_Request *)malloc(sizeof(MPI_Request) * producer_count * recv_queue_length);
-    MPI_Status *statuses = (MPI_Status *)malloc(sizeof(MPI_Status) * producer_count * recv_queue_length);
-    memset(requests, MPI_REQUEST_NULL, sizeof(MPI_Request) * producer_count * recv_queue_length);
-
-    int p, q;
-    for (q = 0; q < recv_queue_length; q++) {
-        for (p = 0; p < producer_count; p++) {
-            requests[p + producer_count * q] = MPI_REQUEST_NULL;
-        }
-    }
-
-    q = 0;
-    uint64_t received_data = 0;
-
-    int i0, i1;
-    const int nsubgrid = cfg->image_size / cfg->xA_size;
-    for (i0 = 0; i0 < nsubgrid; i0++) {
-        for (i1 = 0; i1 < nsubgrid; i1++) {
-            int target_rank = (i1 + i0 * nsubgrid) % streamer_count;
-            if (target_rank == rank) {
-
-                if(requests[producer_count * q] != MPI_REQUEST_NULL) {
-                    MPI_Waitall(producer_count, requests + producer_count * q, statuses + producer_count * q);
-                    for (p = 0; p < producer_count; p++) {
-                        requests[p + producer_count * q] = MPI_REQUEST_NULL;
-                    }
-                    received_data += gather_size;
-                }
-
-                for (p = 0; p < producer_count; p++) {
-                    MPI_Irecv(NMBF_NMBF + p * cfg->xM_yN_size * cfg->xM_yN_size,
-                              cfg->xM_yN_size * cfg->xM_yN_size, MPI_DOUBLE_COMPLEX,
-                              producer_ranks[p], 0, MPI_COMM_WORLD, requests + p + producer_count * q);
-                }
-
-                q = (q + 1) % recv_queue_length;
-
-            }
-        }
-    }
-
-    for (q = 0; q < recv_queue_length; q++) {
-        if(requests[producer_count * q] != MPI_REQUEST_NULL) {
-            MPI_Waitall(producer_count, requests + producer_count * q, statuses + producer_count * q);
-            received_data += gather_size;
-        }
-    }
-    printf("Received %.2f GB\n", (double)received_data / 1000000000);
-}
-
 int main(int argc, char *argv[]) {
 
     // Initialise MPI, read configuration (we need multi-threading support)
@@ -223,7 +163,7 @@ int main(int argc, char *argv[]) {
                 producer_ranks[i] = i;
             }
 
-            streamer(&config, world_rank-producer_count, streamer_count, producer_ranks, producer_count);
+            streamer(&config, world_rank-facet_workers, producer_ranks);
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
