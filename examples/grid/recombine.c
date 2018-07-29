@@ -160,6 +160,7 @@ bool recombine2d_set_config(struct recombine2d_config *cfg,
     assert(cfg->xA_size % cfg->subgrid_spacing == 0);
 
     cfg->yP_spacing = cfg->subgrid_spacing * cfg->yP_size / image_size;
+    cfg->xM_spacing = cfg->facet_spacing * cfg->xM_size / image_size;
     assert((cfg->xM_size * cfg->yP_size) % cfg->image_size == 0);
     cfg->xM_yP_size = cfg->xM_size * cfg->yP_size / cfg->image_size;
     assert((cfg->xM_size * cfg->yN_size) % cfg->image_size == 0);
@@ -510,9 +511,13 @@ void recombine2d_es0(struct recombine2d_worker *worker,
 
 void recombine2d_af0_af1(struct recombine2d_config *cfg,
                          double complex *subgrid,
-                         int facet_offset0, int facet_offset1,
+                         int facet_off0, int facet_off1,
                          double complex *NMBF_NMBF)
 {
+    assert(facet_off0 % cfg->facet_spacing == 0);
+    assert(facet_off1 % cfg->facet_spacing == 0);
+    int facet_offset0 = facet_off0 / cfg->facet_spacing * cfg->xM_spacing;
+    int facet_offset1 = facet_off1 / cfg->facet_spacing * cfg->xM_spacing;
 
     int j0, j1;
     for (j0 = 0; j0 < cfg->xM_yN_size; j0++) {
