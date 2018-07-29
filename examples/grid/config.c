@@ -415,6 +415,33 @@ void load_facets_from(struct work_config *cfg,
     }
 
 }
+
+void check_subgrids_against(struct work_config *cfg,
+                            double threshold, double fct_threshold,
+                            const char *check_fmt,
+                            const char *check_fct_fmt,
+                            const char *hdf5)
+{
+
+    int i;
+    for (i = 0; i < cfg->subgrid_workers * cfg->subgrid_max_work; i++) {
+        struct subgrid_work *work = cfg->subgrid_work + i;
+        if (!work->nbl) continue;
+        char path[256];
+        if (check_fmt) {
+            snprintf(path, 256, check_fmt, work->iv, work->iu);
+            work->check_path = strdup(path);
+        }
+        if (check_fct_fmt) {
+            snprintf(path, 256, check_fct_fmt, work->iv, work->iu);
+            work->check_fct_path = strdup(path);
+        }
+        work->check_hdf5 = hdf5 ? strdup(hdf5) : NULL;
+        work->check_threshold = threshold;
+        work->check_fct_threshold = fct_threshold;
+    }
+
+}
 // Make baseline specification. Right now this is the same for every
 // baseline, but this will change for baseline dependent averaging.
 void vis_spec_to_bl_data(struct bl_data *bl, struct vis_spec *spec,

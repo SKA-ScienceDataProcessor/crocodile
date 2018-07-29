@@ -79,6 +79,9 @@ bool recombine2d_set_test5_config(struct work_config *cfg,
 
     const char *hdf5 = "../../data/grid/T05_in.h5";
     load_facets_from(cfg, "j0=%d/j1=%d/facet", hdf5);
+    check_subgrids_against(cfg, 1.2e-8, 5.5e-6,
+                           "i0=%d/i1=%d/approx",
+                           "i0=%d/i1=%d/j0=%%d/j1=%%d/nmbf", hdf5);
     return true;
 }
 

@@ -35,6 +35,8 @@ struct subgrid_work
     int iu, iv; // Column/row number. Used for grouping, so must be consistent across work items!
     int subgrid_off_u, subgrid_off_v; // Midpoint offset in grid coordinates
     int nbl; // Baselines in this work bin
+    char *check_path, *check_fct_path, *check_hdf5; // check data if set
+    double check_threshold, check_fct_threshold; // at what discrepancy to fail
     struct subgrid_work_bl *bls; // Baselines
 };
 
@@ -71,6 +73,8 @@ bool work_config_set(struct work_config *cfg,
                      int yB_size, int yN_size, int yP_size,
                      int xA_size, int xM_size, int xMxN_yP_size);
 void load_facets_from(struct work_config *cfg, const char *path_fmt, const char *hdf5);
+void check_subgrids_against(struct work_config *cfg, double threshold, double fct_threshold,
+                            const char *check_fmt, const char *check_fct_fmt, const char *hdf5);
 
 void vis_spec_to_bl_data(struct bl_data *bl, struct vis_spec *spec,
                          int a1, int a2);
