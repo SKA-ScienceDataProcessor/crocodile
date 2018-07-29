@@ -32,7 +32,6 @@ void add_facet(int xM_size, int xM_yN_size, int facet_offset,
 struct recombine2d_config {
 
     // Local configuration (might depend on rank)
-    char *facet_file; // Facet (debugging)
     char *stream_check; // Check stream contents (debugging)
     double stream_check_threshold;
     char *stream_dump; // File dump I/O (debugging)

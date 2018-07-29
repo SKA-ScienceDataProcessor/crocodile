@@ -132,7 +132,6 @@ bool recombine2d_set_config(struct recombine2d_config *cfg,
                             int yB_size, int yN_size, int yP_size,
                             int xA_size, int xM_size, int xMxN_yP_size) {
 
-    cfg->facet_file = NULL;
     cfg->stream_check = NULL;
     cfg->stream_check_threshold = 0;
     cfg->stream_dump = NULL;

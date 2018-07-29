@@ -192,7 +192,6 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
     }
 
     // Allocate work description
-    printf("subgrid_workers=%d\n", cfg->subgrid_workers);
     cfg->subgrid_max_work = (nwork + cfg->subgrid_workers - 1) / cfg->subgrid_workers;
     cfg->subgrid_work = (struct subgrid_work *)
         calloc(sizeof(struct subgrid_work), cfg->subgrid_workers * cfg->subgrid_max_work);
@@ -287,25 +286,20 @@ static bool generate_facet_work_assignment(struct work_config *cfg)
     printf("%dx%d facets covering %g FoV (facet %g, grid theta %g)\n",
            nfacet, nfacet, cfg->spec.fov, cfg->theta * yB, cfg->theta);
 
-    // However, we currently do not support facet workers handling
-    // anything other than exactly one facet. In fact, I am *really*
-    // unsure whether you would ever want to do that.
-    if (cfg->facet_workers != nfacet * nfacet) {
-        fprintf(stderr, "Need to use exactly %d facet workers!\n", nfacet * nfacet);
-        return false;
-    }
+    // Allocate work array
+    cfg->facet_max_work = (nfacet * nfacet + cfg->facet_workers - 1) / cfg->facet_workers;
+    cfg->facet_work = (struct facet_work *)
+        calloc(sizeof(struct facet_work), cfg->facet_workers * cfg->facet_max_work);
 
-    cfg->facet_max_work = 1;
-    cfg->facet_work = (struct facet_work *)malloc(sizeof(struct facet_work) * nfacet * nfacet);
-
-    int il, im;
-    for (im = 0; im < nfacet; im++) {
-        for (il = 0; il < nfacet; il++) {
-            cfg->facet_work[im * nfacet + il].il = il;
-            cfg->facet_work[im * nfacet + il].im = im;
-            cfg->facet_work[im * nfacet + il].im = im;
-
-        }
+    int i;
+    for (i = 0; i < nfacet * nfacet; i++) {
+        int iworker = i % cfg->facet_workers, iwork = i / cfg->facet_workers;
+        struct facet_work *work = cfg->facet_work + cfg->facet_max_work * iworker + iwork;
+        work->il = (i / nfacet) - nfacet/2;
+        work->im = (i % nfacet) - nfacet/2;
+        work->facet_off_l = work->il * cfg->recombine.yB_size;
+        work->facet_off_m = work->im * cfg->recombine.yB_size;
+        work->set = true;
     }
 
     return true;
@@ -339,15 +333,17 @@ static bool generate_full_redistribute_assignment(struct work_config *cfg)
     cfg->iu_max = cfg->iv_max = nsubgrid-1;
 
     int nfacet = cfg->recombine.image_size / cfg->recombine.yB_size;
-    cfg->facet_max_work = 1;
+    cfg->facet_max_work = (nfacet * nfacet + cfg->facet_workers - 1) / cfg->facet_workers;
     cfg->facet_work = (struct facet_work *)
         calloc(sizeof(struct facet_work), cfg->facet_max_work * cfg->facet_workers);
-    for (i = 0; i < cfg->facet_workers; i++) {
-        struct facet_work *work = cfg->facet_work + i;
+    for (i = 0; i < nfacet * nfacet; i++) {
+        int iworker = i % cfg->facet_workers, iwork = i / cfg->facet_workers;
+        struct facet_work *work = cfg->facet_work + cfg->facet_max_work * iworker + iwork;
         work->il = i / nfacet;
         work->im = i % nfacet;
         work->facet_off_l = work->il * cfg->recombine.yB_size;
         work->facet_off_m = work->im * cfg->recombine.yB_size;
+        work->set = true;
     }
 
     return true;
@@ -395,9 +391,30 @@ bool work_config_set(struct work_config *cfg,
             return false;
     }
 
+    // Warn if we have multiple facets per worker
+    if (cfg->facet_max_work > 1) {
+        printf("WARNING: Multiple facets per worker is inefficient. Consider more MPI ranks.\n");
+    }
+
     return true;
 }
 
+void load_facets_from(struct work_config *cfg,
+                      const char *path_fmt,
+                      const char *hdf5)
+{
+
+    int i;
+    for (i = 0; i < cfg->facet_workers * cfg->facet_max_work; i++) {
+        struct facet_work *work = cfg->facet_work + i;
+        if (!work->set) continue;
+        char path[256];
+        snprintf(path, 256, path_fmt, work->im, work->il);
+        work->path = strdup(path);
+        work->hdf5 = hdf5 ? strdup(hdf5) : NULL;
+    }
+
+}
 // Make baseline specification. Right now this is the same for every
 // baseline, but this will change for baseline dependent averaging.
 void vis_spec_to_bl_data(struct bl_data *bl, struct vis_spec *spec,
