@@ -300,7 +300,7 @@ void recombine2d_pf1_ft1_es1_omp(struct recombine2d_worker *worker,
     int BF_chunk_size = sizeof(double complex) * cfg->yP_size * worker->BF_batch;
     double complex *BF_chunk = malloc(BF_chunk_size);
     assert(cfg->BF_stride1 == 1);
-    assert(cfg->NMBF_BF_stride0 = 1);
+    assert(cfg->NMBF_BF_stride0 == 1);
     assert(cfg->BF_stride0 == cfg->NMBF_BF_stride1);
     assert(subgrid_off1 % cfg->subgrid_spacing == 0);
 

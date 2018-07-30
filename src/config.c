@@ -7,7 +7,7 @@
 #include <assert.h>
 #include <string.h>
 
-const int WORK_SPLIT_THRESHOLD = 10;
+const int WORK_SPLIT_THRESHOLD = 3;
 
 double min(double a, double b) { return a > b ? b : a; }
 double max(double a, double b) { return a < b ? b : a; }
@@ -161,18 +161,21 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
     int nsubgrid = collect_baselines(spec, cfg->lam, xA, &nbl, &bls);
 
     // Count how many sub-grids actually have visibilities
-    int npop = 0, nbl_total = 0;
+    int npop = 0, nbl_total = 0, nbl_max = 0;
     int iu, iv;
     for (iu = nsubgrid/2; iu < nsubgrid; iu++)
         for (iv = 0; iv < nsubgrid; iv++)
             if (nbl[iv * nsubgrid + iu]) {
                 npop++;
                 nbl_total+=nbl[iv * nsubgrid + iu];
+                if (nbl[iv * nsubgrid + iu] > nbl_max)
+                    nbl_max = nbl[iv * nsubgrid + iu];
             }
 
     // We don't want bins that are too full compared to the average -
     // determine at what point we're going to split them.
-    int work_max_nbl = WORK_SPLIT_THRESHOLD * nbl_total / npop;
+    int work_max_nbl = max(WORK_SPLIT_THRESHOLD * nbl_total / npop,
+                           (nbl_max + cfg->subgrid_workers - 1) / cfg->subgrid_workers);
     printf("%d subgrid baseline bins, %.4g average per subgrid, splitting above %d\n",
            npop, (double)nbl_total / npop, work_max_nbl);
 
@@ -371,6 +374,8 @@ bool work_config_set(struct work_config *cfg,
     cfg->subgrid_workers = subgrid_workers;
     cfg->subgrid_max_work = 0;
     cfg->subgrid_work = NULL;
+    cfg->produce_parallel_cols = false;
+    cfg->produce_retain_bf = true;
 
     // Set recombination configuration
     printf("\nInitialising recombination...\n");
