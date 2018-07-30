@@ -58,6 +58,10 @@ struct work_config {
 
     // Recombination configuration
     struct recombine2d_config recombine;
+
+    // Parameters
+    bool produce_parallel_cols;
+    bool produce_retain_bf;
 };
 
 void bl_bounding_box(struct vis_spec *spec, int a1, int a2,

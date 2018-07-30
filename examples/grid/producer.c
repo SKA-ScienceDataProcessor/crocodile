@@ -135,7 +135,7 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
                            int facet_work_ix,
                            double complex *NMBF_BF,
                            int subgrid_off_u, int subgrid_off_v,
-                           int iv, int iu)
+                           int iu, int iv)
 {
     struct recombine2d_config *cfg = &wcfg->recombine;
 
@@ -292,13 +292,10 @@ static void producer_work(struct work_config *wcfg,
                           double complex *F, double complex *BF)
 {
 
-    const bool PARALLEL_COLS = false;
-    const bool SHARE_BF = true;
-    assert(!PARALLEL_COLS || SHARE_BF); // sequential w/o sharing not implemented yet
     int ifacet;
 
     // Do first stage preparation and Fourier Transform
-    if (SHARE_BF)
+    if (wcfg->produce_retain_bf)
         for (ifacet = 0; ifacet < prod->facet_work_count; ifacet++)
             recombine2d_pf1_ft1_omp(&prod->worker,
                                     F + ifacet * wcfg->recombine.F_size / sizeof(*F),
@@ -306,7 +303,7 @@ static void producer_work(struct work_config *wcfg,
     // TODO: Generate facet on the fly
 
     int iu;
-    if (PARALLEL_COLS) {
+    if (wcfg->produce_parallel_cols) {
         // Go through columns in parallel
         #pragma omp for schedule(dynamic)
         for (iu = wcfg->iu_min; iu <= wcfg->iu_max ; iu++) {
@@ -321,7 +318,7 @@ static void producer_work(struct work_config *wcfg,
 
                 // Extract subgrids along first axis, then prepare and Fourier
                 // transform along second axis
-                recombine2d_es1_pf0_ft0(&prod->worker, iu,
+                recombine2d_es1_pf0_ft0(&prod->worker, subgrid_off_u,
                                         BF + ifacet * wcfg->recombine.BF_size / sizeof(*BF),
                                         prod->worker.NMBF_BF);
 
@@ -331,7 +328,7 @@ static void producer_work(struct work_config *wcfg,
                     int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
                     if (subgrid_off_v == INT_MIN) continue;
                     producer_send_subgrid(wcfg, prod, ifacet, prod->worker.NMBF_BF,
-                                          subgrid_off_u, subgrid_off_v, iv, iu);
+                                          subgrid_off_u, subgrid_off_v, iu, iv);
                 }
             }
         }
@@ -350,7 +347,7 @@ static void producer_work(struct work_config *wcfg,
                 // transform along second axis
                 double complex *NMBF = producers->worker.NMBF;
                 double complex *NMBF_BF = producers->worker.NMBF_BF;
-                if (SHARE_BF)
+                if (wcfg->produce_retain_bf)
                     recombine2d_es1_omp(&prod->worker, subgrid_off_u,
                                         BF + ifacet * wcfg->recombine.BF_size / sizeof(*BF),
                                         NMBF);
@@ -367,7 +364,7 @@ static void producer_work(struct work_config *wcfg,
                     int subgrid_off_v = get_subgrid_off_v(wcfg, iu, iv);
                     if (subgrid_off_v == INT_MIN) continue;
                     producer_send_subgrid(wcfg, prod, ifacet, NMBF_BF,
-                                          subgrid_off_u, subgrid_off_v, iv, iu);
+                                          subgrid_off_u, subgrid_off_v, iu, iv);
                 }
             }
         }
@@ -392,8 +389,10 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
 
     // Create global memory buffers
     double complex *F = (double complex *)calloc(facet_work_count, cfg->F_size);
-    double complex *BF = (double complex *)malloc(facet_work_count * cfg->BF_size);
-    if (!F || !BF) {
+    double complex *BF = NULL;
+    if (wcfg->produce_retain_bf)
+        BF = (double complex *)malloc(facet_work_count * cfg->BF_size);
+    if (!F || (!BF && wcfg->produce_retain_bf)) {
         free(F); free(BF);
         printf("Failed to allocate global buffers!\n");
         return 1;
@@ -444,7 +443,7 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
         {
 
             // Do global planning
-            printf("Planning...\n"); double planning_start = get_time_ns();
+            printf("Planning for %d threads...\n", producer_count); double planning_start = get_time_ns();
             fftw_plan BF_plan = recombine2d_bf_plan(cfg, BF_batch, BF, FFTW_MEASURE);
 
             // Create producers (which involves planning, and therefore is not parallelised)
