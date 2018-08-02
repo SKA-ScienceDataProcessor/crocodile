@@ -172,12 +172,15 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
                     nbl_max = nbl[iv * nsubgrid + iu];
             }
 
+    double coverage = (double)npop * cfg->recombine.xA_size * cfg->recombine.xA_size
+                                   / cfg->recombine.image_size  / cfg->recombine.image_size;
+
     // We don't want bins that are too full compared to the average -
     // determine at what point we're going to split them.
     int work_max_nbl = max(WORK_SPLIT_THRESHOLD * nbl_total / npop,
                            (nbl_max + cfg->subgrid_workers - 1) / cfg->subgrid_workers);
-    printf("%d subgrid baseline bins, %.4g average per subgrid, splitting above %d\n",
-           npop, (double)nbl_total / npop, work_max_nbl);
+    printf("%d subgrid baseline bins (%.3g%% coverage), %.4g average per subgrid, splitting above %d\n",
+           npop, coverage*100, (double)nbl_total / npop, work_max_nbl);
 
     // Now count again how much work we have total, and per
     // column. Note that we ignore grid data at u < 0, as transferring
