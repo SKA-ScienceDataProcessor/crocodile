@@ -288,6 +288,7 @@ static bool generate_facet_work_assignment(struct work_config *cfg)
 
     // Allocate work array
     cfg->facet_max_work = (nfacet * nfacet + cfg->facet_workers - 1) / cfg->facet_workers;
+    cfg->facet_count = nfacet * nfacet;
     cfg->facet_work = (struct facet_work *)
         calloc(sizeof(struct facet_work), cfg->facet_workers * cfg->facet_max_work);
 
@@ -334,6 +335,7 @@ static bool generate_full_redistribute_assignment(struct work_config *cfg)
 
     int nfacet = cfg->recombine.image_size / cfg->recombine.yB_size;
     cfg->facet_max_work = (nfacet * nfacet + cfg->facet_workers - 1) / cfg->facet_workers;
+    cfg->facet_count = nfacet * nfacet;
     cfg->facet_work = (struct facet_work *)
         calloc(sizeof(struct facet_work), cfg->facet_max_work * cfg->facet_workers);
     for (i = 0; i < nfacet * nfacet; i++) {
@@ -367,6 +369,7 @@ bool work_config_set(struct work_config *cfg,
     }
     cfg->facet_workers = facet_workers;
     cfg->facet_max_work = 0;
+    cfg->facet_count = 0;
     cfg->facet_work = NULL;
     cfg->subgrid_workers = subgrid_workers;
     cfg->subgrid_max_work = 0;
@@ -393,7 +396,8 @@ bool work_config_set(struct work_config *cfg,
 
     // Warn if we have multiple facets per worker
     if (cfg->facet_max_work > 1) {
-        printf("WARNING: Multiple facets per worker is inefficient. Consider more MPI ranks.\n");
+        printf("WARNING: %d facets, but only %d workers. Consider more MPI ranks.\n",
+               cfg->facet_count, cfg->facet_workers);
     }
 
     return true;

@@ -321,7 +321,7 @@ static void producer_work(struct work_config *wcfg,
 
                 // Extract subgrids along first axis, then prepare and Fourier
                 // transform along second axis
-                recombine2d_es1_pf0_ft0(&prod->worker, iu,
+                recombine2d_es1_pf0_ft0(&prod->worker, subgrid_off_u,
                                         BF + ifacet * wcfg->recombine.BF_size / sizeof(*BF),
                                         prod->worker.NMBF_BF);
 
@@ -444,7 +444,7 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
         {
 
             // Do global planning
-            printf("Planning...\n"); double planning_start = get_time_ns();
+            printf("Planning for %d threads...\n", producer_count); double planning_start = get_time_ns();
             fftw_plan BF_plan = recombine2d_bf_plan(cfg, BF_batch, BF, FFTW_MEASURE);
 
             // Create producers (which involves planning, and therefore is not parallelised)

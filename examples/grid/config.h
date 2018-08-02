@@ -50,6 +50,7 @@ struct work_config {
     // Worker configuration
     int facet_workers; // number of facet workers
     int facet_max_work; // work list length per worker
+    int facet_count; // Number of facets
     struct facet_work *facet_work; // facet work list (2d array - worker x work)
     int subgrid_workers; // number of subgrid workers
     int subgrid_max_work; // work list length per worker
