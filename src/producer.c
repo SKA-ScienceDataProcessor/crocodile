@@ -23,7 +23,7 @@ struct producer_stream {
     // Send queue
     int send_queue_length;
     MPI_Request *requests;
-    int bytes_sent;
+    uint64_t bytes_sent;
 
     // Private buffers
     double complex *NMBF_NMBF_queue;
@@ -90,14 +90,30 @@ void producer_add_stats(struct producer_stream *to, struct producer_stream *from
     to->mpi_send_time += from->mpi_send_time;
 }
 
-void producer_dump_stats(struct producer_stream *prod, struct recombine2d_config *cfg,
+void producer_dump_stats(struct work_config *wcfg, int facet_worker,
+                         struct producer_stream *prod,
                          int producer_count, double dt)
 {
+    struct recombine2d_config *cfg = &wcfg->recombine;
+
+    // For the "effective" statistic we count the number of bytes we
+    // conveyed information about. This statistic is slightly messy
+    // because on one hand we have communication overheads (decreasing
+    // effectiveness), but on the other hand for generating
+    // visibilities do not need to cover the entire grid (increasing
+    // effectivenes).
+    uint64_t effective = 0;
+    int i;
+    for (i = 0; i < wcfg->facet_max_work; i++) {
+        if (wcfg->facet_work[i].set) {
+            effective += cfg->F_size;
+        }
+    }
 
     double total = dt * producer_count;
     printf("\n%.2f s wall-clock, %.2f GB (%.2f GB effective), %.2f MB/s (%.2f MB/s effective)\n", dt,
-           (double)prod->bytes_sent / 1000000000, (double)cfg->F_size / 1000000000,
-           (double)prod->bytes_sent / dt / 1000000, (double)cfg->F_size / dt/ 1000000);
+           (double)prod->bytes_sent / 1000000000, (double)effective / 1000000000,
+           (double)prod->bytes_sent / dt / 1000000, (double)effective / dt/ 1000000);
     printf("PF1: %.2f s (%.1f%%), FT1: %.2f s (%.1f%%), ES1: %.2f s (%.1f%%)\n",
            prod->worker.pf1_time, prod->worker.pf1_time / total * 100,
            prod->worker.ft1_time, prod->worker.ft1_time / total * 100,
@@ -183,7 +199,7 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
             memcpy(send_buf, NMBF_NMBF, cfg->NMBF_NMBF_size);
         }
 
-        // Send
+        // Send (unless running in single-node mode, then we just pretend)
         if (prod->streamer_ranks) {
             int tag = make_subgrid_tag(wcfg, iworker, iwork,
                                        prod->facet_worker, facet_work_ix);
@@ -191,8 +207,8 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
             MPI_Isend(NMBF_NMBF, cfg->xM_yN_size * cfg->xM_yN_size, MPI_DOUBLE_COMPLEX,
                       prod->streamer_ranks[iworker], tag, MPI_COMM_WORLD, &prod->requests[indx]);
             prod->mpi_send_time += get_time_ns() - start;
-            prod->bytes_sent += sizeof(double complex) * cfg->xM_yN_size * cfg->xM_yN_size;
         }
+        prod->bytes_sent += sizeof(double complex) * cfg->xM_yN_size * cfg->xM_yN_size;
 
     }
 
@@ -481,7 +497,9 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
     for (p = 1; p < producer_count; p++) {
         producer_add_stats(producers, producers + p);
     }
-    producer_dump_stats(producers, cfg, producer_count, get_time_ns() - run_start);
+    producer_dump_stats(wcfg, facet_worker,
+                        producers, producer_count,
+                        get_time_ns() - run_start);
 
     return 0;
 }
