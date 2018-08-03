@@ -393,21 +393,27 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
     struct recombine2d_config *cfg = &wcfg->recombine;
     struct facet_work *fwork = wcfg->facet_work + facet_worker * wcfg->facet_max_work;
 
+    const int BF_batch = 16;
+    const int send_queue_length = 8;
+
     // Get number of facets we need to cover, warn if it is bigger than 1
     int facet_work_count = 0; int ifacet;
     for (ifacet = 0; ifacet < wcfg->facet_max_work; ifacet++)
         if (wcfg->facet_work[facet_worker * wcfg->facet_max_work + ifacet].set)
             facet_work_count++;
 
+    uint64_t F_size = facet_work_count * cfg->F_size;
+    uint64_t BF_size = wcfg->produce_retain_bf ?
+        facet_work_count * cfg->BF_size :
+        sizeof(double complex) * cfg->yP_size * BF_batch;
+
     printf("Using %.1f GB global, %.1f GB per thread\n",
-           facet_work_count * (double)recombine2d_global_memory(cfg) / 1000000000,
+           (double)(F_size + BF_size) / 1000000000,
            facet_work_count * (double)recombine2d_worker_memory(cfg) / 1000000000);
 
     // Create global memory buffers
-    double complex *F = (double complex *)calloc(facet_work_count, cfg->F_size);
-    double complex *BF = NULL;
-    if (wcfg->produce_retain_bf)
-        BF = (double complex *)malloc(facet_work_count * cfg->BF_size);
+    double complex *F = (double complex *)calloc(1, F_size);
+    double complex *BF = (double complex *)malloc(BF_size);
     if (!F || (!BF && wcfg->produce_retain_bf)) {
         free(F); free(BF);
         printf("Failed to allocate global buffers!\n");
@@ -450,9 +456,6 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
 
     #pragma omp parallel
     {
-
-        const int BF_batch = 16;
-        const int send_queue_length = 8;
 
         producer_count = omp_get_num_threads();
         #pragma omp single
