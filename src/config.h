@@ -35,17 +35,21 @@ struct subgrid_work
     int iu, iv; // Column/row number. Used for grouping, so must be consistent across work items!
     int subgrid_off_u, subgrid_off_v; // Midpoint offset in grid coordinates
     int nbl; // Baselines in this work bin
-    char *check_path, *check_fct_path, *check_hdf5; // check data if set
-    double check_threshold, check_fct_threshold; // at what discrepancy to fail
+    char *check_path, *check_fct_path,
+         *check_degrid_path, *check_hdf5; // check data if set
+    double check_threshold, check_fct_threshold,
+           check_degrid_threshold; // at what discrepancy to fail
     struct subgrid_work_bl *bls; // Baselines
 };
 
 struct work_config {
 
     // Fundamental dimensions
-    double lam; // size of entire grid in wavelenghts
+    // double lam; // size of entire grid in wavelenghts
     double theta; // size of image in radians
     struct vis_spec spec;
+    char *vis_path; // Visibility file (pattern)
+    char *gridder_path; // Gridding kernel file
 
     // Worker configuration
     int facet_workers; // number of facet workers
@@ -65,21 +69,35 @@ struct work_config {
     bool produce_retain_bf;
 };
 
+double get_time_ns();
+
 void bl_bounding_box(struct vis_spec *spec, int a1, int a2,
                      double *uvw_l_min, double *uvw_l_max);
 void bl_bounding_subgrids(struct vis_spec *spec, double lam, double xA, int a1, int a2,
                           int *sg_min, int *sg_max);
 
-bool work_config_set(struct work_config *cfg,
-                     struct vis_spec *spec,
-                     int facet_workers, int subgrid_workers,
-                     double theta, int image_size, int subgrid_spacing,
-                     char *pswf_file,
-                     int yB_size, int yN_size, int yP_size,
-                     int xA_size, int xM_size, int xMxN_yP_size);
-void load_facets_from(struct work_config *cfg, const char *path_fmt, const char *hdf5);
-void check_subgrids_against(struct work_config *cfg, double threshold, double fct_threshold,
-                            const char *check_fmt, const char *check_fct_fmt, const char *hdf5);
+void config_init(struct work_config *cfg,
+                 int facet_workers, int subgrid_workers);
+bool config_set(struct work_config *cfg,
+                int image_size, int subgrid_spacing,
+                char *pswf_file,
+                int yB_size, int yN_size, int yP_size,
+                int xA_size, int xM_size, int xMxN_yP_size);
+bool config_assign_work(struct work_config *cfg);
+
+void config_free(struct work_config *cfg);
+
+void config_set_visibilities(struct work_config *cfg,
+                             struct vis_spec *spec, double theta,
+                             const char *vis_path);
+void config_set_degrid(struct work_config *cfg,
+                       const char *gridder_path);
+
+void config_load_facets(struct work_config *cfg, const char *path_fmt, const char *hdf5);
+void config_check_subgrids(struct work_config *cfg,
+                           double threshold, double fct_threshold, double degrid_threshold,
+                           const char *check_fmt, const char *check_fct_fmt,
+                           const char *check_degrid_fmt, const char *hdf5);
 
 void vis_spec_to_bl_data(struct bl_data *bl, struct vis_spec *spec,
                          int a1, int a2);
