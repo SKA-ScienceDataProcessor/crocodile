@@ -97,14 +97,16 @@ int main(int argc, char *argv[])
     spec.freq_step = 50.e6 / spec.freq_count; // Hz
 
     struct work_config work_cfg;
-    if (!work_config_set(&work_cfg, &spec,
-                         9, 10,
-                         spec.fov * 1. / 0.75, 32768, 4,
-                         "../../data/grid/T06_pswf.in",
-                         8192, 8640, 16384,
-                         384, 512, 276)) {
+    config_init(&work_cfg, 9, 10);
+    if (!config_set(&work_cfg,
+                    32768, 4,
+                    "../../data/grid/T06_pswf.in",
+                    8192, 8640, 16384,
+                    384, 512, 276)) {
         return 1;
     }
+    config_set_visibilities(&work_cfg, &spec, spec.fov * 1. / 0.75, NULL);
+    config_assign_work(&work_cfg);
 
     int i;
     for (i = 0; i < work_cfg.subgrid_workers; i++) {

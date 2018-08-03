@@ -6,11 +6,19 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <time.h>
 
 const int WORK_SPLIT_THRESHOLD = 3;
 
 double min(double a, double b) { return a > b ? b : a; }
 double max(double a, double b) { return a < b ? b : a; }
+
+double get_time_ns()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
+}
 
 void bl_bounding_box(struct vis_spec *spec, int a1, int a2,
                      double *uvw_l_min, double *uvw_l_max)
@@ -158,7 +166,8 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
     // Count visibilities per sub-grid
     double xA = (double)cfg->recombine.xA_size / cfg->recombine.image_size;
     int *nbl; struct subgrid_work_bl **bls;
-    int nsubgrid = collect_baselines(spec, cfg->lam, xA, &nbl, &bls);
+    int nsubgrid = collect_baselines(spec, cfg->recombine.image_size / cfg->theta,
+                                     xA, &nbl, &bls);
 
     // Count how many sub-grids actually have visibilities
     int npop = 0, nbl_total = 0, nbl_max = 0;
@@ -224,8 +233,8 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
             for (start_bl = 0; start_bl < nv; start_bl += work_max_nbl) {
                 column[ncol].iu = iu - nsubgrid/2;
                 column[ncol].iv = iv - nsubgrid/2;
-                column[ncol].subgrid_off_u = cfg->recombine.xA_size * ((column[ncol].iu + nsubgrid) % nsubgrid);
-                column[ncol].subgrid_off_v = cfg->recombine.xA_size * ((column[ncol].iv + nsubgrid) % nsubgrid);
+                column[ncol].subgrid_off_u = cfg->recombine.xA_size * column[ncol].iu;
+                column[ncol].subgrid_off_v = cfg->recombine.xA_size * column[ncol].iv;
                 column[ncol].nbl = min(nv-start_bl, work_max_nbl);
                 column[ncol].bls = pop_bls(&bls[iv * nsubgrid + iu], work_max_nbl);
                 ncol++;
@@ -357,31 +366,24 @@ static bool generate_full_redistribute_assignment(struct work_config *cfg)
     return true;
 }
 
-bool work_config_set(struct work_config *cfg,
-                     struct vis_spec *spec,
-                     int facet_workers, int subgrid_workers,
-                     double theta, int image_size, int subgrid_spacing,
-                     char *pswf_file,
-                     int yB_size, int yN_size, int yP_size,
-                     int xA_size, int xM_size, int xMxN_yP_size) {
+void config_init(struct work_config *cfg,
+                 int facet_workers, int subgrid_workers)
+{
 
     // Initialise structure
-    cfg->lam = image_size / theta;
-    cfg->theta = theta;
-    if (spec) {
-        cfg->spec = *spec;
-    } else {
-        memset(&cfg->spec, 0, sizeof(cfg->spec));
-    }
+    memset(cfg, 0, sizeof(*cfg));
     cfg->facet_workers = facet_workers;
-    cfg->facet_max_work = 0;
-    cfg->facet_count = 0;
-    cfg->facet_work = NULL;
     cfg->subgrid_workers = subgrid_workers;
-    cfg->subgrid_max_work = 0;
-    cfg->subgrid_work = NULL;
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
+}
+
+bool config_set(struct work_config *cfg,
+                int image_size, int subgrid_spacing,
+                char *pswf_file,
+                int yB_size, int yN_size, int yP_size,
+                int xA_size, int xM_size, int xMxN_yP_size)
+{
 
     // Set recombination configuration
     printf("\nInitialising recombination...\n");
@@ -390,8 +392,98 @@ bool work_config_set(struct work_config *cfg,
                                 xA_size, xM_size, xMxN_yP_size))
         return false;
 
+    return true;
+}
+
+void config_free(struct work_config *cfg)
+{
+    free(cfg->vis_path);
+    free(cfg->facet_work);
+
+    int i;
+    for (i = 0; i < cfg->subgrid_workers * cfg->subgrid_max_work; i++) {
+        while (cfg->subgrid_work[i].bls) {
+            struct subgrid_work_bl *bl = cfg->subgrid_work[i].bls;
+            cfg->subgrid_work[i].bls = cfg->subgrid_work[i].bls->next;
+            free(bl);
+        }
+    }
+    free(cfg->subgrid_work);
+}
+
+void config_set_visibilities(struct work_config *cfg,
+                             struct vis_spec *spec, double theta,
+                             const char *vis_path)
+{
+    // Copy
+    cfg->spec = *spec;
+    cfg->theta = theta;
+    if (vis_path)
+        cfg->vis_path = strdup(vis_path);
+}
+
+void config_set_degrid(struct work_config *cfg, const char *gridder_path)
+{
+    if (gridder_path)
+        cfg->gridder_path = strdup(gridder_path);
+}
+
+void config_load_facets(struct work_config *cfg,
+                        const char *path_fmt,
+                        const char *hdf5)
+{
+
+    int i;
+    for (i = 0; i < cfg->facet_workers * cfg->facet_max_work; i++) {
+        struct facet_work *work = cfg->facet_work + i;
+        if (!work->set) continue;
+        char path[256];
+        snprintf(path, 256, path_fmt, work->im, work->il);
+        work->path = strdup(path);
+        work->hdf5 = hdf5 ? strdup(hdf5) : NULL;
+    }
+
+}
+
+void config_check_subgrids(struct work_config *cfg,
+                           double threshold, double fct_threshold,
+                           double degrid_threshold,
+                           const char *check_fmt,
+                           const char *check_fct_fmt,
+                           const char *check_degrid_fmt,
+                           const char *hdf5)
+{
+
+    int i;
+    for (i = 0; i < cfg->subgrid_workers * cfg->subgrid_max_work; i++) {
+        struct subgrid_work *work = cfg->subgrid_work + i;
+        if (!work->nbl) continue;
+        char path[256];
+        if (check_fmt) {
+            snprintf(path, 256, check_fmt, work->iv, work->iu);
+            work->check_path = strdup(path);
+        }
+        if (check_fct_fmt) {
+            snprintf(path, 256, check_fct_fmt, work->iv, work->iu);
+            work->check_fct_path = strdup(path);
+        }
+        if (check_degrid_fmt) {
+            snprintf(path, 256, check_degrid_fmt, work->iv, work->iu);
+            work->check_degrid_path = strdup(path);
+        }
+        work->check_hdf5 = hdf5 ? strdup(hdf5) : NULL;
+        work->check_threshold = threshold;
+        work->check_fct_threshold = fct_threshold;
+        work->check_degrid_threshold = degrid_threshold;
+    }
+
+}
+
+bool config_assign_work(struct work_config *cfg)
+{
+
     // Generate work assignments
-    if (spec) {
+    if (cfg->spec.time_count) {
         printf("\nGenerating work assignments...\n");
         if (!generate_facet_work_assignment(cfg))
             return false;
@@ -411,49 +503,6 @@ bool work_config_set(struct work_config *cfg,
     return true;
 }
 
-void load_facets_from(struct work_config *cfg,
-                      const char *path_fmt,
-                      const char *hdf5)
-{
-
-    int i;
-    for (i = 0; i < cfg->facet_workers * cfg->facet_max_work; i++) {
-        struct facet_work *work = cfg->facet_work + i;
-        if (!work->set) continue;
-        char path[256];
-        snprintf(path, 256, path_fmt, work->im, work->il);
-        work->path = strdup(path);
-        work->hdf5 = hdf5 ? strdup(hdf5) : NULL;
-    }
-
-}
-
-void check_subgrids_against(struct work_config *cfg,
-                            double threshold, double fct_threshold,
-                            const char *check_fmt,
-                            const char *check_fct_fmt,
-                            const char *hdf5)
-{
-
-    int i;
-    for (i = 0; i < cfg->subgrid_workers * cfg->subgrid_max_work; i++) {
-        struct subgrid_work *work = cfg->subgrid_work + i;
-        if (!work->nbl) continue;
-        char path[256];
-        if (check_fmt) {
-            snprintf(path, 256, check_fmt, work->iv, work->iu);
-            work->check_path = strdup(path);
-        }
-        if (check_fct_fmt) {
-            snprintf(path, 256, check_fct_fmt, work->iv, work->iu);
-            work->check_fct_path = strdup(path);
-        }
-        work->check_hdf5 = hdf5 ? strdup(hdf5) : NULL;
-        work->check_threshold = threshold;
-        work->check_fct_threshold = fct_threshold;
-    }
-
-}
 // Make baseline specification. Right now this is the same for every
 // baseline, but this will change for baseline dependent averaging.
 void vis_spec_to_bl_data(struct bl_data *bl, struct vis_spec *spec,

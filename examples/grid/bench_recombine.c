@@ -13,115 +13,118 @@
 #include <omp.h>
 #include <mpi.h>
 
-bool set_default_vis_spec(const char *ant_cfg_file, struct vis_spec *spec, double fov)
+bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec)
 {
-    spec->cfg = malloc(sizeof(struct ant_config));
-    if (!load_ant_config(ant_cfg_file, spec->cfg))
-        return false;
 
-    spec->fov = fov;
-    spec->dec = 90 * atan(1) * 4 / 180;
-    spec->time_start = 10 * -45 / 3600; // h
-    spec->time_count = 64;
-    spec->time_chunk = 16;
-    spec->time_step = 0.9 / 3600; // h
-    spec->freq_start = 250e6; // Hz
-    spec->freq_count = 64;
-    spec->freq_chunk = 16;
-    spec->freq_step = 50.e6 / spec->freq_count; // Hz
+    if (!strcasecmp(set_name, "lowbd2")) {
+        free(spec->cfg);
+        spec->cfg = malloc(sizeof(struct ant_config));
+        if (!load_ant_config("../../data/grid/LOWBD2_north_cfg.h5", spec->cfg))
+            return false;
+        spec->fov = 1300. / image_size;
+        spec->dec = 90 * atan(1) * 4 / 180;
+        spec->time_start = 10 * -45 / 3600; // h
+        spec->time_count = 64;
+        spec->time_chunk = 16;
+        spec->time_step = 10 * 0.9 / 3600; // h
+        spec->freq_start = 250e6; // Hz
+        spec->freq_count = 64;
+        spec->freq_chunk = 16;
+        spec->freq_step = 50.e6 / spec->freq_count; // Hz
+        return true;
+    }
 
-    return true;
+    if (!strcasecmp(set_name, "vlaa")) {
+        free(spec->cfg);
+        spec->cfg = malloc(sizeof(struct ant_config));
+        if (!load_ant_config("../../data/grid/VLAA_north_cfg.h5", spec->cfg))
+            return false;
+        spec->fov = 3000. / image_size;
+        spec->dec = 90 * atan(1) * 4 / 180;
+        spec->time_start = 10 * -45 / 3600; // h
+        spec->time_count = 64;
+        spec->time_chunk = 16;
+        spec->time_step = 10 * 0.9 / 3600; // h
+        spec->freq_start = 250e6; // Hz
+        spec->freq_count = 64;
+        spec->freq_chunk = 16;
+        spec->freq_step = 50.e6 / spec->freq_count; // Hz
+        return true;
+    }
+
+    return false;
 }
 
-bool set_default_recombine2d_config(struct work_config *cfg,
-                                    int facet_workers, int subgrid_workers)
+bool load_recombine_parset(const char *parset,
+                           int *recombine_pars, char *aa_path,
+                           char *facet_path, char *facet_path_hdf5,
+                           char *subgrid_path, char *subgrid_fct_path,
+                           char *subgrid_degrid_path, char *subgrid_path_hdf5,
+                           double *subgrid_threshold, double *subgrid_fct_threshold,
+                           double *subgrid_degrid_threshold,
+                           double *gridder_x0, char *gridder_path)
 {
-
-    struct vis_spec *spec = malloc(sizeof(struct vis_spec));
-    if (!set_default_vis_spec("../../data/grid/LOWBD2_north_cfg.h5", spec, 0.1))
-        return false;
-
-    return work_config_set(cfg, spec, facet_workers, subgrid_workers,
-                           spec->fov * 1. / 0.75,
-                           98304, 1536, "../../data/grid/pswf5.00-33728.in",
-                           24576, 33728, 49152, 1405, 1536, 282);
-}
-
-bool set_test_recombine2d_config(struct work_config *cfg,
-                                 int facet_workers, int subgrid_workers,
-                                 int rank)
-{
-
-    if (!work_config_set(cfg, 0, facet_workers, subgrid_workers,
-                         0.15,
-                         2000, 100, "../../data/grid/T04_pswf.in",
-                         400, 480, 900, 400, 500, 247))
-        return false;
-
-    load_facets_from(cfg, "../../data/grid/T04_facet%d%d.in", NULL);
-
-    // Use data from test suite. Note that not all "nmbf" reference
-    // files exist in the repository, so this will show a few errors.
-    // As long as no value mismatches occur this is fine
-    char file[256];
-    sprintf(file, "../../data/grid/T04_nmbf%%d%%d%d%d.in", rank / 3, rank % 3);
-    cfg->recombine.stream_check = strdup(file);
-    cfg->recombine.stream_check_threshold = 1e-9;
-    return true;
-}
-
-bool recombine2d_set_test5_config(struct work_config *cfg,
-                                  int facet_workers, int subgrid_workers,
-                                  int rank)
-{
-    if (!work_config_set(cfg, NULL, facet_workers, subgrid_workers,
-                         0.1,
-                         512, 128, "../../data/grid/T05_pswf.in",
-                         128, 140, 216, 128, 256, 136))
-        return false;
-
-    const char *hdf5 = "../../data/grid/T05_in.h5";
-    load_facets_from(cfg, "j0=%d/j1=%d/facet", hdf5);
-    check_subgrids_against(cfg, 1.2e-8, 5.5e-6,
-                           "i0=%d/i1=%d/approx",
-                           "i0=%d/i1=%d/j0=%%d/j1=%%d/nmbf", hdf5);
-    return true;
-}
-
-bool set_small_test_config(struct work_config *cfg,
-                           int facet_workers, int subgrid_workers,
-                           int rank)
-{
-    struct vis_spec *spec = malloc(sizeof(struct vis_spec));
-    if (!set_default_vis_spec("../../data/grid/LOWBD2_north_cfg.h5", spec, 0.05))
-        return false;
-
-    if (!work_config_set(cfg, spec, facet_workers, subgrid_workers,
-                         spec->fov * 1. / 0.75,
-                         16384, 16, "../../data/grid/T06_pswf_small.in",
-                         5120, 5280, 8192,
-                         432, 512, 274))
-        return false;
-
-    return true;
-}
-
-bool set_serious_test_config(struct work_config *cfg,
-                             int facet_workers, int subgrid_workers,
-                             int rank)
-{
-    struct vis_spec *spec = malloc(sizeof(struct vis_spec));
-    if (!set_default_vis_spec("../../data/grid/LOWBD2_north_cfg.h5", spec, 0.1))
-        return false;
-
-    if (!work_config_set(cfg, spec, facet_workers, subgrid_workers,
-                         spec->fov * 1. / 0.75,
-                         32768, 4, "../../data/grid/T06_pswf.in",
-                         8192, 8640, 16384,
-                         384, 512, 276))
-        return false;
-
-    return true;
+    if (!strcasecmp(parset, "T04")) {
+        recombine_pars[0] = 2000;
+        recombine_pars[1] = 100;
+        recombine_pars[2] = 400;
+        recombine_pars[3] = 480;
+        recombine_pars[4] = 900;
+        recombine_pars[5] = 400;
+        recombine_pars[6] = 500;
+        recombine_pars[7] = 247;
+        strcpy(aa_path, "../../data/grid/T04_pswf.in");
+        strcpy(facet_path, "../../data/grid/T04_facet%d%d.in");
+        return true;
+    }
+    if (!strcasecmp(parset, "T05")) {
+        recombine_pars[0] = 512;
+        recombine_pars[1] = 128;
+        recombine_pars[2] = 128;
+        recombine_pars[3] = 140;
+        recombine_pars[4] = 216;
+        recombine_pars[5] = 128;
+        recombine_pars[6] = 256;
+        recombine_pars[7] = 136;
+        strcpy(aa_path, "../../data/grid/T05_pswf.in");
+        strcpy(facet_path, "j0=%d/j1=%d/facet");
+        strcpy(facet_path_hdf5, "../../data/grid/T05_in.h5");
+        strcpy(subgrid_fct_path, "i0=%d/i1=%d/j0=%%d/j1=%%d/nmbf");
+        *subgrid_fct_threshold = 5.5e-6;
+        strcpy(subgrid_path, "i0=%d/i1=%d/approx");
+        *subgrid_threshold = 1.2e-8;
+        strcpy(subgrid_degrid_path, "i0=%d/i1=%d");
+        strcpy(subgrid_path_hdf5, "../../data/grid/T05_in.h5");
+        *subgrid_degrid_threshold = 2e-7;
+        strcpy(gridder_path, "../../data/grid/T05_in.h5");
+        *gridder_x0 = 0.4;
+        return true;
+    }
+    if (!strcasecmp(parset, "small")) {
+        recombine_pars[0] = 16384;
+        recombine_pars[1] = 64;
+        recombine_pars[2] = 5120;
+        recombine_pars[3] = 6144;
+        recombine_pars[4] = 8192;
+        recombine_pars[5] = 448;
+        recombine_pars[6] = 512;
+        recombine_pars[7] = 272;
+        strcpy(aa_path, "../../data/grid/T06_pswf_small.in");
+        return true;
+    }
+    if (!strcasecmp(parset, "large")) {
+        recombine_pars[0] = 98304;
+        recombine_pars[1] = 64;
+        recombine_pars[2] = 7680;
+        recombine_pars[3] = 9216;
+        recombine_pars[4] = 12288;
+        recombine_pars[5] = 704;
+        recombine_pars[6] = 1024;
+        recombine_pars[7] = 146;
+        strcpy(aa_path, "../../data/grid/T06_pswf_large.in");
+        return true;
+    }
+    return false;
 }
 
 enum Opts
@@ -129,10 +132,10 @@ enum Opts
         Opt_flag,
 
         Opt_telescope, Opt_fov, Opt_dec, Opt_time, Opt_freq, Opt_grid, Opt_vis_set,
-        Opt_recombine, Opt_rec_aa, Opt_rec_set, Opt_rec_load_facet, Opt_rec_load_facet_hdf5,
+        Opt_recombine, Opt_rec_aa, Opt_rec_set,
+        Opt_rec_load_facet, Opt_rec_load_facet_hdf5,
         Opt_facet_workers, Opt_parallel_cols, Opt_dont_retain_bf,
     };
-
 
 bool set_cmdarg_config(int argc, char **argv,
                        struct work_config *cfg, int world_rank, int world_size)
@@ -167,12 +170,18 @@ bool set_cmdarg_config(int argc, char **argv,
     struct vis_spec spec;
     int recombine_pars[8]; char aa_path[256];
     char facet_path[256]; char facet_path_hdf5[256];
+    char subgrid_path[256]; char subgrid_fct_path[256];
+    char subgrid_degrid_path[256]; char subgrid_path_hdf5[256];
+    double subgrid_threshold = 1e-8, subgrid_fct_threshold = 1e-8,
+           subgrid_degrid_threshold = 1e-8;
     int facet_workers = (world_size + 1) / 2;
-    double grid_x0 = 0.4; char gridder_path[256];
+    double grid_x0 = 0.4; char gridder_path[256]; char vis_path[256];
     memset(&spec, 0, sizeof(spec));
     spec.dec = 90 * atan(1) * 4 / 180;
     memset(&recombine_pars, 0, sizeof(recombine_pars));
-    aa_path[0] = gridder_path[0] = facet_path[0] = facet_path_hdf5[0] = 0;
+    aa_path[0] = gridder_path[0] = facet_path[0] = facet_path_hdf5[0] =
+        subgrid_path[0] = subgrid_fct_path[0] = subgrid_degrid_path[0] =
+        subgrid_path_hdf5[0] = vis_path[0] = 0;
 
     int option_index = 0, invalid = 0, c, nscan;
     while ((c = getopt_long(argc, argv, ":", options, &option_index)) != -1) {
@@ -211,29 +220,16 @@ bool set_cmdarg_config(int argc, char **argv,
             }
             break;
         case Opt_grid:
-            nscan = sscanf(optarg, "%lg:%255s", &grid_x0, gridder_path);
+            nscan = sscanf(optarg, "%lg,%255s", &grid_x0, gridder_path);
+            printf("Got grid\n");
             if (nscan < 2) {
                 invalid=true; fprintf(stderr, "ERROR: Could not parse 'grid' option!\n");
             }
             break;
         case Opt_vis_set:
-            if (!strcasecmp(optarg, "vlaa")) {
-                free(spec.cfg);
-                spec.cfg = malloc(sizeof(struct ant_config));
-                if (!load_ant_config("../../data/grid/LOWBD2_north_cfg.h5", spec.cfg))
-                    return false;
-                spec.fov = 0.08;
-                spec.dec = 90 * atan(1) * 4 / 180;
-                spec.time_start = 10 * -45 / 3600; // h
-                spec.time_count = 64;
-                spec.time_chunk = 16;
-                spec.time_step = 10 * 0.9 / 3600; // h
-                spec.freq_start = 250e6; // Hz
-                spec.freq_count = 64;
-                spec.freq_chunk = 16;
-                spec.freq_step = 50.e6 / spec.freq_count; // Hz
+            if (load_vis_parset(optarg, recombine_pars[0], &spec))
                 have_vis_spec = true;
-            } else {
+            else {
                 invalid=true; fprintf(stderr, "ERROR: Unknown visibility parameter set: %s!\n", optarg);
             }
             break;
@@ -255,55 +251,24 @@ bool set_cmdarg_config(int argc, char **argv,
             strncpy(facet_path_hdf5, optarg, 254); facet_path[255] = 0;
             break;
         case Opt_rec_set:
-            if (!strcasecmp(optarg, "T04")) {
-                recombine_pars[0] = 2000;
-                recombine_pars[1] = 100;
-                recombine_pars[2] = 400;
-                recombine_pars[3] = 480;
-                recombine_pars[4] = 900;
-                recombine_pars[5] = 400;
-                recombine_pars[6] = 500;
-                recombine_pars[7] = 247;
-                strcpy(aa_path, "../../data/grid/T04_pswf.in");
-                strcpy(facet_path, "../../data/grid/T04_facet%d%d.in");
-            } else if (!strcasecmp(optarg, "T05")) {
-                recombine_pars[0] = 512;
-                recombine_pars[1] = 128;
-                recombine_pars[2] = 128;
-                recombine_pars[3] = 140;
-                recombine_pars[4] = 216;
-                recombine_pars[5] = 128;
-                recombine_pars[6] = 256;
-                recombine_pars[7] = 136;
-                strcpy(aa_path, "../../data/grid/T05_pswf.in");
-                strcpy(facet_path, "j0=%d/j1=%d/facet");
-                strcpy(facet_path_hdf5, "../../data/grid/T05_in.h5");
-            } else if (!strcasecmp(optarg, "small")) {
-                recombine_pars[0] = 16384;
-                recombine_pars[1] = 64;
-                recombine_pars[2] = 5120;
-                recombine_pars[3] = 6144;
-                recombine_pars[4] = 8192;
-                recombine_pars[5] = 448;
-                recombine_pars[6] = 512;
-                recombine_pars[7] = 272;
-                strcpy(aa_path, "../../data/grid/T06_pswf_small.in");
-            } else if (!strcasecmp(optarg, "large")) {
-                recombine_pars[0] = 98304;
-                recombine_pars[1] = 64;
-                recombine_pars[2] = 7680;
-                recombine_pars[3] = 9216;
-                recombine_pars[4] = 12288;
-                recombine_pars[5] = 704;
-                recombine_pars[6] = 1024;
-                recombine_pars[7] = 146;
-                strcpy(aa_path, "../../data/grid/T06_pswf_large.in");
-            } else {
+            if (!load_recombine_parset(optarg, recombine_pars, aa_path,
+                                       facet_path, facet_path_hdf5,
+                                       subgrid_path, subgrid_fct_path,
+                                       subgrid_degrid_path, subgrid_path_hdf5,
+                                       &subgrid_threshold, &subgrid_fct_threshold,
+                                       &subgrid_degrid_threshold,
+                                       &grid_x0, gridder_path)) {
                 invalid=true; fprintf(stderr, "ERROR: Unknown recombination parameter set: %s!\n", optarg);
             }
             break;
         default: invalid = 1; break;
         }
+    }
+
+    // Get positional arguments (visibility file path)
+    if (!invalid && optind+1 == argc) {
+        strncpy(vis_path, argv[argc-1], 255);
+        vis_path[255] = 0;
     }
 
     if (have_vis_spec) {
@@ -337,11 +302,11 @@ bool set_cmdarg_config(int argc, char **argv,
         printf("\n");
         printf("Distribution Parameters:\n");
         printf("  --facet-workers=<val>  Number of workers holding facets (default: half)\n");
-        printf("  --dont-keep-bf         Discard BF term. Saves memory at expense of compute.\n");
+        printf("  --dont-retain-bf       Discard BF term. Saves memory at expense of compute.\n");
         printf("  --parallel-columns     Work on grid columns in parallel. Worse for distribution.\n");
         printf("\n");
         printf("Positional Parameters:\n");
-        printf("  <path>                 Visibility file. '%%d' will be replaced by rank.");
+        printf("  <path>                 Visibility file. '%%d' will be replaced by rank.\n\n");
         return false;
     }
 
@@ -349,20 +314,41 @@ bool set_cmdarg_config(int argc, char **argv,
     int subgrid_workers = world_size - facet_workers;
     if (subgrid_workers < 1) subgrid_workers = 1;
 
-    printf("aa_path=%s sg=%d fa=%d\n", aa_path, subgrid_workers, facet_workers);
-    if (!work_config_set(cfg, have_vis_spec ? &spec : NULL,
-                         facet_workers, subgrid_workers,
-                         spec.fov / 2 / grid_x0,
-                         recombine_pars[0], recombine_pars[1],
-                         aa_path,
-                         recombine_pars[2], recombine_pars[3],
-                         recombine_pars[4], recombine_pars[5],
-                         recombine_pars[6], recombine_pars[7]))
-       return false;
+    config_init(cfg, facet_workers, subgrid_workers);
+    cfg->produce_parallel_cols = produce_parallel_cols;
+    cfg->produce_retain_bf = produce_retain_bf;
+
+    if (!config_set(cfg,
+                    recombine_pars[0], recombine_pars[1],
+                    aa_path,
+                    recombine_pars[2], recombine_pars[3],
+                    recombine_pars[4], recombine_pars[5],
+                    recombine_pars[6], recombine_pars[7])) {
+        return false;
+    }
+    if (have_vis_spec) {
+        config_set_visibilities(cfg, &spec, spec.fov / 2 / grid_x0,
+                                vis_path[0] ? vis_path : NULL);
+    }
+    if (gridder_path[0]) {
+        config_set_degrid(cfg, gridder_path[0] ? gridder_path : NULL);
+    }
+
+    // Make work assignment
+    if (!config_assign_work(cfg))
+        return false;
 
     // Extra testing options, where appropriate
     if (facet_path[0]) {
-        load_facets_from(cfg, facet_path, facet_path_hdf5[0] ? facet_path_hdf5 : NULL);
+        config_load_facets(cfg, facet_path, facet_path_hdf5[0] ? facet_path_hdf5 : NULL);
+    }
+    if (subgrid_path[0] || subgrid_fct_path[0]) {
+        config_check_subgrids(cfg,
+                              subgrid_threshold, subgrid_fct_threshold, subgrid_degrid_threshold,
+                              subgrid_path[0] ? subgrid_path : NULL,
+                              subgrid_fct_path[0] ? subgrid_fct_path : NULL,
+                              subgrid_degrid_path[0] ? subgrid_degrid_path : NULL,
+                              subgrid_path_hdf5[0] ? subgrid_path_hdf5 : NULL);
     }
 
     return true;
@@ -439,6 +425,8 @@ int main(int argc, char *argv[]) {
         MPI_Barrier(MPI_COMM_WORLD);
         MPI_Finalize();
     }
+
+    config_free(&config);
 
     // Master: Write wisdom
     if (world_rank == 0) {
