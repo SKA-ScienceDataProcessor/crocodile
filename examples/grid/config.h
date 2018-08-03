@@ -67,6 +67,7 @@ struct work_config {
     // Parameters
     bool produce_parallel_cols;
     bool produce_retain_bf;
+    bool vis_skip_metadata;
 };
 
 double get_time_ns();

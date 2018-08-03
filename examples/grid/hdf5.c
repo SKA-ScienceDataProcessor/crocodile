@@ -391,7 +391,7 @@ int load_vis(const char *filename, struct vis_data *vis,
     return 0;
 }
 
-bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
+bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk, bool skip_metadata,
                       struct bl_data *bl) {
 
     // Create a visibility group from baseline data *without* actually
@@ -399,52 +399,62 @@ bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
     // Instead, we will write a chunked visibility dataset with zeros
     // for fill value.
 
-    // Create properties for compact and contigous data
-    hid_t compact_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
-    H5Pset_layout(compact_ds_prop, H5D_COMPACT);
-    hid_t cont_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
-    H5Pset_layout(cont_ds_prop, H5D_CONTIGUOUS);
-    hid_t chunked_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
-    H5Pset_layout(chunked_ds_prop, H5D_CHUNKED);
+    // Create properties for compact and contigous data. Yes, it is
+    // worth sharing them.
+    static id_t compact_ds_prop, cont_ds_prop, chunked_ds_prop;
+    static bool ds_created = false;
+    if (!ds_created) {
+        compact_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
+        cont_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
+        chunked_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
+        ds_created = true;
+        H5Pset_layout(compact_ds_prop, H5D_COMPACT);
+        H5Pset_layout(cont_ds_prop, H5D_CONTIGUOUS);
+        H5Pset_layout(chunked_ds_prop, H5D_CHUNKED);
+        complex double fill_value = 0;
+        H5Pset_fill_value(chunked_ds_prop, dtype_cpx, &fill_value);
+    }
     hsize_t chunks[3] = { freq_chunk, time_chunk, 1 };
     H5Pset_chunk(chunked_ds_prop, 3, chunks);
-    complex double fill_value = 0;
-    H5Pset_fill_value(chunked_ds_prop, dtype_cpx, &fill_value);
-
     // Create datasets
-    hsize_t freq_size = bl->freq_count;
-    hid_t freq_dsp = H5Screate_simple(1, &freq_size, NULL);
-    hid_t freq_ds = H5Dcreate(vis_g, "frequency", H5T_IEEE_F64LE,
-                              freq_dsp, H5P_DEFAULT, compact_ds_prop, H5P_DEFAULT);
-    if (freq_ds < 0) {
-        fprintf(stderr, "failed to create frequency dataset!");
-        H5Sclose(freq_dsp);
-        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
-        return false;
-    }
-    hsize_t time_size = bl->time_count;
-    hid_t time_dsp = H5Screate_simple(1, &time_size, NULL);
-    hid_t time_ds = H5Dcreate(vis_g, "time", H5T_IEEE_F64LE,
-                              H5Screate_simple(1, &time_size, NULL),
-                              H5P_DEFAULT, compact_ds_prop, H5P_DEFAULT);
-    if (time_ds < 0) {
-        fprintf(stderr, "failed to create time dataset!");
-        H5Sclose(freq_dsp); H5Sclose(time_dsp);
-        H5Dclose(freq_ds);
-        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
-        return false;
-    }
-    hsize_t uvw_dims[2] = { bl->time_count, 3 };
-    hid_t uvw_dsp = H5Screate_simple(2, uvw_dims, NULL);
-    hid_t uvw_ds = H5Dcreate(vis_g, "uvw", H5T_IEEE_F64LE,
-                             uvw_dsp, H5P_DEFAULT, cont_ds_prop, H5P_DEFAULT);
-    if (uvw_ds < 0) {
-        fprintf(stderr, "failed to create coordinates dataset!");
-        H5Sclose(uvw_dsp); H5Sclose(freq_dsp); H5Sclose(time_dsp);
-        H5Dclose(freq_ds); H5Dclose(time_ds);
-        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
-        return false;
+    if (!skip_metadata) {
+        hsize_t freq_size = bl->freq_count;
+        hid_t freq_dsp = H5Screate_simple(1, &freq_size, NULL);
+        hid_t freq_ds = H5Dcreate(vis_g, "frequency", H5T_IEEE_F64LE,
+                                  freq_dsp, H5P_DEFAULT, compact_ds_prop, H5P_DEFAULT);
+        if (freq_ds < 0) {
+            fprintf(stderr, "failed to create frequency dataset!");
+            H5Sclose(freq_dsp);
+            return false;
         }
+        H5Dwrite(freq_ds, H5T_NATIVE_DOUBLE, freq_dsp, freq_dsp, H5P_DEFAULT, bl->freq);
+        H5Sclose(freq_dsp); H5Dclose(freq_ds);
+        
+        hsize_t time_size = bl->time_count;
+        hid_t time_dsp = H5Screate_simple(1, &time_size, NULL);
+        hid_t time_ds = H5Dcreate(vis_g, "time", H5T_IEEE_F64LE,
+                                  time_dsp, H5P_DEFAULT, compact_ds_prop, H5P_DEFAULT);
+        if (time_ds < 0) {
+            fprintf(stderr, "failed to create time dataset!");
+            H5Sclose(time_dsp);
+            return false;
+        }
+        H5Dwrite(time_ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->time);
+        H5Sclose(time_dsp); H5Dclose(time_ds);
+        
+        hsize_t uvw_dims[2] = { bl->time_count, 3 };
+        hid_t uvw_dsp = H5Screate_simple(2, uvw_dims, NULL);
+        hid_t uvw_ds = H5Dcreate(vis_g, "uvw", H5T_IEEE_F64LE,
+                                 uvw_dsp, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        if (uvw_ds < 0) {
+            fprintf(stderr, "failed to create coordinates dataset!");
+            H5Sclose(uvw_dsp); H5Dclose(uvw_ds);
+            return false;
+        }
+        H5Dwrite(uvw_ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->uvw_m);
+        H5Sclose(uvw_dsp); H5Dclose(uvw_ds);
+    }
+
     hsize_t vis_dims[3] = { 0, 0, 1 };
     hsize_t max_vis_dims[3] = { bl->time_count, bl->freq_count, 1 };
     hid_t vis_dsp = H5Screate_simple(3, vis_dims, max_vis_dims);
@@ -452,20 +462,11 @@ bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
                              vis_dsp, H5P_DEFAULT, chunked_ds_prop, H5P_DEFAULT);
     if (vis_ds < 0) {
         fprintf(stderr, "failed to create visibility dataset!");
-        H5Sclose(vis_dsp); H5Sclose(uvw_dsp); H5Sclose(freq_dsp); H5Sclose(time_dsp);
-        H5Dclose(uvw_ds); H5Dclose(freq_ds); H5Dclose(time_ds);
-        H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
+        H5Sclose(vis_dsp);
         return false;
     }
+    H5Sclose(vis_dsp); H5Dclose(vis_ds);
 
-    H5Dwrite(freq_ds, H5T_NATIVE_DOUBLE, freq_dsp, freq_dsp, H5P_DEFAULT, bl->freq);
-    H5Dwrite(time_ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->time);
-    H5Dwrite(uvw_ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, bl->uvw_m);
-
-    H5Sclose(vis_dsp); H5Sclose(uvw_dsp); H5Sclose(freq_dsp); H5Sclose(time_dsp);
-    H5Dclose(vis_ds); H5Dclose(uvw_ds); H5Dclose(freq_ds); H5Dclose(time_ds);
-
-    H5Pclose(compact_ds_prop); H5Pclose(cont_ds_prop); H5Pclose(chunked_ds_prop);
     return true;
 }
 
