@@ -169,6 +169,7 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
                      struct vis_data *vis);
 uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
                         double d_u, double d_v,
+                        double min_u, double max_u, double min_v, double max_v,
                         struct bl_data *bl, int time0, int time1, int freq0, int freq1,
                         struct sep_kernel_data *kernel);
 uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,

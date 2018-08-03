@@ -410,13 +410,6 @@ int T05_frac_coord()
     return 0;
 }
 
-double get_time_ns()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
-}
-
 int T05_degrid()
 {
 
@@ -534,7 +527,9 @@ int T05_degrid()
         // Degrid and compare
         fft_shift(subgrid, cfg.xM_size);
         bl.uvw_m = uvw_sg;
-        degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, 0, 0, &bl, 0, nvis, 0, 1, &kern);
+        degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, 0, 0,
+                       -cfg.xM_size, cfg.xM_size, -cfg.xM_size, cfg.xM_size,
+                       &bl, 0, nvis, 0, 1, &kern);
         for (y = 0; y < nvis; y++) {
             assert(cabs(vis[y] - bl.vis[y]) < 4e-7);
         }
@@ -546,6 +541,7 @@ int T05_degrid()
         if (fabs(dv) < 0.5 && fabs(du) < 0.5) {
             bl.uvw_m = uvw;
             degrid_conv_bl(subgrid, cfg.xM_size, cfg.image_size, du, dv,
+                           -cfg.xM_size, cfg.xM_size, -cfg.xM_size, cfg.xM_size,
                            &bl, 0, nvis, 0, 1, &kern);
             for (y = 0; y < nvis; y++) {
                 assert(cabs(vis[y] - bl.vis[y]) < 4e-7);

@@ -161,14 +161,20 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
 
 uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
                         double d_u, double d_v,
-                        struct bl_data *bl, int time0, int time1, int freq0, int freq1,
+                        double min_u, double max_u, double min_v, double max_v,
+                        struct bl_data *bl,
+                        int time0, int time1, int freq0, int freq1,
                         struct sep_kernel_data *kernel)
 {
-
     uint64_t flops = 0;
     int time, freq, y, x;
     for (time = time0; time < time1; time++) {
         for (freq = freq0; freq < freq1; freq++) {
+
+            double u = uvw_lambda(bl, time, freq, 0);
+            if (u < min_u || u >= max_u) continue;
+            double v = uvw_lambda(bl, time, freq, 1);
+            if (v < min_v || v >= max_v) continue;
 
             // Calculate grid and sub-grid coordinates
             int grid_offset, sub_offset_x, sub_offset_y;
@@ -176,17 +182,17 @@ uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
                            theta, bl, time, freq, d_u, d_v,
                            &grid_offset, &sub_offset_x, &sub_offset_y);
             // Get visibility
-            double complex v = 0;
+            double complex vis = 0;
             for (y = 0; y < kernel->size; y++) {
-                double complex vy = 0;
+                double complex visy = 0;
                 for (x = 0; x < kernel->size; x++) {
-                    vy += kernel->data[sub_offset_x + x] * uvgrid[grid_offset + y*grid_size + x];
+                    visy += kernel->data[sub_offset_x + x] * uvgrid[grid_offset + y*grid_size + x];
                     flops += 4;
                 }
-                v += kernel->data[sub_offset_y + y] * vy;
+                vis += kernel->data[sub_offset_y + y] * visy;
                 flops += 4;
             }
-            bl->vis[time*bl->freq_count + freq] = v;
+            bl->vis[(time-time0)*(freq1 - freq0) + freq-freq0] = vis;
         }
     }
 
@@ -199,7 +205,10 @@ uint64_t degrid_conv(double complex *uvgrid, int grid_size, double theta, double
     uint64_t flops = 0;
     int bl;
     for (bl = 0; bl < vis->bl_count; bl++) {
-        flops += degrid_conv_bl(uvgrid, grid_size, theta, d_u, d_v,
+        flops += degrid_conv_bl(uvgrid, grid_size, theta,
+                                d_u, d_v,
+                                d_u-grid_size/theta/2, d_u+grid_size/theta/2,
+                                d_v-grid_size/theta/2, d_v+grid_size/theta/2,
                                 &vis->bl[bl], 0, vis->bl[bl].time_count, 0, vis->bl[bl].freq_count,
                                 kernel);
     }
