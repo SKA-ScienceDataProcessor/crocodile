@@ -376,6 +376,7 @@ void config_init(struct work_config *cfg,
     cfg->subgrid_workers = subgrid_workers;
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
+    cfg->vis_skip_metadata = true;
 }
 
 bool config_set(struct work_config *cfg,
@@ -554,6 +555,7 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
     int a1, a2;
     int ncreated = 0;
     int nvis = 0;
+    double create_start = get_time_ns();
     for (a1 = 0; a1 < cfg->ant_count; a1++) {
         // Progress message
         if (a1 % 32 == 0) { printf("%d ", a1); fflush(stdout); }
@@ -603,7 +605,8 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
         if (a1_g) H5Gclose(a1_g);
     }
 
-    printf("\ndone, %d groups for %d visibilities (~%.3g GB) created\n", ncreated, nvis, 16. * nvis / 1000000000);
+    printf("\ndone in %g s, %d groups for %d visibilities (~%.3g GB) created\n",
+           get_time_ns() -create_start, ncreated, nvis, 16. * nvis / 1000000000);
 
     return true;
 }

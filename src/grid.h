@@ -140,7 +140,7 @@ struct perf_counters
 // Prototypes
 void init_dtype_cpx();
 bool load_ant_config(const char *filename, struct ant_config *ant);
-bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk,
+bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk, bool skip_metadata,
                       struct bl_data *bl);
 bool read_vis_chunk(hid_t vis_group,
                     struct bl_data *bl,
