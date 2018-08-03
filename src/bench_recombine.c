@@ -373,6 +373,9 @@ int main(int argc, char *argv[]) {
     // Read FFTW wisdom to get through planning quicker
     fftw_import_wisdom_from_filename("recombine.wisdom");
 
+    // HDF5 initialisation
+    init_dtype_cpx();
+
     // Decide number of workers
     int facet_workers = (world_size + 1) / 2;
     int subgrid_workers = world_size - facet_workers;
