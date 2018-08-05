@@ -132,13 +132,6 @@ void producer_dump_stats(struct work_config *wcfg, int facet_worker,
            idle, 100 * idle / producer_count / dt);
 }
 
-double get_time_ns()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
-}
-
 int make_subgrid_tag(struct work_config *wcfg,
                      int subgrid_worker_ix, int subgrid_work_ix,
                      int facet_worker_ix, int facet_work_ix) {

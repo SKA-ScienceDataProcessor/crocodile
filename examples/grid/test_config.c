@@ -6,13 +6,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-static double get_time_ns()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
-}
-
 void simple_benchmark(const char *filename,
                       struct work_config *work_cfg,
                       bool write, int worker)
@@ -89,11 +82,11 @@ int main(int argc, char *argv[])
     spec.dec = 90 * atan(1) * 4 / 180;
     spec.time_start = 10 * -45 / 3600; // h
     spec.time_count = 64;
-    spec.time_chunk = 16;
+    spec.time_chunk = 64;
     spec.time_step = 0.9 / 3600; // h
     spec.freq_start = 250e6; // Hz
     spec.freq_count = 64;
-    spec.freq_chunk = 16;
+    spec.freq_chunk = 64;
     spec.freq_step = 50.e6 / spec.freq_count; // Hz
 
     struct work_config work_cfg;
