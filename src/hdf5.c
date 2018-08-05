@@ -483,6 +483,10 @@ static bool _rw_vis_chunk(hid_t vis_group,
 
     // Open dataset
     hid_t vis_ds = H5Dopen2(vis_group, name, H5P_DEFAULT);
+    if (vis_ds < 0) {
+        fprintf(stderr, "ERROR: Could not access dataset %s!\n", name);
+        return false;
+    }
 
     // Create memory and file data spaces
     hsize_t chunk_dims[] = { time_chunk_size, freq_chunk_size, 1 };
@@ -572,6 +576,9 @@ int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern)
     sepkern->data = (double *)calloc(sizeof(double), total_size);
     if (H5Dread(dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, sepkern->data) < 0) {
         fprintf(stderr, "Failed to read separable kernel data from %s!\n", filename);
+        H5Dclose(dset);
+        H5Fclose(sepkern_f);
+        return 1;
     }
 
     // Close file
