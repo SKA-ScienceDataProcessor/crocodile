@@ -560,7 +560,7 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
 
     int a1, a2;
     int ncreated = 0;
-    int nvis = 0;
+    uint64_t nvis = 0;
     double create_start = get_time_ns();
     for (a1 = 0; a1 < cfg->ant_count; a1++) {
         // Progress message
@@ -612,7 +612,7 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
         if (a1_g) H5Gclose(a1_g);
     }
 
-    printf("\ndone in %g s, %d groups for %d visibilities (~%.3g GB) created\n",
+    printf("\ndone in %g s, %d groups for %ld visibilities (~%.3g GB) created\n",
            get_time_ns() -create_start, ncreated, nvis, 16. * nvis / 1000000000);
 
     return true;
