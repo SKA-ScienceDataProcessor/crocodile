@@ -2,8 +2,8 @@
 HDF5_INCLUDE=/usr/include/hdf5/serial
 HDF5_LIB=/usr/lib/x86_64-linux-gnu/hdf5/serial
 
-CFLAGS += -g -Wall -fopenmp -ffast-math -I$(HDF5_INCLUDE)
-LDFLAGS += -fopenmp -g
+CFLAGS += -Wall -fopenmp -ffast-math -I$(HDF5_INCLUDE) -O2
+LDFLAGS += -fopenmp -O2
 LDLIBS = -L$(HDF5_LIB) -lm -lhdf5 -lfftw3
 CC = mpicc
 
