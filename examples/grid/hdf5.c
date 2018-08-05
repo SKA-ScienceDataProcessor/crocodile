@@ -414,7 +414,7 @@ bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk, bool skip_met
         complex double fill_value = 0;
         H5Pset_fill_value(chunked_ds_prop, dtype_cpx, &fill_value);
     }
-    hsize_t chunks[3] = { freq_chunk, time_chunk, 1 };
+    hsize_t chunks[3] = { time_chunk, freq_chunk, 1 };
     H5Pset_chunk(chunked_ds_prop, 3, chunks);
     // Create datasets
     if (!skip_metadata) {
