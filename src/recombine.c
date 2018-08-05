@@ -240,7 +240,7 @@ void recombine2d_init_worker(struct recombine2d_worker *worker, struct recombine
     // Plan Fourier Transforms
     worker->BF_batch = BF_batch; worker->BF_plan = BF_plan;
     worker->MBF_plan = fftw_plan_dft_1d(cfg->xM_yP_size, worker->MBF, worker->MBF,
-                                      FFTW_FORWARD, planner_flags);
+                                        FFTW_FORWARD, planner_flags);
     worker->NMBF_BF_plan = fftw_plan_many_dft(1, &cfg->yP_size, cfg->xM_yN_size,
                                             worker->NMBF_BF, 0, cfg->NMBF_BF_stride0, cfg->NMBF_BF_stride1,
                                             worker->NMBF_BF, 0, cfg->NMBF_BF_stride0, cfg->NMBF_BF_stride1,

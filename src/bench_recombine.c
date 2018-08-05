@@ -25,11 +25,11 @@ bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec
         spec->dec = 90 * atan(1) * 4 / 180;
         spec->time_start = 10 * -45 / 3600; // h
         spec->time_count = 64;
-        spec->time_chunk = 16;
+        spec->time_chunk = 32;
         spec->time_step = 10 * 0.9 / 3600; // h
         spec->freq_start = 250e6; // Hz
         spec->freq_count = 64;
-        spec->freq_chunk = 16;
+        spec->freq_chunk = 32;
         spec->freq_step = 50.e6 / spec->freq_count; // Hz
         return true;
     }
@@ -43,11 +43,11 @@ bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec
         spec->dec = 90 * atan(1) * 4 / 180;
         spec->time_start = 10 * -45 / 3600; // h
         spec->time_count = 64;
-        spec->time_chunk = 16;
+        spec->time_chunk = 32;
         spec->time_step = 10 * 0.9 / 3600; // h
         spec->freq_start = 250e6; // Hz
         spec->freq_count = 64;
-        spec->freq_chunk = 16;
+        spec->freq_chunk = 32;
         spec->freq_step = 50.e6 / spec->freq_count; // Hz
         return true;
     }
@@ -110,6 +110,8 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[6] = 512;
         recombine_pars[7] = 272;
         strcpy(aa_path, "../data/grid/T06_pswf_small.in");
+        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        *gridder_x0 = 0.4;
         return true;
     }
     if (!strcasecmp(parset, "large")) {
