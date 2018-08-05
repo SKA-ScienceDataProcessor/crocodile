@@ -87,6 +87,12 @@ static void bin_baseline(int *nbl, struct subgrid_work_bl **bls, int nsubgrid,
     // Count
     nbl[iv*nsubgrid + iu]++;
 
+    // Make sure we don't add a baseline twice
+    if (bls[iv * nsubgrid + iu]) {
+        assert(bls[iv * nsubgrid + iu]->a1 != a1 ||
+               bls[iv * nsubgrid + iu]->a2 != a2);
+    }
+
     // Add work structure
     struct subgrid_work_bl *wbl = (struct subgrid_work_bl *)
         malloc(sizeof(struct subgrid_work_bl));
@@ -129,8 +135,8 @@ static int collect_baselines(struct vis_spec *spec,
                     // Don't double-count if conjugated area overlaps
                     // with un-conjugated area: Clearly we don't want
                     // to grid those visibilitise twice.
-                    if (iv < sg_min[1] || iv > sg_max[1] ||
-                        iu < sg_min[0] || iu > sg_max[0]) {
+                    if (iv < nsubgrid/2+sg_min[1] || iv > nsubgrid/2+sg_max[1] ||
+                        iu < nsubgrid/2+sg_min[0] || iu > nsubgrid/2+sg_max[0]) {
 
                         bin_baseline(nbl, bls, nsubgrid, a1, a2, iu, iv);
                     }
@@ -591,7 +597,8 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
             vis_spec_to_bl_data(&bl, spec, a1, a2);
 
             // Write to visibility group
-            if (!create_vis_group(a2_g, spec->freq_chunk, spec->time_chunk, &bl)) {
+            if (!create_vis_group(a2_g, spec->freq_chunk, spec->time_chunk,
+                                  work_cfg->vis_skip_metadata, &bl)) {
                 H5Gclose(a2_g); H5Gclose(a1_g);
                 return 1;
             }
