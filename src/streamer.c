@@ -316,6 +316,43 @@ void streamer_degrid_chunk(struct streamer *streamer,
 
 }
 
+void streamer_task(struct streamer *streamer,
+                   struct subgrid_work *work,
+                   struct subgrid_work_bl *bl,
+                   int slot,
+                   int subgrid_work,
+                   double complex *subgrid)
+{
+    struct vis_spec *const spec = &streamer->work_cfg->spec;
+    struct subgrid_work_bl *bl2;
+    int i_bl2;
+    for (bl2 = bl, i_bl2 = 0;
+         bl2 && i_bl2 < streamer->work_cfg->vis_bls_per_task;
+         bl2 = bl2->next, i_bl2++) {
+
+        // Get baseline data
+        struct bl_data bl_data;
+        vis_spec_to_bl_data(&bl_data, spec, bl2->a1, bl2->a2);
+
+        // Go through time/frequency chunks
+        int ntchunk = (bl_data.time_count + spec->time_chunk - 1) / spec->time_chunk;
+        int nfchunk = (bl_data.freq_count + spec->freq_chunk - 1) / spec->freq_chunk;
+        int tchunk, fchunk;
+        for (tchunk = 0; tchunk < ntchunk; tchunk++)
+            for (fchunk = 0; fchunk < nfchunk; fchunk++)
+                streamer_degrid_chunk(streamer, work,
+                                      bl2, &bl_data, tchunk, fchunk,
+                                      slot, subgrid);
+
+        free(bl_data.time); free(bl_data.uvw_m); free(bl_data.freq);
+    }
+
+    // Done with this chunk
+#pragma omp atomic
+    streamer->subgrid_locks[slot]--;
+
+}
+
 void streamer_work(struct streamer *streamer,
                    int subgrid_work,
                    double complex *nmbf)
@@ -431,13 +468,11 @@ void streamer_work(struct streamer *streamer,
     struct vis_spec *const spec = &streamer->work_cfg->spec;
     if (spec->time_count > 0 && streamer->have_kern) {
 
-        const int bls_per_task = 256;
-
         // Loop through baselines
         struct subgrid_work_bl *bl;
         int i_bl = 0;
         for (bl = work->bls; bl; bl = bl->next, i_bl++) {
-            if (i_bl % bls_per_task != 0)
+            if (i_bl % streamer->work_cfg->vis_bls_per_task != 0)
                 continue;
 
             // We are spawning a task: Add lock to subgrid data to
@@ -445,33 +480,12 @@ void streamer_work(struct streamer *streamer,
             #pragma omp atomic
             streamer->subgrid_locks[slot]++;
 
-            #pragma omp task
-            {
+            // Start task. Make absolutely sure it sees *everything*
+            // as private, as Intel's C compiler otherwise loves to
+            // generate segfaulting code.
+            #pragma omp task firstprivate(streamer, work, bl, slot, subgrid_work, subgrid)
+                streamer_task(streamer, work, bl, slot, subgrid_work, subgrid);
 
-                struct subgrid_work_bl *bl2;
-                int i_bl2;
-                for (bl2 = bl, i_bl2 = 0; bl2 && i_bl2 < bls_per_task; bl2 = bl2->next, i_bl2++) {
-                    // Get baseline data
-                    struct bl_data bl_data;
-                    vis_spec_to_bl_data(&bl_data, spec, bl2->a1, bl2->a2);
-
-                    // Go through time/frequency chunks
-                    int ntchunk = (bl_data.time_count + spec->time_chunk - 1) / spec->time_chunk;
-                    int nfchunk = (bl_data.freq_count + spec->freq_chunk - 1) / spec->freq_chunk;
-                    int tchunk, fchunk;
-                    for (tchunk = 0; tchunk < ntchunk; tchunk++)
-                        for (fchunk = 0; fchunk < nfchunk; fchunk++)
-                            streamer_degrid_chunk(streamer, work,
-                                                  bl2, &bl_data, tchunk, fchunk,
-                                                  slot, subgrid);
-
-                    free(bl_data.time); free(bl_data.uvw_m); free(bl_data.freq);
-                }
-
-                // Done with this chunk
-#pragma omp atomic
-                streamer->subgrid_locks[slot]--;
-            }
         }
 
         printf("Subgrid %d/%d (%d baselines)\n", work->iu, work->iv, i_bl);

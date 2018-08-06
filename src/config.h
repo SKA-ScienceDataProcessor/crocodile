@@ -68,6 +68,7 @@ struct work_config {
     bool produce_parallel_cols;
     bool produce_retain_bf;
     bool vis_skip_metadata;
+    bool vis_bls_per_task;
 };
 
 double get_time_ns();

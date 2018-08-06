@@ -384,6 +384,7 @@ void config_init(struct work_config *cfg,
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
     cfg->vis_skip_metadata = true;
+    cfg->vis_bls_per_task = 256;
 }
 
 bool config_set(struct work_config *cfg,
