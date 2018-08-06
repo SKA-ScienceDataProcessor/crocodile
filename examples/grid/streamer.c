@@ -8,8 +8,13 @@
 #include <complex.h>
 #include <string.h>
 #include <omp.h>
-#include <mpi.h>
 
+#ifndef NO_MPI
+#include <mpi.h>
+#else
+#define MPI_Request int
+#define MPI_REQUEST_NULL 0
+#endif
 
 struct streamer
 {
@@ -91,6 +96,7 @@ void streamer_ireceive(struct streamer *streamer,
             continue;
         }
 
+#ifndef NO_MPI
         // Set up a receive slot with appropriate tag
         const int tag = make_subgrid_tag(streamer->work_cfg, streamer->subgrid_worker, subgrid_work,
                                          facet / streamer->work_cfg->facet_max_work,
@@ -100,6 +106,7 @@ void streamer_ireceive(struct streamer *streamer,
                   xM_yN_size * xM_yN_size, MPI_DOUBLE_COMPLEX,
                   streamer->producer_ranks[facet_worker], tag, MPI_COMM_WORLD,
                   request_slot(streamer, slot, facet));
+#endif
     }
 
 }
@@ -587,8 +594,10 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
     const int facets = wcfg->facet_workers * wcfg->facet_max_work;
     const int nmbf_length = wcfg->recombine.NMBF_NMBF_size / sizeof(double complex);
 
+#ifndef NO_MPI
     MPI_Status *status_queue = (MPI_Status *)
         malloc(sizeof(MPI_Status) * facets * streamer.queue_length);
+#endif
 
     // Work that has been done. This is needed because for split
     // subgrids, multiple work entries might correspond to just a
@@ -618,10 +627,12 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
         if (work[iwork].nbl && !done_work[iwork]) {
 
             double start = get_time_ns();
+#ifndef NO_MPI
             // Wait for all facet data for this work to arrive (TODO:
             // start doing some work earlier)
             MPI_Waitall(facets, streamer.request_queue + facets * work_slot,
                         status_queue + facets * work_slot);
+#endif
             memset(streamer.request_queue + facets * work_slot, MPI_REQUEST_NULL, sizeof(MPI_Request) * facets);
             streamer.received_data += sizeof(double complex) * facets * nmbf_length;
             streamer.received_subgrids++;
@@ -658,8 +669,11 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
     }
 
     free(streamer.nmbf_queue); free(streamer.subgrid_queue);
-    free(streamer.request_queue); free(status_queue); free(done_work);
+    free(streamer.request_queue); free(done_work);
     fftw_free(streamer.subgrid_plan);
+#ifndef NO_MPI
+    free(status_queue);
+#endif
 
     if (streamer.vis_group >= 0) {
         H5Gclose(streamer.vis_group); H5Fclose(streamer.vis_file);
