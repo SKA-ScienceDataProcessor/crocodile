@@ -386,11 +386,6 @@ int main(int argc, char *argv[]) {
     // Make imaging configuration
     struct work_config config;
     if (!set_cmdarg_config(argc, argv, &config, world_rank, world_size)) {
-
-    //if (!set_default_recombine2d_config(&config)) {
-    //if (!set_test_recombine2d_config(&config, facet_workers, subgrid_workers, world_rank)) {
-    //if (!recombine2d_set_test5_config(&config, facet_workers, subgrid_workers, world_rank)) {
-    //if (!set_small_test_config(&config, facet_workers, subgrid_workers, world_rank)) {
         fprintf(stderr, "Could not set imaging configuration!\n");
         return 1;
     }

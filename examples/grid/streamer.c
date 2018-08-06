@@ -122,7 +122,6 @@ void streamer_writer(struct streamer *streamer)
         double start = get_time_ns();
         omp_set_lock(streamer->vis_out_lock + streamer->vis_out_ptr);
         streamer->wait_out_time += get_time_ns() - start;
-        //printf("Obtained out lock on slot %d\n", streamer->vis_out_ptr);
 
         start = get_time_ns();
 
@@ -138,8 +137,8 @@ void streamer_writer(struct streamer *streamer)
         double complex *vis_data = streamer->vis_queue +
             streamer->vis_out_ptr * spec->time_chunk * spec->freq_chunk;
 
-        // Read visibility chunk. If it
-        // was not yet set, this will just fill the buffer with zeroes.
+        // Read visibility chunk. If it was not yet set, this will
+        // just fill the buffer with zeroes.
         int chunk_index = ((bl_data.antenna2 * spec->cfg->ant_count + bl_data.antenna1)
                            * time_chunk_count + tchunk) * freq_chunk_count + fchunk;
         if (bls_written[chunk_index]) {
@@ -235,10 +234,6 @@ void streamer_degrid_chunk(struct streamer *streamer,
                        -max_v < sg_max_v && -min_v > sg_min_v;
     if (!overlap && !inv_overlap)
         return;
-
-    //printf("baseline %d/%d chunk %d/%d\n", bl->a1, bl->a2, tchunk, fchunk);
-    //printf("u: %g-%g (%g-%g)\n", min_u, max_u, sg_min_u, sg_max_u);
-    //printf("v: %g-%g (%g-%g)\n", min_v, max_v, sg_min_v, sg_max_v);
 
     // Allocate visibility chunk (on stack)
     const int vis_data_size = sizeof(double complex) * spec->time_chunk * spec->freq_chunk;
