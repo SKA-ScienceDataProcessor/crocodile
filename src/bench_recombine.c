@@ -131,7 +131,7 @@ bool load_recombine_parset(const char *parset,
 
 enum Opts
     {
-        Opt_flag,
+        Opt_flag = 0,
 
         Opt_telescope, Opt_fov, Opt_dec, Opt_time, Opt_freq, Opt_grid, Opt_vis_set,
         Opt_recombine, Opt_rec_aa, Opt_rec_set,
@@ -263,7 +263,16 @@ bool set_cmdarg_config(int argc, char **argv,
                 invalid=true; fprintf(stderr, "ERROR: Unknown recombination parameter set: %s!\n", optarg);
             }
             break;
-        default: invalid = 1; break;
+        case Opt_facet_workers:
+            nscan = sscanf(optarg, "%d", &facet_workers);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'facet-workers' option!\n");
+            }
+            break;
+        case '?':
+        default:
+            invalid=true; fprintf(stderr, "ERROR: Unknown option '%s'!\n", argv[opterr]);
+            break;
         }
     }
 
@@ -386,15 +395,19 @@ int main(int argc, char *argv[]) {
     // Make imaging configuration
     struct work_config config;
     if (!set_cmdarg_config(argc, argv, &config, world_rank, world_size)) {
-        fprintf(stderr, "Could not set imaging configuration!\n");
         return 1;
     }
 
     // Local run?
     if (world_size == 1) {
-        printf("%s pid %d role: Single\n", proc_name, getpid());
 
-        producer(&config, 0, 0);
+        if (config.facet_workers > 0) {
+            printf("%s pid %d role: Standalone producer\n", proc_name, getpid());
+            producer(&config, 0, 0);
+        } else {
+            printf("%s pid %d role: Standalone streamer\n", proc_name, getpid());
+            streamer(&config, 0, 0);
+        }
 
     } else {
 

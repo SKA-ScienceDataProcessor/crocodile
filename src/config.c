@@ -298,6 +298,7 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
 
 static bool generate_facet_work_assignment(struct work_config *cfg)
 {
+    if (cfg->facet_workers == 0) return true;
 
     // This is straightforward: We just assume that all facets within
     // the field of view are set. Note that theta is generally larger
