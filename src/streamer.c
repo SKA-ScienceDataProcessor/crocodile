@@ -74,7 +74,7 @@ static MPI_Request *request_slot(struct streamer *streamer, int slot, int facet)
 static double complex *subgrid_slot(struct streamer *streamer, int slot)
 {
     const int xM_size = streamer->work_cfg->recombine.xM_size;
-    return streamer->nmbf_queue + xM_size * xM_size * slot;
+    return streamer->subgrid_queue + xM_size * xM_size * slot;
 }
 
 void streamer_ireceive(struct streamer *streamer,
@@ -447,8 +447,6 @@ void streamer_work(struct streamer *streamer,
 
             #pragma omp task
             {
-                char bls_str[2048];
-                bls_str[0] = 0;
 
                 struct subgrid_work_bl *bl2;
                 int i_bl2;
@@ -468,15 +466,11 @@ void streamer_work(struct streamer *streamer,
                                                   slot, subgrid);
 
                     free(bl_data.time); free(bl_data.uvw_m); free(bl_data.freq);
-
-                    sprintf(bls_str + strlen(bls_str), "%d/%d ", bl2->a1, bl2->a2);
                 }
 
                 // Done with this chunk
 #pragma omp atomic
                 streamer->subgrid_locks[slot]--;
-                //printf("sg %d/%d bl %s done (slot %d: %d)\n", work->iu, work->iv, bls_str,
-                //       slot, streamer->subgrid_locks[slot]);
             }
         }
 
@@ -499,9 +493,8 @@ bool streamer_init(struct streamer *streamer,
 
     streamer->have_kern = false;
     streamer->vis_file = streamer->vis_group = -1;
-    streamer->write_time = 0;
     streamer->wait_time = streamer->wait_in_time = streamer->wait_out_time =
-        streamer->critical_wait_time = 0;
+        streamer->critical_wait_time = streamer->recombine_time = 0;
     streamer->read_time = streamer->write_time = streamer->degrid_time = 0;
     streamer->received_data = 0;
     streamer->received_subgrids = streamer->baselines_covered = 0;
