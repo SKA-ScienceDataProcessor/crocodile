@@ -11,7 +11,9 @@
 #include <complex.h>
 #include <string.h>
 #include <omp.h>
+#ifndef NO_MPI
 #include <mpi.h>
+#endif
 
 bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec)
 {
@@ -368,9 +370,10 @@ bool set_cmdarg_config(int argc, char **argv,
 int main(int argc, char *argv[]) {
 
     // Initialise MPI, read configuration (we need multi-threading support)
-    int thread_support, world_rank, world_size;
-    char proc_name[MPI_MAX_PROCESSOR_NAME];
-    int proc_name_length = 0;
+    int world_rank, world_size;
+    char proc_name[256];
+#ifndef NO_MPI
+    int thread_support, proc_name_length = 0;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &thread_support);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -380,6 +383,10 @@ int main(int argc, char *argv[]) {
     }
     MPI_Get_processor_name(proc_name, &proc_name_length);
     proc_name[proc_name_length] = 0;
+#else
+    world_rank = 0; world_size = 1;
+    gethostname(proc_name, 256);
+#endif
 
     // Read FFTW wisdom to get through planning quicker
     fftw_import_wisdom_from_filename("recombine.wisdom");
@@ -435,9 +442,12 @@ int main(int argc, char *argv[]) {
             streamer(&config, world_rank-facet_workers, producer_ranks);
         }
 
+    }
+
+#ifndef NO_MPI
         MPI_Barrier(MPI_COMM_WORLD);
         MPI_Finalize();
-    }
+#endif
 
     config_free(&config);
 

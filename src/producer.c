@@ -8,7 +8,13 @@
 #include <time.h>
 #include <string.h>
 #include <omp.h>
+
+#ifndef NO_MPI
 #include <mpi.h>
+#else
+#define MPI_Request int
+#define MPI_REQUEST_NULL 0
+#endif
 
 struct producer_stream {
 
@@ -168,7 +174,8 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
             continue;
 
         // Select send slot if running in distributed mode
-        int indx; MPI_Status status;
+        int indx;
+#ifndef NO_MPI
         if (prod->streamer_count == 0)
             indx = 0;
         else {
@@ -177,11 +184,15 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
             }
             if (indx >= prod->send_queue_length) {
                 double start = get_time_ns();
+                MPI_Status status;
                 MPI_Waitany(prod->send_queue_length, prod->requests, &indx, &status);
                 prod->mpi_wait_time += get_time_ns() - start;
             }
             assert (indx >= 0 && indx < prod->send_queue_length);
         }
+#else
+        indx = 0;
+#endif
 
         // Calculate or copy sub-grid data
         double complex *send_buf = prod->NMBF_NMBF_queue + indx * cfg->xM_yN_size * cfg->xM_yN_size;
@@ -193,6 +204,7 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
         }
 
         // Send (unless running in single-node mode, then we just pretend)
+#ifndef NO_MPI
         if (prod->streamer_ranks) {
             int tag = make_subgrid_tag(wcfg, iworker, iwork,
                                        prod->facet_worker, facet_work_ix);
@@ -201,6 +213,7 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
                       prod->streamer_ranks[iworker], tag, MPI_COMM_WORLD, &prod->requests[indx]);
             prod->mpi_send_time += get_time_ns() - start;
         }
+#endif
         prod->bytes_sent += sizeof(double complex) * cfg->xM_yN_size * cfg->xM_yN_size;
 
     }
@@ -477,9 +490,11 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
         struct producer_stream *prod = producers + omp_get_thread_num();
         producer_work(wcfg, prod, producers, F, BF);
 
+#ifndef NO_MPI
         // Wait for remaining packets to be sent
         MPI_Status statuses[send_queue_length];
         MPI_Waitall(send_queue_length, prod->requests, statuses);
+#endif
 
         free_producer_stream(prod);
     }
