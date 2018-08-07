@@ -139,14 +139,15 @@ enum Opts
         Opt_recombine, Opt_rec_aa, Opt_rec_set,
         Opt_rec_load_facet, Opt_rec_load_facet_hdf5,
         Opt_facet_workers, Opt_parallel_cols, Opt_dont_retain_bf,
+        Opt_bls_per_task, Opt_subgrid_queue, Opt_visibility_queue,
     };
 
 bool set_cmdarg_config(int argc, char **argv,
                        struct work_config *cfg, int world_rank, int world_size)
 {
     // Read parameters
-    int produce_parallel_cols = false;
-    int produce_retain_bf = true;
+    config_init(cfg);
+
     struct option options[] =
       {
         {"telescope",  required_argument, 0, Opt_telescope },
@@ -156,6 +157,7 @@ bool set_cmdarg_config(int argc, char **argv,
         {"freq",       required_argument, 0, Opt_freq },
         {"grid",       required_argument, 0, Opt_grid },
         {"vis-set",    required_argument, 0, Opt_vis_set},
+        {"add-meta",   no_argument,       &cfg->vis_skip_metadata, false },
 
         {"recombine",  required_argument, 0, Opt_recombine },
         {"rec-aa",     required_argument, 0, Opt_rec_aa },
@@ -164,8 +166,8 @@ bool set_cmdarg_config(int argc, char **argv,
         {"load-facet-hdf5", required_argument, 0, Opt_rec_load_facet_hdf5 },
 
         {"facet-workers", required_argument, 0, Opt_facet_workers },
-        {"parallel-columns", no_argument, &produce_parallel_cols, true },
-        {"dont-retain-bf", no_argument,   &produce_retain_bf, false },
+        {"parallel-columns", no_argument, &cfg->produce_parallel_cols, true },
+        {"dont-retain-bf", no_argument,   &cfg->produce_retain_bf, false },
 
         {0, 0, 0, 0}
       };
@@ -271,6 +273,24 @@ bool set_cmdarg_config(int argc, char **argv,
                 invalid=true; fprintf(stderr, "ERROR: Could not parse 'facet-workers' option!\n");
             }
             break;
+        case Opt_bls_per_task:
+            nscan = sscanf(optarg, "%d", &cfg->vis_bls_per_task);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'bls-per-task' option!\n");
+            }
+            break;
+        case Opt_subgrid_queue:
+            nscan = sscanf(optarg, "%d", &cfg->vis_subgrid_queue_length);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'subgrid-queue' option!\n");
+            }
+            break;
+        case Opt_visibility_queue:
+            nscan = sscanf(optarg, "%d", &cfg->vis_chunk_queue_length);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'visibility-queue' option!\n");
+            }
+            break;
         case '?':
         default:
             invalid=true; fprintf(stderr, "ERROR: Unknown option '%s'!\n", argv[opterr]);
@@ -302,8 +322,8 @@ bool set_cmdarg_config(int argc, char **argv,
         printf("  --telescope=<path>     Read stations from file\n");
         printf("  --fov=<val>            Set field of view (radians)\n");
         printf("  --dec=<val>            Set source declination (default 90 degrees)\n");
-        printf("  --time=<start>:<end>/<steps>[/<chunks>]  Set dump times (hour angle, in s)\n");
-        printf("  --freq=<start>:<end>/<steps>[/<chunks>]  Set frequency channels (in Hz).\n");
+        printf("  --time=<start>:<end>/<steps>[/<chunk>]  Set dump times (hour angle, in s)\n");
+        printf("  --freq=<start>:<end>/<steps>[/<chunk>]  Set frequency channels (in Hz).\n");
         printf("  --grid=<x0>,<path>     Gridding function to use\n");
         printf("  --vis=[vlaa/ska_low]   Use standard configuration sets\n");
         printf("\n");
@@ -317,6 +337,9 @@ bool set_cmdarg_config(int argc, char **argv,
         printf("  --facet-workers=<val>  Number of workers holding facets (default: half)\n");
         printf("  --dont-retain-bf       Discard BF term. Saves memory at expense of compute.\n");
         printf("  --parallel-columns     Work on grid columns in parallel. Worse for distribution.\n");
+        printf("  --bls-per-task=<N>     Number of baselines per OpenMP task (default 256)\n");
+        printf("  --subgrid-queue=<N>    Incoming subgrid queue length (default 32)\n");
+        printf("  --visibility-queue=<N> Outgoing visibility queue length (default 32768)\n");
         printf("\n");
         printf("Positional Parameters:\n");
         printf("  <path>                 Visibility file. '%%d' will be replaced by rank.\n\n");
@@ -326,10 +349,6 @@ bool set_cmdarg_config(int argc, char **argv,
     // Set configuration
     int subgrid_workers = world_size - facet_workers;
     if (subgrid_workers < 1) subgrid_workers = 1;
-
-    config_init(cfg, facet_workers, subgrid_workers);
-    cfg->produce_parallel_cols = produce_parallel_cols;
-    cfg->produce_retain_bf = produce_retain_bf;
 
     if (!config_set(cfg,
                     recombine_pars[0], recombine_pars[1],
@@ -348,7 +367,7 @@ bool set_cmdarg_config(int argc, char **argv,
     }
 
     // Make work assignment
-    if (!config_assign_work(cfg))
+    if (!config_assign_work(cfg, facet_workers, subgrid_workers))
         return false;
 
     // Extra testing options, where appropriate
@@ -394,11 +413,6 @@ int main(int argc, char *argv[]) {
     // HDF5 initialisation
     init_dtype_cpx();
 
-    // Decide number of workers
-    int facet_workers = (world_size + 1) / 2;
-    int subgrid_workers = world_size - facet_workers;
-    if (subgrid_workers == 0) subgrid_workers = 1;
-
     // Make imaging configuration
     struct work_config config;
     if (!set_cmdarg_config(argc, argv, &config, world_rank, world_size)) {
@@ -421,25 +435,25 @@ int main(int argc, char *argv[]) {
         // Determine number of producers and streamers (pretty arbitrary for now)
         int i;
 
-        if (world_rank < facet_workers) {
+        if (world_rank < config.facet_workers) {
             printf("%s pid %d role: Producer %d\n", proc_name, getpid(), world_rank);
 
-            int *streamer_ranks = (int *)malloc(sizeof(int) * subgrid_workers);
-            for (i = 0; i < subgrid_workers; i++) {
-                streamer_ranks[i] = facet_workers + i;
+            int *streamer_ranks = (int *)malloc(sizeof(int) * config.subgrid_workers);
+            for (i = 0; i < config.subgrid_workers; i++) {
+                streamer_ranks[i] = config.facet_workers + i;
             }
 
             producer(&config, world_rank, streamer_ranks);
 
-        } else if (world_rank - facet_workers < subgrid_workers) {
-            printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), world_rank - facet_workers);
+        } else if (world_rank - config.facet_workers < config.subgrid_workers) {
+            printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), world_rank - config.facet_workers);
 
-            int *producer_ranks = (int *)malloc(sizeof(int) * facet_workers);
-            for (i = 0; i < facet_workers; i++) {
+            int *producer_ranks = (int *)malloc(sizeof(int) * config.facet_workers);
+            for (i = 0; i < config.facet_workers; i++) {
                 producer_ranks[i] = i;
             }
 
-            streamer(&config, world_rank-facet_workers, producer_ranks);
+            streamer(&config, world_rank - config.facet_workers, producer_ranks);
         }
 
     }

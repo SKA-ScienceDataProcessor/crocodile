@@ -542,13 +542,21 @@ bool streamer_init(struct streamer *streamer,
         H5Fflush(streamer->vis_file, H5F_SCOPE_LOCAL);
     }
 
-    // Allocate receive queue
-    streamer->queue_length = 32;
+    // Calculate size of queues
+    streamer->queue_length = wcfg->vis_subgrid_queue_length;
+    streamer->vis_queue_length = wcfg->vis_chunk_queue_length;
+    printf("vis_queue_length=%d\n", streamer->vis_queue_length);
     const int nmbf_length = cfg->NMBF_NMBF_size / sizeof(double complex);
     const int queue_size = sizeof(double complex) * nmbf_length * facets * streamer->queue_length;
     const int sg_queue_size = cfg->SG_size * streamer->queue_length;
     const int requests_size = sizeof(MPI_Request) * facets * streamer->queue_length;
-    printf("Allocating %.3g GB receive queue\n", (double)(queue_size+sg_queue_size+requests_size) / 1000000000);
+    struct vis_spec *const spec = &streamer->work_cfg->spec;
+    const int vis_data_size = sizeof(double complex) * spec->time_chunk * spec->freq_chunk;
+    printf("Allocating %.3g GB subgrid queue, %.3g GB visibility queue\n",
+           (double)(queue_size+sg_queue_size+requests_size) / 1e9,
+           (double)(streamer->vis_queue_length * (vis_data_size + 6 * sizeof(int))) / 1e9);
+
+    // Allocate receive queue
     streamer->nmbf_queue = (double complex *)malloc(queue_size);
     streamer->request_queue = (MPI_Request *)malloc(requests_size);
     streamer->subgrid_queue = (double complex *)malloc(sg_queue_size);
@@ -567,9 +575,6 @@ bool streamer_init(struct streamer *streamer,
     }
 
     // Allocate visibility queue
-    struct vis_spec *const spec = &streamer->work_cfg->spec;
-    const int vis_data_size = sizeof(double complex) * spec->time_chunk * spec->freq_chunk;
-    streamer->vis_queue_length = 1024;
     streamer->vis_queue = malloc(streamer->vis_queue_length * vis_data_size);
     streamer->vis_a1 = malloc(streamer->vis_queue_length * sizeof(int));
     streamer->vis_a2 = malloc(streamer->vis_queue_length * sizeof(int));
@@ -624,7 +629,11 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
 
 #pragma omp section
     {
+    // Determine number of workers. If we are streaming to disk (see
+    // above) this will tie up one thread from the pool permanently.
     num_workers = omp_get_num_threads();
+    if(streamer.vis_group >= 0)
+        num_workers--;
 
     int iwork;
     for (iwork = 0; iwork < wcfg->subgrid_max_work; iwork++) {
@@ -703,7 +712,7 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
     printf("Worker: Wait: %gs, Critical: %gs, Degrid: %gs, Idle: %gs\n",
            streamer.wait_in_time, streamer.critical_wait_time,
            streamer.degrid_time,
-           (num_workers - 1) * stream_time
+           num_workers * stream_time
            - streamer.wait_in_time - streamer.critical_wait_time - streamer.degrid_time
            - streamer.wait_time - streamer.recombine_time);
     printf("Writer: Wait: %gs, Read: %gs, Write: %gs, Idle: %gs\n",

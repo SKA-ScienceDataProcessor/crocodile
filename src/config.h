@@ -65,10 +65,12 @@ struct work_config {
     struct recombine2d_config recombine;
 
     // Parameters
-    bool produce_parallel_cols;
-    bool produce_retain_bf;
-    bool vis_skip_metadata;
-    bool vis_bls_per_task;
+    int produce_parallel_cols;
+    int produce_retain_bf;
+    int vis_skip_metadata;
+    int vis_bls_per_task;
+    int vis_subgrid_queue_length;
+    int vis_chunk_queue_length;
 };
 
 double get_time_ns();
@@ -78,14 +80,14 @@ void bl_bounding_box(struct vis_spec *spec, int a1, int a2,
 void bl_bounding_subgrids(struct vis_spec *spec, double lam, double xA, int a1, int a2,
                           int *sg_min, int *sg_max);
 
-void config_init(struct work_config *cfg,
-                 int facet_workers, int subgrid_workers);
+void config_init(struct work_config *cfg);
 bool config_set(struct work_config *cfg,
                 int image_size, int subgrid_spacing,
                 char *pswf_file,
                 int yB_size, int yN_size, int yP_size,
                 int xA_size, int xM_size, int xMxN_yP_size);
-bool config_assign_work(struct work_config *cfg);
+bool config_assign_work(struct work_config *cfg,
+                        int facet_workers, int subgrid_workers);
 
 void config_free(struct work_config *cfg);
 
