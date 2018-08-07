@@ -373,18 +373,17 @@ static bool generate_full_redistribute_assignment(struct work_config *cfg)
     return true;
 }
 
-void config_init(struct work_config *cfg,
-                 int facet_workers, int subgrid_workers)
+void config_init(struct work_config *cfg)
 {
 
     // Initialise structure
     memset(cfg, 0, sizeof(*cfg));
-    cfg->facet_workers = facet_workers;
-    cfg->subgrid_workers = subgrid_workers;
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
     cfg->vis_skip_metadata = true;
     cfg->vis_bls_per_task = 256;
+    cfg->vis_subgrid_queue_length = 32;
+    cfg->vis_chunk_queue_length = 32768;
 }
 
 bool config_set(struct work_config *cfg,
@@ -488,8 +487,11 @@ void config_check_subgrids(struct work_config *cfg,
 
 }
 
-bool config_assign_work(struct work_config *cfg)
+bool config_assign_work(struct work_config *cfg,
+                        int facet_workers, int subgrid_workers)
 {
+    cfg->facet_workers = facet_workers;
+    cfg->subgrid_workers = subgrid_workers;
 
     // Generate work assignments
     if (cfg->spec.time_count) {
