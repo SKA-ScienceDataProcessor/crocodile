@@ -373,6 +373,7 @@ void streamer_work(struct streamer *streamer,
         #pragma omp taskyield
         if (get_time_ns() > start_wait + 1) {
             printf("Waiting on slot %d (%d)...\n", slot, streamer->subgrid_locks[slot]);
+            fflush(stdout);
             start_wait = get_time_ns();
         }
     }
@@ -489,6 +490,7 @@ void streamer_work(struct streamer *streamer,
         }
 
         printf("Subgrid %d/%d (%d baselines)\n", work->iu, work->iv, i_bl);
+        fflush(stdout);
         streamer->baselines_covered += i_bl;
 
     }
@@ -545,22 +547,27 @@ bool streamer_init(struct streamer *streamer,
     // Calculate size of queues
     streamer->queue_length = wcfg->vis_subgrid_queue_length;
     streamer->vis_queue_length = wcfg->vis_chunk_queue_length;
-    printf("vis_queue_length=%d\n", streamer->vis_queue_length);
     const int nmbf_length = cfg->NMBF_NMBF_size / sizeof(double complex);
-    const int queue_size = sizeof(double complex) * nmbf_length * facets * streamer->queue_length;
-    const int sg_queue_size = cfg->SG_size * streamer->queue_length;
-    const int requests_size = sizeof(MPI_Request) * facets * streamer->queue_length;
+    const size_t queue_size = (size_t)sizeof(double complex) * nmbf_length * facets * streamer->queue_length;
+    const size_t sg_queue_size = (size_t)cfg->SG_size * streamer->queue_length;
+    const size_t requests_size = (size_t)sizeof(MPI_Request) * facets * streamer->queue_length;
     struct vis_spec *const spec = &streamer->work_cfg->spec;
     const int vis_data_size = sizeof(double complex) * spec->time_chunk * spec->freq_chunk;
     printf("Allocating %.3g GB subgrid queue, %.3g GB visibility queue\n",
            (double)(queue_size+sg_queue_size+requests_size) / 1e9,
-           (double)(streamer->vis_queue_length * (vis_data_size + 6 * sizeof(int))) / 1e9);
+           (double)((size_t)streamer->vis_queue_length * (vis_data_size + 6 * sizeof(int))) / 1e9);
 
     // Allocate receive queue
     streamer->nmbf_queue = (double complex *)malloc(queue_size);
     streamer->request_queue = (MPI_Request *)malloc(requests_size);
     streamer->subgrid_queue = (double complex *)malloc(sg_queue_size);
     streamer->subgrid_locks = (int *)calloc(sizeof(int), streamer->queue_length);
+    if (!streamer->nmbf_queue || !streamer->request_queue ||
+        !streamer->subgrid_queue || !streamer->subgrid_locks) {
+
+        fprintf(stderr, "ERROR: Could not allocate subgrid queue!\n");
+        return false;
+    }
 
     // Plan FFTs
     streamer->subgrid_plan = fftw_plan_dft_2d(cfg->xM_size, cfg->xM_size,
@@ -575,14 +582,21 @@ bool streamer_init(struct streamer *streamer,
     }
 
     // Allocate visibility queue
-    streamer->vis_queue = malloc(streamer->vis_queue_length * vis_data_size);
-    streamer->vis_a1 = malloc(streamer->vis_queue_length * sizeof(int));
-    streamer->vis_a2 = malloc(streamer->vis_queue_length * sizeof(int));
-    streamer->vis_tchunk = malloc(streamer->vis_queue_length * sizeof(int));
-    streamer->vis_fchunk = malloc(streamer->vis_queue_length * sizeof(int));
-    streamer->vis_in_lock = malloc(streamer->vis_queue_length * sizeof(omp_lock_t));
-    streamer->vis_out_lock = malloc(streamer->vis_queue_length * sizeof(omp_lock_t));
+    streamer->vis_queue = malloc((size_t)streamer->vis_queue_length * vis_data_size);
+    streamer->vis_a1 = malloc((size_t)streamer->vis_queue_length * sizeof(int));
+    streamer->vis_a2 = malloc((size_t)streamer->vis_queue_length * sizeof(int));
+    streamer->vis_tchunk = malloc((size_t)streamer->vis_queue_length * sizeof(int));
+    streamer->vis_fchunk = malloc((size_t)streamer->vis_queue_length * sizeof(int));
+    streamer->vis_in_lock = malloc((size_t)streamer->vis_queue_length * sizeof(omp_lock_t));
+    streamer->vis_out_lock = malloc((size_t)streamer->vis_queue_length * sizeof(omp_lock_t));
     streamer->vis_in_ptr = streamer->vis_out_ptr = 0;
+    if (!streamer->vis_queue || !streamer->vis_a1 || !streamer->vis_a2 ||
+        !streamer->vis_tchunk || !streamer->vis_fchunk ||
+        !streamer->vis_in_lock || !streamer->vis_out_lock) {
+
+        fprintf(stderr, "ERROR: Could not allocate visibility queue!\n");
+        return false;
+    }
 
     int i;
     for (i = 0; i < streamer->vis_queue_length; i++) {
