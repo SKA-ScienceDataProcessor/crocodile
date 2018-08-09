@@ -438,20 +438,30 @@ int main(int argc, char *argv[]) {
         if (world_rank < config.facet_workers) {
             printf("%s pid %d role: Producer %d\n", proc_name, getpid(), world_rank);
 
-            int *streamer_ranks = (int *)malloc(sizeof(int) * config.subgrid_workers);
-            for (i = 0; i < config.subgrid_workers; i++) {
-                streamer_ranks[i] = config.facet_workers + i;
+            int *streamer_ranks = NULL;
+            if (config.facet_workers < world_size) {
+                streamer_ranks = (int *)malloc(sizeof(int) * config.subgrid_workers);
+                for (i = 0; i < config.subgrid_workers; i++) {
+                    streamer_ranks[i] = config.facet_workers + i;
+                }
             }
+            printf("%d subgrid workers, streamer_ranks = %p\n", config.subgrid_workers, streamer_ranks);
 
             producer(&config, world_rank, streamer_ranks);
+
+            free(streamer_ranks);
 
         } else if (world_rank - config.facet_workers < config.subgrid_workers) {
             printf("%s pid %d role: Streamer %d\n", proc_name, getpid(), world_rank - config.facet_workers);
 
-            int *producer_ranks = (int *)malloc(sizeof(int) * config.facet_workers);
-            for (i = 0; i < config.facet_workers; i++) {
-                producer_ranks[i] = i;
+            int *producer_ranks = NULL;
+            if (config.subgrid_workers < world_size) {
+                producer_ranks = (int *)malloc(sizeof(int) * config.facet_workers);
+                for (i = 0; i < config.facet_workers; i++) {
+                    producer_ranks[i] = i;
+                }
             }
+            printf("%d facet workers, producer_ranks = %p\n", config.facet_workers, producer_ranks);
 
             streamer(&config, world_rank - config.facet_workers, producer_ranks);
         }
