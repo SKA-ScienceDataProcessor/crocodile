@@ -669,16 +669,10 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
 
             double start = get_time_ns();
 #ifndef NO_MPI
-            if (subgrid_worker == 1) {
-                printf("Waiting for subgrid %d\n", iwork);
-            }
             // Wait for all facet data for this work to arrive (TODO:
             // start doing some work earlier)
             MPI_Waitall(facets, streamer.request_queue + facets * work_slot,
                         status_queue + facets * work_slot);
-            if (subgrid_worker == 1) {
-                printf("!!! Got it!");
-            }
 #endif
             memset(streamer.request_queue + facets * work_slot, MPI_REQUEST_NULL, sizeof(MPI_Request) * facets);
             streamer.received_data += sizeof(double complex) * facets * nmbf_length;
