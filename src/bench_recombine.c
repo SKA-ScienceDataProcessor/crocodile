@@ -23,7 +23,7 @@ bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec
         spec->cfg = malloc(sizeof(struct ant_config));
         if (!load_ant_config("../data/grid/LOWBD2_north_cfg.h5", spec->cfg))
             return false;
-        spec->fov = 1300. / image_size;
+        spec->fov = (double)image_size / 210000;
         spec->dec = 90 * atan(1) * 4 / 180;
         spec->time_start = 10 * -45 / 3600; // h
         spec->time_count = 64;
@@ -41,7 +41,7 @@ bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec
         spec->cfg = malloc(sizeof(struct ant_config));
         if (!load_ant_config("../data/grid/VLAA_north_cfg.h5", spec->cfg))
             return false;
-        spec->fov = 3000. / image_size;
+        spec->fov = (double)image_size / 100000;
         spec->dec = 90 * atan(1) * 4 / 180;
         spec->time_start = 10 * -45 / 3600; // h
         spec->time_count = 64;
@@ -102,6 +102,20 @@ bool load_recombine_parset(const char *parset,
         *gridder_x0 = 0.4;
         return true;
     }
+    if (!strcasecmp(parset, "tiny")) {
+        recombine_pars[0] = 8192;
+        recombine_pars[1] = 128;
+        recombine_pars[2] = 1280;
+        recombine_pars[3] = 1536;
+        recombine_pars[4] = 2048;
+        recombine_pars[5] = 384;
+        recombine_pars[6] = 512;
+        recombine_pars[7] = 144;
+        strcpy(aa_path, "../data/grid/T06_pswf_tiny.in");
+        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        *gridder_x0 = 0.4;
+        return true;
+    }
     if (!strcasecmp(parset, "small")) {
         recombine_pars[0] = 16384;
         recombine_pars[1] = 64;
@@ -116,6 +130,20 @@ bool load_recombine_parset(const char *parset,
         *gridder_x0 = 0.4;
         return true;
     }
+    if (!strcasecmp(parset, "medium")) {
+        recombine_pars[0] = 65536;
+        recombine_pars[1] = 128;
+        recombine_pars[2] = 10240;
+        recombine_pars[3] = 12288;
+        recombine_pars[4] = 16384;
+        recombine_pars[5] = 896;
+        recombine_pars[6] = 1024;
+        recombine_pars[7] = 272;
+        strcpy(aa_path, "../data/grid/T06_pswf_medium.in");
+        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        *gridder_x0 = 0.4;
+        return true;
+    }
     if (!strcasecmp(parset, "large")) {
         recombine_pars[0] = 98304;
         recombine_pars[1] = 64;
@@ -126,6 +154,22 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[6] = 1024;
         recombine_pars[7] = 146;
         strcpy(aa_path, "../data/grid/T06_pswf_large.in");
+        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        *gridder_x0 = 0.4;
+        return true;
+    }
+    if (!strcasecmp(parset, "huge")) {
+        recombine_pars[0] = 262144;
+        recombine_pars[1] = 256;
+        recombine_pars[2] = 20480;
+        recombine_pars[3] = 24576;
+        recombine_pars[4] = 32768;
+        recombine_pars[5] = 1792;
+        recombine_pars[6] = 2048;
+        recombine_pars[7] = 272;
+        strcpy(aa_path, "../data/grid/T06_pswf_huge.in");
+        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        *gridder_x0 = 0.4;
         return true;
     }
     return false;
@@ -168,6 +212,9 @@ bool set_cmdarg_config(int argc, char **argv,
         {"facet-workers", required_argument, 0, Opt_facet_workers },
         {"parallel-columns", no_argument, &cfg->produce_parallel_cols, true },
         {"dont-retain-bf", no_argument,   &cfg->produce_retain_bf, false },
+        {"bls-per-task", required_argument, 0, Opt_bls_per_task },
+        {"subgrid-queue", required_argument, 0, Opt_subgrid_queue },
+        {"visibility-queue", required_argument, 0, Opt_visibility_queue },
 
         {0, 0, 0, 0}
       };
