@@ -29,6 +29,7 @@ struct streamer
     int queue_length;
     double complex *nmbf_queue;
     MPI_Request *request_queue;
+    bool *skip_receive; // duplicated receive slots to skip
 
     // Subgrid queue (to be degridded)
     double complex *subgrid_queue;
@@ -82,6 +83,20 @@ void streamer_ireceive(struct streamer *streamer,
 {
 
     const int xM_yN_size = streamer->work_cfg->recombine.xM_yN_size;
+    struct subgrid_work *work = streamer->work_cfg->subgrid_work +
+        streamer->subgrid_worker * streamer->work_cfg->subgrid_max_work;
+
+    // Not populated? skip
+    if (!work[subgrid_work].nbl)
+        return;
+
+    // Skip? This is to prevent a subgrid getting received twice
+    if (streamer->skip_receive[subgrid_work])
+        return;
+    int iw;
+    for (iw = subgrid_work+1; iw < streamer->work_cfg->subgrid_max_work; iw++)
+        if (work[iw].iu == work[subgrid_work].iu && work[iw].iv == work[subgrid_work].iv)
+            streamer->skip_receive[iw] = true;
 
     // Identify slot
     const int slot = subgrid_work % streamer->queue_length;
@@ -568,6 +583,7 @@ bool streamer_init(struct streamer *streamer,
         fprintf(stderr, "ERROR: Could not allocate subgrid queue!\n");
         return false;
     }
+    streamer->skip_receive = (bool *)calloc(sizeof(bool), wcfg->subgrid_max_work);
 
     // Plan FFTs
     streamer->subgrid_plan = fftw_plan_dft_2d(cfg->xM_size, cfg->xM_size,
@@ -625,11 +641,6 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
         malloc(sizeof(MPI_Status) * facets * streamer.queue_length);
 #endif
 
-    // Work that has been done. This is needed because for split
-    // subgrids, multiple work entries might correspond to just a
-    // single subgrid getting transferred.
-    char *done_work = calloc(sizeof(char), wcfg->subgrid_max_work);
-
     printf("Waiting for data...\n");
     double stream_start = get_time_ns();
 
@@ -654,14 +665,20 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
         int work_slot = iwork % streamer.queue_length;
         double complex *data_slot = streamer.nmbf_queue + work_slot * facets * nmbf_length;
 
-        if (work[iwork].nbl && !done_work[iwork]) {
+        if (work[iwork].nbl && !streamer.skip_receive[iwork]) {
 
             double start = get_time_ns();
 #ifndef NO_MPI
+            if (subgrid_worker == 1) {
+                printf("Waiting for subgrid %d\n", iwork);
+            }
             // Wait for all facet data for this work to arrive (TODO:
             // start doing some work earlier)
             MPI_Waitall(facets, streamer.request_queue + facets * work_slot,
                         status_queue + facets * work_slot);
+            if (subgrid_worker == 1) {
+                printf("!!! Got it!");
+            }
 #endif
             memset(streamer.request_queue + facets * work_slot, MPI_REQUEST_NULL, sizeof(MPI_Request) * facets);
             streamer.received_data += sizeof(double complex) * facets * nmbf_length;
@@ -672,16 +689,9 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
         // Do work on received data
         streamer_work(&streamer, iwork, data_slot);
 
-        // Mark work done
-        int iw;
-        done_work[iwork] = true;
-        for (iw = iwork+1; iw < wcfg->subgrid_max_work; iw++)
-            if (work[iw].iu == work[iwork].iu && work[iw].iv == work[iwork].iv)
-                done_work[iw] = true;
-
         // Set up slot for new data (if appropriate)
         int iwork_r = iwork + streamer.queue_length;
-        if (iwork_r < wcfg->subgrid_max_work && work[iwork_r].nbl && !done_work[iwork_r]) {
+        if (iwork_r < wcfg->subgrid_max_work) {
             streamer_ireceive(&streamer, iwork_r);
         }
 
@@ -699,11 +709,16 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
     }
 
     free(streamer.nmbf_queue); free(streamer.subgrid_queue);
-    free(streamer.request_queue); free(done_work);
+    free(streamer.request_queue); free(streamer.subgrid_locks);
+    free(streamer.skip_receive);
     fftw_free(streamer.subgrid_plan);
 #ifndef NO_MPI
     free(status_queue);
 #endif
+    free(streamer.vis_queue);
+    free(streamer.vis_a1); free(streamer.vis_a2);
+    free(streamer.vis_tchunk); free(streamer.vis_fchunk);
+    free(streamer.vis_in_lock); free(streamer.vis_out_lock);
 
     if (streamer.vis_group >= 0) {
         H5Gclose(streamer.vis_group); H5Fclose(streamer.vis_file);
