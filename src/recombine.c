@@ -90,17 +90,18 @@ void extract_subgrid(int yP_size, int xM_yP_size, int xMxN_yP_size, int xM_yN_si
     int i;
     int xN_yP_size = xMxN_yP_size - xM_yP_size;
     assert(xN_yP_size % 2 == 0); // re-check loop borders...
+    subgrid_offset += 2 * yP_size; assert(subgrid_offset >= xM_yP_size);
     // m * b, with xN_yP_size worth of margin looping around the sides
     for (i = 0; i < xM_yP_size - xMxN_yP_size / 2; i++) {
         MBF[i] = m_trunc[i] * BF[BF_stride * ((i + subgrid_offset) % yP_size)];
     }
     for (; i < (xMxN_yP_size + 1) / 2; i++) {
         MBF[i] = m_trunc[i] * BF[BF_stride * ((i + subgrid_offset) % yP_size)];
-        int bf_ix = i + subgrid_offset + yP_size - xM_yP_size;
+        int bf_ix = i + subgrid_offset - xM_yP_size;
         MBF[i] += m_trunc[xN_yP_size+i] * BF[BF_stride * (bf_ix % yP_size)];
     }
     for (; i < xM_yP_size; i++) {
-        int bf_ix = i + subgrid_offset + yP_size - xM_yP_size;
+        int bf_ix = i + subgrid_offset - xM_yP_size;
         MBF[i] = m_trunc[xN_yP_size+i] * BF[BF_stride * (bf_ix % yP_size)];
     }
     fftw_execute(MBF_plan);
@@ -118,8 +119,9 @@ void add_facet(int xM_size, int xM_yN_size, int facet_offset,
                complex double *out, int out_stride) {
 
     int i;
+    facet_offset += 2 * xM_size; assert(facet_offset >= xM_yN_size/2);
     for (i = 0; i < xM_yN_size; i++) {
-        out[out_stride * ((i - xM_yN_size/2 + facet_offset + xM_size) % xM_size)] +=
+        out[out_stride * ((i - xM_yN_size/2 + facet_offset) % xM_size)] +=
             NMBF[NMBF_stride * ((i + xM_yN_size/2) % xM_yN_size)] / xM_size;
     }
 
@@ -518,11 +520,13 @@ void recombine2d_af0_af1(struct recombine2d_config *cfg,
     assert(facet_off1 % cfg->facet_spacing == 0);
     int facet_offset0 = facet_off0 / cfg->facet_spacing * cfg->xM_spacing;
     int facet_offset1 = facet_off1 / cfg->facet_spacing * cfg->xM_spacing;
+    facet_offset0 += 2*cfg->xM_size; assert(facet_offset0 >= cfg->xM_yN_size/2);
+    facet_offset1 += 2*cfg->xM_size; assert(facet_offset1 >= cfg->xM_yN_size/2);
 
     int j0, j1;
     for (j0 = 0; j0 < cfg->xM_yN_size; j0++) {
 
-        int off_sg0 = ((j0 - cfg->xM_yN_size/2 + facet_offset0 + cfg->xM_size) % cfg->xM_size);
+        int off_sg0 = ((j0 - cfg->xM_yN_size/2 + facet_offset0) % cfg->xM_size);
         int off_nmbf0 = ((j0 + cfg->xM_yN_size/2) % cfg->xM_yN_size);
 
         for (j1 = 0; j1 < cfg->xM_yN_size; j1++) {
