@@ -492,8 +492,10 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
 
 #ifndef NO_MPI
         // Wait for remaining packets to be sent
+        double start = get_time_ns();
         MPI_Status statuses[send_queue_length];
         MPI_Waitall(send_queue_length, prod->requests, statuses);
+        prod->mpi_wait_time += get_time_ns() - start;
 #endif
 
         free_producer_stream(prod);
