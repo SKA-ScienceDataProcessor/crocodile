@@ -722,7 +722,7 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
     }
 
     double stream_time = get_time_ns() - stream_start;
-    printf("Streamed for %.3gs\n", stream_time);
+    printf("Streamed for %.2fs\n", stream_time);
     printf("Received %.2f GB (%ld subgrids, %ld baselines)\n",
            (double)streamer.received_data / 1000000000, streamer.received_subgrids,
            streamer.baselines_covered);
