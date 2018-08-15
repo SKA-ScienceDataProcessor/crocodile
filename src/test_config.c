@@ -70,7 +70,6 @@ void simple_benchmark(const char *filename,
 
 int main(int argc, char *argv[])
 {
-
     init_dtype_cpx();
 
     struct ant_config cfg;
@@ -90,7 +89,7 @@ int main(int argc, char *argv[])
     spec.freq_step = 50.e6 / spec.freq_count; // Hz
 
     struct work_config work_cfg;
-    config_init(&work_cfg, 9, 10);
+    config_init(&work_cfg);
     if (!config_set(&work_cfg,
                     32768, 4,
                     "../data/grid/T06_pswf.in",
@@ -99,7 +98,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     config_set_visibilities(&work_cfg, &spec, spec.fov * 1. / 0.75, NULL);
-    config_assign_work(&work_cfg);
+    config_assign_work(&work_cfg, 9, 10);
 
     int i;
     for (i = 0; i < work_cfg.subgrid_workers; i++) {
