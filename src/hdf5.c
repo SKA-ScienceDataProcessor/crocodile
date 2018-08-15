@@ -401,7 +401,7 @@ bool create_vis_group(hid_t vis_g, int freq_chunk, int time_chunk, bool skip_met
 
     // Create properties for compact and contigous data. Yes, it is
     // worth sharing them.
-    static id_t compact_ds_prop, cont_ds_prop, chunked_ds_prop;
+    static hid_t compact_ds_prop, cont_ds_prop, chunked_ds_prop;
     static bool ds_created = false;
     if (!ds_created) {
         compact_ds_prop = H5Pcreate(H5P_DATASET_CREATE);
