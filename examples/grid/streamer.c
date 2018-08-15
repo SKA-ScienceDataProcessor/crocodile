@@ -498,9 +498,12 @@ void streamer_work(struct streamer *streamer,
 
             // Start task. Make absolutely sure it sees *everything*
             // as private, as Intel's C compiler otherwise loves to
-            // generate segfaulting code.
-            #pragma omp task firstprivate(streamer, work, bl, slot, subgrid_work, subgrid)
-                streamer_task(streamer, work, bl, slot, subgrid_work, subgrid);
+            // generate segfaulting code. OpenMP complains here that
+            // having a "private" constant is unecessary (requiring
+            // the copy), but I don't trust its judgement.
+            struct subgrid_work *_work = work;
+            #pragma omp task firstprivate(streamer, _work, bl, slot, subgrid_work, subgrid)
+                streamer_task(streamer, _work, bl, slot, subgrid_work, subgrid);
 
         }
 
