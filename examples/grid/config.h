@@ -26,6 +26,7 @@ struct facet_work
 struct subgrid_work_bl
 {
     int a1, a2;
+    int chunks;
     struct subgrid_work_bl *next;
 };
 
@@ -74,11 +75,6 @@ struct work_config {
 };
 
 double get_time_ns();
-
-void bl_bounding_box(struct vis_spec *spec, int a1, int a2,
-                     double *uvw_l_min, double *uvw_l_max);
-void bl_bounding_subgrids(struct vis_spec *spec, double lam, double xA, int a1, int a2,
-                          int *sg_min, int *sg_max);
 
 void config_init(struct work_config *cfg);
 bool config_set(struct work_config *cfg,

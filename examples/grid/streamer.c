@@ -169,7 +169,7 @@ void streamer_writer(struct streamer *streamer)
                            vis_data_h5);
         } else {
             memset(vis_data_h5, 0, vis_data_size);
-        }
+	}
         streamer->read_time += get_time_ns() - start;
 
         // Copy over data
@@ -206,7 +206,7 @@ void streamer_writer(struct streamer *streamer)
 static double min(double a, double b) { return a > b ? b : a; }
 static double max(double a, double b) { return a < b ? b : a; }
 
-void streamer_degrid_chunk(struct streamer *streamer,
+bool streamer_degrid_chunk(struct streamer *streamer,
                            struct subgrid_work *work,
                            struct subgrid_work_bl *bl,
                            struct bl_data *bl_data,
@@ -255,7 +255,7 @@ void streamer_degrid_chunk(struct streamer *streamer,
     bool inv_overlap = -max_u < sg_max_u && -min_u > sg_min_u &&
                        -max_v < sg_max_v && -min_v > sg_min_v;
     if (!overlap && !inv_overlap)
-        return;
+        return false;
 
     // Allocate visibility chunk (on stack)
     const int vis_data_size = sizeof(double complex) * spec->time_chunk * spec->freq_chunk;
@@ -294,7 +294,7 @@ void streamer_degrid_chunk(struct streamer *streamer,
 
     // No flops executed? Skip doing I/O
     if (flops == 0) {
-        return;
+        return true;
     }
 
     // Determine our slot (competing with other tasks, so need to have
@@ -329,6 +329,7 @@ void streamer_degrid_chunk(struct streamer *streamer,
     if(streamer->vis_group >= 0)
         omp_unset_lock(streamer->vis_out_lock + vis_slot);
 
+    return true;
 }
 
 void streamer_task(struct streamer *streamer,
@@ -353,11 +354,22 @@ void streamer_task(struct streamer *streamer,
         int ntchunk = (bl_data.time_count + spec->time_chunk - 1) / spec->time_chunk;
         int nfchunk = (bl_data.freq_count + spec->freq_chunk - 1) / spec->freq_chunk;
         int tchunk, fchunk;
+	int nchunks = 0;
         for (tchunk = 0; tchunk < ntchunk; tchunk++)
             for (fchunk = 0; fchunk < nfchunk; fchunk++)
-                streamer_degrid_chunk(streamer, work,
-                                      bl2, &bl_data, tchunk, fchunk,
-                                      slot, subgrid);
+	      if (streamer_degrid_chunk(streamer, work,
+					bl2, &bl_data, tchunk, fchunk,
+					slot, subgrid))
+		  nchunks++;
+
+	// Check that plan predicted the right number of chunks. This
+	// is pretty important - if this fails this means that the
+	// coordinate calculations are out of synch, which might mean
+	// that we have failed to account for some visibilities in the
+	// plan!
+	if (bl2->chunks != nchunks)
+	  printf("WARNING: subgrid (%d/%d) baseline (%d-%d) %d chunks planned, %d actual!\n",
+		 work->iu, work->iv, bl2->a1, bl2->a2, bl2->chunks, nchunks);
 
         free(bl_data.time); free(bl_data.uvw_m); free(bl_data.freq);
     }
@@ -387,7 +399,7 @@ void streamer_work(struct streamer *streamer,
     while(streamer->subgrid_locks[slot] != 0) {
         #pragma omp taskyield
         if (get_time_ns() > start_wait + 1) {
-            printf("Waiting on slot %d (%d)...\n", slot, streamer->subgrid_locks[slot]);
+	    //printf("Waiting on slot %d (%d)...\n", slot, streamer->subgrid_locks[slot]);
             fflush(stdout);
             start_wait = get_time_ns();
         }
@@ -677,7 +689,10 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
             MPI_Waitall(facets, streamer.request_queue + facets * work_slot,
                         status_queue + facets * work_slot);
 #endif
-            memset(streamer.request_queue + facets * work_slot, MPI_REQUEST_NULL, sizeof(MPI_Request) * facets);
+	    int i;
+	    for (i = 0; i < facets; i++) {
+	      streamer.request_queue[facets * work_slot + i] = MPI_REQUEST_NULL;
+	    }
             streamer.received_data += sizeof(double complex) * facets * nmbf_length;
             streamer.received_subgrids++;
             streamer.wait_time += get_time_ns() - start;
