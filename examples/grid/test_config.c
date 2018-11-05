@@ -5,6 +5,9 @@
 #include <hdf5.h>
 #include <stdlib.h>
 #include <time.h>
+#ifndef NO_MPI
+#include <mpi.h>
+#endif
 
 void simple_benchmark(const char *filename,
                       struct work_config *work_cfg,
@@ -72,8 +75,33 @@ int main(int argc, char *argv[])
 {
     init_dtype_cpx();
 
+    // Initialise MPI, read configuration (we need multi-threading support)
+    int world_rank, world_size;
+    char proc_name[256];
+#ifndef NO_MPI
+    int thread_support, proc_name_length = 0;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &thread_support);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    if (thread_support < MPI_THREAD_MULTIPLE) {
+        fprintf(stderr, "Need full thread support from MPI!\n");
+        return 1;
+    }
+    MPI_Get_processor_name(proc_name, &proc_name_length);
+    proc_name[proc_name_length] = 0;
+
+    int subgrid_workers = world_size;
+
+#else
+    world_rank = 0; world_size = 1;
+    gethostname(proc_name, 256);
+    int subgrid_workers = 10;
+
+#endif
+
     struct ant_config cfg;
     load_ant_config("../../data/grid/LOWBD2_north_cfg.h5", &cfg);
+    //load_ant_config("../../data/grid/VLAA_north_cfg.h5", &cfg);
 
     struct vis_spec spec;
     spec.cfg = &cfg;
@@ -91,17 +119,18 @@ int main(int argc, char *argv[])
     struct work_config work_cfg;
     config_init(&work_cfg);
     if (!config_set(&work_cfg,
-                    32768, 4,
-                    "../../data/grid/T06_pswf.in",
-                    8192, 8640, 16384,
-                    384, 512, 276)) {
+                    98304, 64,
+                    "../../data/grid/T06_pswf_large.in",
+                    7680, 9216, 12288,
+                    704, 1024, 146)) {
         return 1;
     }
-    config_set_visibilities(&work_cfg, &spec, spec.fov * 1. / 0.75, NULL);
-    config_assign_work(&work_cfg, 9, 10);
+    double fov = (double)work_cfg.recombine.image_size / 210000;
+    config_set_visibilities(&work_cfg, &spec, fov, NULL);
+    config_assign_work(&work_cfg, 9, subgrid_workers);
 
     int i;
-    for (i = 0; i < work_cfg.subgrid_workers; i++) {
+    for (i = world_rank; i < subgrid_workers; i += world_size) {
 
         // Get filename to use
         char filename[512];
@@ -122,7 +151,7 @@ int main(int argc, char *argv[])
         }
 
         // Create all baseline groups
-        create_bl_groups(vis_g, &work_cfg, i);
+        create_bl_groups(vis_g, &work_cfg, world_size > 1 ? -1 : i);
         H5Gclose(vis_g); H5Fclose(vis_f);
 
         // Run simple write+read benchmark
