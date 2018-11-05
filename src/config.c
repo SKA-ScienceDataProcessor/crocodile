@@ -548,17 +548,20 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
     struct ant_config *cfg = spec->cfg;
 
     // Map baselines to work
-    struct subgrid_work **bl_work = (struct subgrid_work **)
-        calloc(sizeof(struct subgrid_work *), cfg->ant_count * cfg->ant_count);
-    struct subgrid_work *work = work_cfg->subgrid_work + worker*work_cfg->subgrid_max_work;
-    int iwork;
-    for (iwork = 0; iwork < work_cfg->subgrid_max_work; iwork++) {
-        if (work[iwork].nbl == 0) continue;
-        struct subgrid_work_bl *bl;
-        for (bl = work[iwork].bls; bl; bl = bl->next) {
-            // Note this might overlap (here: overwrite). We are just
-            // interested in an example below.
-            bl_work[bl->a1 * cfg->ant_count + bl->a2] = &work[iwork];
+    struct subgrid_work **bl_work = NULL;
+    if (worker >= 0) {
+        bl_work = (struct subgrid_work **)
+            calloc(sizeof(struct subgrid_work *), cfg->ant_count * cfg->ant_count);
+        struct subgrid_work *work = work_cfg->subgrid_work;
+        int iwork;
+        for (iwork = 0; iwork < work_cfg->subgrid_max_work * work_cfg->subgrid_workers; iwork++) {
+            if (work[iwork].nbl == 0) continue;
+            struct subgrid_work_bl *bl;
+            for (bl = work[iwork].bls; bl; bl = bl->next) {
+                // Note this might overlap (here: overwrite). We are just
+                // interested in an example below.
+                bl_work[bl->a1 * cfg->ant_count + bl->a2] = &work[iwork];
+            }
         }
     }
 
@@ -572,8 +575,10 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
 
         hid_t a1_g = 0;
         for (a2 = a1+1; a2 < cfg->ant_count; a2++) {
-            struct subgrid_work *bw = bl_work[a1 * cfg->ant_count + a2];
-            if (!bw) continue;
+            if (bl_work) {
+                struct subgrid_work *bw = bl_work[a1 * cfg->ant_count + a2];
+                if (!bw) continue;
+            }
 
             // Create outer antenna group, if not already done so
             if (!a1_g) {
