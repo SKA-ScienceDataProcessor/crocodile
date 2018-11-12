@@ -57,19 +57,26 @@ static inline double uvw_l_to_m(double u, double f) {
 }
 
 // Convert hour angle / declination to UVW and back for a certain baseline
-static inline void ha_to_uvw(struct ant_config *cfg, int a1, int a2,
-                             double ha, double dec,
-                             double *uvw_m)
+static inline void ha_to_uvw_sc(struct ant_config *cfg, int a1, int a2,
+                                double ha_sin, double ha_cos,
+                                double dec_sin, double dec_cos,
+                                double *uvw_m)
 {
     double x = cfg->xyz[3*a2+0] - cfg->xyz[3*a1+0];
     double y = cfg->xyz[3*a2+1] - cfg->xyz[3*a1+1];
     double z = cfg->xyz[3*a2+2] - cfg->xyz[3*a1+2];
     // Rotate around z axis (hour angle)
-    uvw_m[0] = x * cos(ha) - y * sin(ha);
-    double v0 = x * sin(ha) + y * cos(ha);
+    uvw_m[0] = x * ha_cos - y * ha_sin;
+    double v0 = x * ha_sin + y * ha_cos;
     // Rotate around x axis (declination)
-    uvw_m[2] = z * sin(dec) - v0 * cos(dec);
-    uvw_m[1] = z * cos(dec) + v0 * sin(dec);
+    uvw_m[2] = z * dec_sin - v0 * dec_cos;
+    uvw_m[1] = z * dec_cos + v0 * dec_sin;
+}
+static inline void ha_to_uvw(struct ant_config *cfg, int a1, int a2,
+                             double ha, double dec,
+                             double *uvw_m)
+{
+    ha_to_uvw_sc(cfg, a1, a2, sin(ha), cos(ha), sin(dec), cos(dec), uvw_m);
 }
 
 static inline double uv_to_ha(struct ant_config *cfg, int a1, int a2,
