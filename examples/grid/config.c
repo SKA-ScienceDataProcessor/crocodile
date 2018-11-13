@@ -17,11 +17,11 @@ double get_time_ns()
     return ts.tv_sec + (double)ts.tv_nsec / 1000000000;
 }
 
-inline static void bl_bounding_box(struct vis_spec *spec,
-                                   int a1, int a2,
-                                   int tstep0, int tstep1,
-                                   int fstep0, int fstep1,
-                                   double *uvw_l_min, double *uvw_l_max)
+void bl_bounding_box(struct vis_spec *spec,
+                     int a1, int a2,
+                     int tstep0, int tstep1,
+                     int fstep0, int fstep1,
+                     double *uvw_l_min, double *uvw_l_max)
 {
     struct ant_config *cfg = spec->cfg;
 

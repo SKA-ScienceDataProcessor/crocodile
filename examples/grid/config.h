@@ -16,6 +16,12 @@ struct vis_spec
     double dec_sin, dec_cos;
 };
 
+void bl_bounding_box(struct vis_spec *spec,
+                     int a1, int a2,
+                     int tstep0, int tstep1,
+                     int fstep0, int fstep1,
+                     double *uvw_l_min, double *uvw_l_max);
+
 // Work to do on a facet
 struct facet_work
 {
