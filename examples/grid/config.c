@@ -690,9 +690,9 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
     if (worker >= 0) {
         bl_work = (struct subgrid_work **)
             calloc(sizeof(struct subgrid_work *), cfg->ant_count * cfg->ant_count);
-        struct subgrid_work *work = work_cfg->subgrid_work;
+        struct subgrid_work *work = work_cfg->subgrid_work + worker * work_cfg->subgrid_max_work;
         int iwork;
-        for (iwork = 0; iwork < work_cfg->subgrid_max_work * work_cfg->subgrid_workers; iwork++) {
+        for (iwork = 0; iwork < work_cfg->subgrid_max_work; iwork++) {
             if (work[iwork].nbl == 0) continue;
             struct subgrid_work_bl *bl;
             for (bl = work[iwork].bls; bl; bl = bl->next) {
