@@ -10,9 +10,6 @@
 
 const int WORK_SPLIT_THRESHOLD = 3;
 
-double min(double a, double b) { return a > b ? b : a; }
-double max(double a, double b) { return a < b ? b : a; }
-
 double get_time_ns()
 {
     struct timespec ts;
@@ -49,8 +46,10 @@ inline static void bl_bounding_box(struct vis_spec *spec,
     // Determine bounding box
     int i = 0;
     for (i = 0; i < 3; i++) {
-        uvw_l_min[i] = min(min(uvw0[i]*scale0, uvw0[i]*scale1), min(uvw1[i]*scale0, uvw1[i]*scale1));
-        uvw_l_max[i] = max(max(uvw0[i]*scale0, uvw0[i]*scale1), max(uvw1[i]*scale0, uvw1[i]*scale1));
+        uvw_l_min[i] = fmin(fmin(uvw0[i]*scale0, uvw0[i]*scale1),
+                            fmin(uvw1[i]*scale0, uvw1[i]*scale1));
+        uvw_l_max[i] = fmax(fmax(uvw0[i]*scale0, uvw0[i]*scale1),
+                            fmax(uvw1[i]*scale0, uvw1[i]*scale1));
     }
 }
 
@@ -115,9 +114,9 @@ static void bin_baseline(struct vis_spec *spec, double lam, double xA,
             double uvw_l_min[3], uvw_l_max[3];
             bl_bounding_box(spec, a1, a2,
                             tchunk * spec->time_chunk,
-                            min(spec->time_count, (tchunk+1) * spec->time_chunk) - 1,
+                            fmin(spec->time_count, (tchunk+1) * spec->time_chunk) - 1,
                             fchunk * spec->freq_chunk,
-                            min(spec->freq_count, (fchunk+fstep) * spec->freq_chunk) - 1,
+                            fmin(spec->freq_count, (fchunk+fstep) * spec->freq_chunk) - 1,
                             uvw_l_min, uvw_l_max);
             //printf("u: sg %g-%g chunk %g-%g\n", sg_min_u, sg_max_u, uvw_l_min[0], uvw_l_max[0]);
             //printf("v: sg %g-%g chunk %g-%g\n", sg_min_v, sg_max_v, uvw_l_min[1], uvw_l_max[1]);
@@ -266,8 +265,8 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
 
     // We don't want bins that are too full compared to the average -
     // determine at what point we're going to split them.
-    int work_max_nbl = max(WORK_SPLIT_THRESHOLD * nbl_total / npop,
-                           (nbl_max + cfg->subgrid_workers - 1) / cfg->subgrid_workers);
+    int work_max_nbl = (int)fmax(WORK_SPLIT_THRESHOLD * nbl_total / npop,
+                                 (nbl_max + cfg->subgrid_workers - 1) / cfg->subgrid_workers);
     printf("%d subgrid baseline bins (%.3g%% coverage), %.5g average chunks per subgrid, "
            "splitting above %d\n",
            npop, coverage*100, (double)nbl_total / npop, work_max_nbl);
@@ -411,8 +410,8 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
             //printf("%d ", work->nbl);
         }
         //printf(" -> %d %d\n", vis, worker_prio[i].nbl);
-        min_vis = min(vis, min_vis);
-        max_vis = max(vis, max_vis);
+        min_vis = fmin(vis, min_vis);
+        max_vis = fmax(vis, max_vis);
     }
     printf("Assigned workers %d chunks min, %d chunks max (after %d swaps)\n", min_vis, max_vis, nswaps);
 
