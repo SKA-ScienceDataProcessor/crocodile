@@ -228,6 +228,7 @@ static struct subgrid_work_bl *pop_chunks(struct subgrid_work_bl **bls, int n, i
       n-=bl->chunks;
       bl = bl->next;
     }
+    *nchunks += bl->chunks;
     *bls = bl->next;
     bl->next = NULL;
     return first;
