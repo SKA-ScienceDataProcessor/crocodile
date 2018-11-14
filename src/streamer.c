@@ -265,27 +265,30 @@ bool streamer_degrid_chunk(struct streamer *streamer,
     // Do degridding. Twice if necessary.
     double start = get_time_ns();
     uint64_t flops = 0;
+    int time, freq;
+    for (time = it0; time < it1; time++) {
+        for (freq = if0; freq < if1; freq++) {
 
-    if (overlap) {
-        bl_data->vis = vis_data; // HACK
-        flops += degrid_conv_bl(subgrid, cfg->xM_size, theta,
-                                sg_mid_u, sg_mid_v,
-                                max(0, sg_min_u), sg_max_u, sg_min_v, sg_max_v,
-                                bl_data, it0, it1, if0, if1, &streamer->kern);
-    }
-    if (inv_overlap) {
-        int i;
-        // Bit of a hack. Also TODO: complex-conjugate visibilities
-        for(i = 0; i < 3 * spec->time_count; i++) {
-            bl_data->uvw_m[i] *= -1;
-        }
-        bl_data->vis = vis_data; // HACK
-        flops += degrid_conv_bl(subgrid, cfg->xM_size, theta,
-                                sg_mid_u, sg_mid_v,
-                                max(0, sg_min_u), sg_max_u, sg_min_v, sg_max_v,
-                                bl_data, it0, it1, if0, if1, &streamer->kern);
-        for(i = 0; i < 3 * spec->time_count; i++) {
-            bl_data->uvw_m[i] *= -1;
+            // Bounds check
+            double u = uvw_lambda(bl_data, time, freq, 0);
+            double v = uvw_lambda(bl_data, time, freq, 1);
+            if ((u >= fmax(0, sg_min_u) || u < sg_max_u) &&
+                (v >= sg_min_v || v < sg_max_v)) {
+
+                vis_data[(time-it0)*spec->freq_chunk + freq-if0] =
+                    degrid_conv_uv(subgrid, cfg->xM_size, theta,
+                                   u-sg_mid_u, v-sg_mid_v, &streamer->kern, &flops);
+
+            } else if ((-u >= fmax(0, sg_min_u) || -u < sg_max_u) &&
+                       (-v >= sg_min_v || -v < sg_max_v)) {
+
+                vis_data[(time-it0)*spec->freq_chunk + freq-if0] =
+                    conj(degrid_conv_uv(subgrid, cfg->xM_size, theta,
+                                        -u-sg_mid_u, -v-sg_mid_v, &streamer->kern, &flops)
+                         );
+
+            }
+
         }
     }
 
