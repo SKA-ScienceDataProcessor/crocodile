@@ -445,6 +445,7 @@ void streamer_work(struct streamer *streamer,
 
     // Perform Fourier transform
     fftw_execute_dft(streamer->subgrid_plan, subgrid, subgrid);
+    fft_shift(subgrid, cfg->xM_size);
 
     // Check accumulated result
     if (work->check_path) {
@@ -478,7 +479,6 @@ void streamer_work(struct streamer *streamer,
         bl.vis = (double complex *)calloc(1, vis_size);
 
         // Degrid and compare
-        fft_shift(subgrid, cfg->xM_size);
         bl.uvw_m = uvw_sg;
         degrid_conv_bl(subgrid, cfg->xM_size, cfg->image_size, 0, 0,
                        -cfg->xM_size, cfg->xM_size, -cfg->xM_size, cfg->xM_size,
