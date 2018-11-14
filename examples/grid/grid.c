@@ -17,14 +17,9 @@
 // calculations and grids only into the middle.
 //#define ASSUME_UVW_0
 
-inline static double uvw_lambda(struct bl_data *bl_data,
-                                int time, int freq, int uvw) {
-    return uvw_m_to_l(bl_data->uvw_m[3*time+uvw], bl_data->freq[freq]);
-}
-
 inline static int coord(int grid_size, double theta,
-                 struct bl_data *bl_data,
-                 int time, int freq) {
+                        struct bl_data *bl_data,
+                        int time, int freq) {
 #ifdef ASSUME_UVW_0
     int x = 0, y = 0;
 #else
@@ -76,19 +71,14 @@ inline static void frac_coord_2d(int grid_size, int kernel_size, int oversample,
 }
 
 // Fractional coordinate calculation for separable 1D kernel
-inline static void frac_coord_sep(int grid_size, int kernel_size, int oversample,
-                                  double theta,
-                                  struct bl_data *bl_data,
-                                  int time, int freq,
-                                  double d_u, double d_v,
-                                  int *grid_offset,
-                                  int *sub_offset_x, int *sub_offset_y) {
-#ifdef ASSUME_UVW_0
-    double x = 0, y = 0;
-#else
-    double x = theta * (uvw_lambda(bl_data, time, freq, 0) - d_u);
-    double y = theta * (uvw_lambda(bl_data, time, freq, 1) - d_v);
-#endif
+inline static void frac_coord_sep_uv(int grid_size, int kernel_size, int oversample,
+                                     double theta,
+                                     double u, double v,
+                                     int *grid_offset,
+                                     int *sub_offset_x, int *sub_offset_y)
+{
+
+    double x = theta * u, y = theta * v;
     // Find fractional coordinates
     int ix, iy, ixf, iyf;
     frac_coord(grid_size, oversample, x, &ix, &ixf);
@@ -97,6 +87,23 @@ inline static void frac_coord_sep(int grid_size, int kernel_size, int oversample
     *grid_offset = (iy-kernel_size/2)*grid_size + (ix-kernel_size/2);
     *sub_offset_x = kernel_size * ixf;
     *sub_offset_y = kernel_size * iyf;
+}
+inline static void frac_coord_sep(int grid_size, int kernel_size, int oversample,
+                                  double theta,
+                                  struct bl_data *bl_data,
+                                  int time, int freq,
+                                  double d_u, double d_v,
+                                  int *grid_offset,
+                                  int *sub_offset_x, int *sub_offset_y)
+{
+#ifdef ASSUME_UVW_0
+    double u = 0, v = 0;
+#else
+    double u = uvw_lambda(bl_data, time, freq, 0) - d_u;
+    double v = uvw_lambda(bl_data, time, freq, 1) - d_v;
+#endif
+    frac_coord_sep_uv(grid_size, kernel_size, oversample, theta, u, v,
+                      grid_offset, sub_offset_x, sub_offset_y);
 }
 
 void weight(unsigned int *wgrid, int grid_size, double theta,
@@ -159,6 +166,33 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
     return flops;
 }
 
+double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double theta,
+                              double u, double v,
+                              struct sep_kernel_data *kernel,
+                              uint64_t *flops)
+{
+
+    // Calculate grid and sub-grid coordinates
+    int grid_offset, sub_offset_x, sub_offset_y;
+    frac_coord_sep_uv(grid_size, kernel->size, kernel->oversampling,
+                      theta, u, v,
+                      &grid_offset, &sub_offset_x, &sub_offset_y);
+
+    // Get visibility
+    double complex vis = 0;
+    int y, x;
+    for (y = 0; y < kernel->size; y++) {
+        double complex visy = 0;
+        for (x = 0; x < kernel->size; x++)
+            visy += kernel->data[sub_offset_x + x] *
+                    uvgrid[grid_offset + y*grid_size + x];
+        vis += kernel->data[sub_offset_y + y] * visy;
+    }
+    *flops += 4 * (1 + kernel->size) * kernel->size;
+
+    return vis;
+}
+
 uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
                         double d_u, double d_v,
                         double min_u, double max_u, double min_v, double max_v,
@@ -167,32 +201,19 @@ uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
                         struct sep_kernel_data *kernel)
 {
     uint64_t flops = 0;
-    int time, freq, y, x;
+    int time, freq;
     for (time = time0; time < time1; time++) {
         for (freq = freq0; freq < freq1; freq++) {
 
+            // Bounds check
             double u = uvw_lambda(bl, time, freq, 0);
             if (u < min_u || u >= max_u) continue;
             double v = uvw_lambda(bl, time, freq, 1);
             if (v < min_v || v >= max_v) continue;
 
-            // Calculate grid and sub-grid coordinates
-            int grid_offset, sub_offset_x, sub_offset_y;
-            frac_coord_sep(grid_size, kernel->size, kernel->oversampling,
-                           theta, bl, time, freq, d_u, d_v,
-                           &grid_offset, &sub_offset_x, &sub_offset_y);
-            // Get visibility
-            double complex vis = 0;
-            for (y = 0; y < kernel->size; y++) {
-                double complex visy = 0;
-                for (x = 0; x < kernel->size; x++) {
-                    visy += kernel->data[sub_offset_x + x] * uvgrid[grid_offset + y*grid_size + x];
-                    flops += 4;
-                }
-                vis += kernel->data[sub_offset_y + y] * visy;
-                flops += 4;
-            }
-            bl->vis[(time-time0)*(freq1 - freq0) + freq-freq0] = vis;
+            bl->vis[(time-time0)*(freq1 - freq0) + freq-freq0] =
+                degrid_conv_uv(uvgrid, grid_size, theta,
+                               u-d_u, v-d_v, kernel, &flops);
         }
     }
 

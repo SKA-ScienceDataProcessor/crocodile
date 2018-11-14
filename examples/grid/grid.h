@@ -56,6 +56,12 @@ static inline double uvw_l_to_m(double u, double f) {
     return u / f * c;
 }
 
+inline static double uvw_lambda(struct bl_data *bl_data,
+                                int time, int freq, int uvw) {
+    return uvw_m_to_l(bl_data->uvw_m[3*time+uvw], bl_data->freq[freq]);
+}
+
+
 // Convert hour angle / declination to UVW and back for a certain baseline
 static inline void ha_to_uvw_sc(struct ant_config *cfg, int a1, int a2,
                                 double ha_sin, double ha_cos,
@@ -174,6 +180,10 @@ void weight(unsigned int *wgrid, int grid_size, double theta,
             struct vis_data *vis);
 uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
                      struct vis_data *vis);
+double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double theta,
+                              double u, double v,
+                              struct sep_kernel_data *kernel,
+                              uint64_t *flops);
 uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
                         double d_u, double d_v,
                         double min_u, double max_u, double min_v, double max_v,
