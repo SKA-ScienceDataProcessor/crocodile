@@ -92,9 +92,9 @@ int T02_extract_subgrid() {
     write_dump(bf_b, sizeof(double complex) * yP_size_b, "../../data/grid/T02_bf_b.out");
     int y;
     for (y = 0; y < yP_size; y++)
-        assert(fabs(bf[y] - bf_ref[y]) < 1e-12);
+        assert(fabs(bf[y] - bf_ref[y]) < 1.5e-13);
     for (y = 0; y < yP_size_b; y++)
-        assert(fabs(bf_b[y] - bf_ref_b[y]) < 1e-12);
+        assert(fabs(bf_b[y] - bf_ref_b[y]) < 1.5e-13);
 
     // Test subgrid extraction
     double complex *mbf = (double complex *)malloc(sizeof(double complex) * xM_yP_size_b);
@@ -120,8 +120,8 @@ int T02_extract_subgrid() {
         // we alter intermediate array sizes. However, those would still lead
         // to the same sub-grids after reassembly, to the accuracy of the approximation!
         for (y = 0; y < xM_yN_size; y++) {
-            assert(fabs(nmbf[y] - nmbf_ref[y]) < 2e-11);
-            assert(fabs(nmbf_b[y] - nmbf_ref_b[y]) < 2e-11);
+            assert(cabs(nmbf[y] - nmbf_ref[y]) < 3e-12);
+            assert(cabs(nmbf_b[y] - nmbf_ref_b[y]) < 3e-12);
         }
         free(nmbf_ref); free(nmbf_ref_b);
     }
