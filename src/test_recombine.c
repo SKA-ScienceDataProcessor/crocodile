@@ -36,14 +36,15 @@ int T01_generate_m() {
     double *m_trunc_a = generate_m(image_size, yP_size, yN_size, xM_size, yP_size, pswf);
     double *m_trunc_b = generate_m(image_size, yP_size, yN_size, xM_size, yP_size / 2, pswf);
     write_dump(m_trunc, xMxN_yP_size * sizeof(double), "../data/grid/T01_m_trunc.out");
-    write_dump(m_trunc, yP_size * sizeof(double), "../data/grid/T01a_m_trunc.out");
+    write_dump(m_trunc_a, yP_size * sizeof(double), "../data/grid/T01a_m_trunc.out");
+    write_dump(m_trunc_b, yP_size / 2 * sizeof(double), "../data/grid/T01b_m_trunc.out");
     int i;
     for (i = 0; i < xMxN_yP_size; i++)
-        assert(fabs(m_trunc[i] - m_trunc_ref[i]) < 1e-14);
+        assert(fabs(m_trunc[i] - m_trunc_ref[i]) < 4.5e-16);
     for (i = 0; i < yP_size; i++)
-        assert(fabs(m_trunc_a[i] - m_trunc_ref_a[i]) < 1e-14);
+        assert(fabs(m_trunc_a[i] - m_trunc_ref_a[i]) < 4.5e-16);
     for (i = 0; i < yP_size / 2; i++)
-        assert(fabs(m_trunc_b[i] - m_trunc_ref_b[i]) < 1e-14);
+        assert(fabs(m_trunc_b[i] - m_trunc_ref_b[i]) < 4.5e-16);
     free(pswf); free(m_trunc_ref); free(m_trunc); free(m_trunc_ref_a); free(m_trunc_a);
 
     return 0;
