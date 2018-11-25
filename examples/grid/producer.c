@@ -143,7 +143,7 @@ int make_subgrid_tag(struct work_config *wcfg,
                      int facet_worker_ix, int facet_work_ix) {
     // Need to encode only the work items, as with MPI both the sender
     // and the receiver will be identified already by the message.
-    return facet_work_ix * wcfg->facet_max_work + subgrid_work_ix;
+    return facet_work_ix * wcfg->subgrid_max_work + subgrid_work_ix;
 }
 
 void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *prod,

@@ -113,10 +113,11 @@ void streamer_ireceive(struct streamer *streamer,
 
 #ifndef NO_MPI
         // Set up a receive slot with appropriate tag
-        const int tag = make_subgrid_tag(streamer->work_cfg, streamer->subgrid_worker, subgrid_work,
-                                         facet / streamer->work_cfg->facet_max_work,
-                                         facet % streamer->work_cfg->facet_max_work);
-        int facet_worker = facet / streamer->work_cfg->facet_max_work;
+        const int facet_worker = facet / streamer->work_cfg->facet_max_work;
+        const int facet_work = facet % streamer->work_cfg->facet_max_work;
+        const int tag = make_subgrid_tag(streamer->work_cfg,
+                                         streamer->subgrid_worker, subgrid_work,
+                                         facet_worker, facet_work);
         MPI_Irecv(nmbf_slot(streamer, slot, facet),
                   xM_yN_size * xM_yN_size, MPI_DOUBLE_COMPLEX,
                   streamer->producer_ranks[facet_worker], tag, MPI_COMM_WORLD,
