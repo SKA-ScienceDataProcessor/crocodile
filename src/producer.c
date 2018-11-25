@@ -209,7 +209,7 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
             int tag = make_subgrid_tag(wcfg, iworker, iwork,
                                        prod->facet_worker, facet_work_ix);
             double start = get_time_ns();
-            MPI_Isend(NMBF_NMBF, cfg->xM_yN_size * cfg->xM_yN_size, MPI_DOUBLE_COMPLEX,
+            MPI_Isend(send_buf, cfg->xM_yN_size * cfg->xM_yN_size, MPI_DOUBLE_COMPLEX,
                       prod->streamer_ranks[iworker], tag, MPI_COMM_WORLD, &prod->requests[indx]);
             prod->mpi_send_time += get_time_ns() - start;
         }
