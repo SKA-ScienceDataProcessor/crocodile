@@ -571,8 +571,7 @@ int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern)
     sepkern->size = dims[1];
 
     // Read kernel
-    hsize_t total_size = sepkern->oversampling * sepkern->oversampling *
-                         sepkern->size * sepkern->size;
+    hsize_t total_size = sepkern->oversampling * sepkern->size;
     sepkern->data = (double *)calloc(sizeof(double), total_size);
     if (H5Dread(dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, sepkern->data) < 0) {
         fprintf(stderr, "Failed to read separable kernel data from %s!\n", filename);
@@ -905,7 +904,7 @@ int write_dump(void *data, int size, char *name, ...) {
     return 0;
 }
 
-int get_npoints_hdf5(char *file, char *name, ...)
+int get_npoints_hdf5(const char *file, char *name, ...)
 {
     hid_t f = H5Fopen(file, H5F_ACC_RDONLY, H5P_DEFAULT);
     va_list ap;
@@ -918,7 +917,7 @@ int get_npoints_hdf5(char *file, char *name, ...)
     return npoints;
 }
 
-void *read_hdf5(int size, char *file, char *name, ...)
+void *read_hdf5(int size, const char *file, char *name, ...)
 {
     hid_t f = H5Fopen(file, H5F_ACC_RDONLY, H5P_DEFAULT);
     va_list ap;
@@ -931,8 +930,8 @@ void *read_hdf5(int size, char *file, char *name, ...)
     // Check overall size
     int npoints = H5Sget_simple_extent_npoints(H5Dget_space(dset));
     if (npoints * elem_size != size) {
-        printf("Dataset %s in %s has wrong extend (%d*%d != %d)",
-               dname, file, npoints, elem_size, size);
+        fprintf(stderr, "Dataset %s in %s has wrong extend (%d*%d != %d)\n",
+                dname, file, npoints, elem_size, size);
         H5Dclose(dset); H5Fclose(f);
         return NULL;
     }

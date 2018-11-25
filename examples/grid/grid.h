@@ -216,7 +216,7 @@ void print_perf_counters(struct perf_counters *counter,
 
 int run_tests();
 void *read_dump(int size, char *name, ...);
-int get_npoints_hdf5(char *file, char *name, ...);
-void *read_hdf5(int size, char *file, char *name, ...);
+int get_npoints_hdf5(const char *file, char *name, ...);
+void *read_hdf5(int size, const char *file, char *name, ...);
 
 #endif // GRID_H
