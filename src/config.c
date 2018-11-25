@@ -501,6 +501,7 @@ void config_init(struct work_config *cfg)
 
     // Initialise structure
     memset(cfg, 0, sizeof(*cfg));
+    cfg->gridder_x0 = 0.5;
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
     cfg->vis_skip_metadata = true;
@@ -530,6 +531,8 @@ void config_free(struct work_config *cfg)
 {
     free(cfg->vis_path);
     free(cfg->facet_work);
+    free(cfg->gridder_path);
+    free(cfg->grid_correction);
 
     int i;
     for (i = 0; i < cfg->subgrid_workers * cfg->subgrid_max_work; i++) {
@@ -567,10 +570,57 @@ void config_set_visibilities(struct work_config *cfg,
     cfg->spec.dec_cos = cos(cfg->spec.dec);
 }
 
-void config_set_degrid(struct work_config *cfg, const char *gridder_path)
+bool config_set_degrid(struct work_config *cfg, const char *gridder_path)
 {
-    if (gridder_path)
+    if (gridder_path) {
+
+        // Clear existing data, if any
+        cfg->gridder_x0 = 0.5;
+        free(cfg->gridder_path); cfg->gridder_path = 0;
+        free(cfg->grid_correction); cfg->grid_correction = 0;
+
+        // Get gridder's accuracy limit
+        double *px0 = (double *)read_hdf5(sizeof(double), gridder_path, "sepkern/x0");
+        if (!px0) return false;
+        printf("Gridder %s with x0=%g\n", gridder_path, *px0);
+
+        // Get grid correction dimensions
+        int ncorr = get_npoints_hdf5(gridder_path, "sepkern/corr");
+
+        // Read grid correction
+        double *grid_corr = read_hdf5(sizeof(double) * ncorr, gridder_path, "sepkern/corr");
+        if (!grid_corr) {
+            fprintf(stderr, "ERROR: Could not read grid correction from %s!\n", gridder_path);
+            return false;
+        }
+
+        // Need to rescale? This is linear, therefore worth a
+        // warning. Might want to do a "sinc" interpolation instead at
+        // some point? Could be more appropriate.
+        if (ncorr != cfg->recombine.image_size) {
+            if (ncorr % cfg->recombine.image_size != 0) {
+                fprintf(stderr, "WARNING: Rescaling grid correction from %d to %d points!\n",
+                        ncorr, cfg->recombine.image_size);
+            }
+            int i;
+            cfg->grid_correction = (double *)malloc(sizeof(double) * cfg->recombine.image_size);
+            for (i = 0; i < cfg->recombine.image_size; i++) {
+                double j = (double)i * ncorr / cfg->recombine.image_size;
+                int j0 = (int)floor(j),  j1 = (j0 + 1) % ncorr;
+                double w = j - j0;
+                cfg->grid_correction[i] = (1 - w) * grid_corr[j0] + w * grid_corr[j1];
+            }
+            free(grid_corr);
+        } else {
+            cfg->grid_correction = grid_corr;
+        }
+
+        cfg->gridder_x0 = *px0;
         cfg->gridder_path = strdup(gridder_path);
+        free(px0);
+    }
+
+    return true;
 }
 
 void config_load_facets(struct work_config *cfg,
@@ -760,7 +810,7 @@ bool create_bl_groups(hid_t vis_group, struct work_config *work_cfg, int worker)
         if (a1_g) H5Gclose(a1_g);
     }
 
-    printf("\ndone in %.2fs, %d groups for %ld visibilities (~%.3f GB) created\n",
+    printf("\ndone in %.2fs, %d groups for up to %ld visibilities (~%.3f GB) created\n",
            get_time_ns() -create_start, ncreated, nvis, 16. * nvis / 1000000000);
 
     return true;

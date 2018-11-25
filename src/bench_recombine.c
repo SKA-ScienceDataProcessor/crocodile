@@ -64,7 +64,7 @@ bool load_recombine_parset(const char *parset,
                            char *subgrid_degrid_path, char *subgrid_path_hdf5,
                            double *subgrid_threshold, double *subgrid_fct_threshold,
                            double *subgrid_degrid_threshold,
-                           double *gridder_x0, char *gridder_path)
+                           char *gridder_path)
 {
     if (!strcasecmp(parset, "T04")) {
         recombine_pars[0] = 2000;
@@ -99,7 +99,6 @@ bool load_recombine_parset(const char *parset,
         strcpy(subgrid_path_hdf5, "../data/grid/T05_in.h5");
         *subgrid_degrid_threshold = 2e-7;
         strcpy(gridder_path, "../data/grid/T05_in.h5");
-        *gridder_x0 = 0.4;
         return true;
     }
     if (!strcasecmp(parset, "tiny")) {
@@ -113,7 +112,6 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[7] = 144;
         strcpy(aa_path, "../data/grid/T06_pswf_tiny.in");
         strcpy(gridder_path, "../data/grid/T05_in.h5");
-        *gridder_x0 = 0.4;
         return true;
     }
     if (!strcasecmp(parset, "small")) {
@@ -127,7 +125,6 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[7] = 272;
         strcpy(aa_path, "../data/grid/T06_pswf_small.in");
         strcpy(gridder_path, "../data/grid/T05_in.h5");
-        *gridder_x0 = 0.4;
         return true;
     }
     if (!strcasecmp(parset, "medium")) {
@@ -141,7 +138,6 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[7] = 272;
         strcpy(aa_path, "../data/grid/T06_pswf_medium.in");
         strcpy(gridder_path, "../data/grid/T05_in.h5");
-        *gridder_x0 = 0.4;
         return true;
     }
     if (!strcasecmp(parset, "large")) {
@@ -155,7 +151,6 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[7] = 146;
         strcpy(aa_path, "../data/grid/T06_pswf_large.in");
         strcpy(gridder_path, "../data/grid/T05_in.h5");
-        *gridder_x0 = 0.4;
         return true;
     }
     if (!strcasecmp(parset, "huge")) {
@@ -169,7 +164,6 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[7] = 272;
         strcpy(aa_path, "../data/grid/T06_pswf_huge.in");
         strcpy(gridder_path, "../data/grid/T05_in.h5");
-        *gridder_x0 = 0.4;
         return true;
     }
     return false;
@@ -228,7 +222,7 @@ bool set_cmdarg_config(int argc, char **argv,
     double subgrid_threshold = 1e-8, subgrid_fct_threshold = 1e-8,
            subgrid_degrid_threshold = 1e-8;
     int facet_workers = (world_size + 1) / 2;
-    double grid_x0 = 0.4; char gridder_path[256]; char vis_path[256];
+    char gridder_path[256]; char vis_path[256];
     memset(&spec, 0, sizeof(spec));
     spec.dec = 90 * atan(1) * 4 / 180;
     memset(&recombine_pars, 0, sizeof(recombine_pars));
@@ -273,7 +267,7 @@ bool set_cmdarg_config(int argc, char **argv,
             }
             break;
         case Opt_grid:
-            nscan = sscanf(optarg, "%lg,%255s", &grid_x0, gridder_path);
+            nscan = sscanf(optarg, "%255s", gridder_path);
             printf("Got grid\n");
             if (nscan < 2) {
                 invalid=true; fprintf(stderr, "ERROR: Could not parse 'grid' option!\n");
@@ -310,7 +304,7 @@ bool set_cmdarg_config(int argc, char **argv,
                                        subgrid_degrid_path, subgrid_path_hdf5,
                                        &subgrid_threshold, &subgrid_fct_threshold,
                                        &subgrid_degrid_threshold,
-                                       &grid_x0, gridder_path)) {
+                                       gridder_path)) {
                 invalid=true; fprintf(stderr, "ERROR: Unknown recombination parameter set: %s!\n", optarg);
             }
             break;
@@ -405,12 +399,15 @@ bool set_cmdarg_config(int argc, char **argv,
                     recombine_pars[6], recombine_pars[7])) {
         return false;
     }
-    if (have_vis_spec) {
-        config_set_visibilities(cfg, &spec, spec.fov / 2 / grid_x0,
-                                vis_path[0] ? vis_path : NULL);
-    }
     if (gridder_path[0]) {
-        config_set_degrid(cfg, gridder_path[0] ? gridder_path : NULL);
+        if (!config_set_degrid(cfg, gridder_path[0] ? gridder_path : NULL)) {
+            invalid = 1;
+            fprintf(stderr, "ERROR: Could not access gridder at %s!", gridder_path);
+        }
+    }
+    if (have_vis_spec) {
+        config_set_visibilities(cfg, &spec, spec.fov / 2 / cfg->gridder_x0,
+                                vis_path[0] ? vis_path : NULL);
     }
 
     // Make work assignment

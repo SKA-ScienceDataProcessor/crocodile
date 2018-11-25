@@ -28,7 +28,7 @@ struct facet_work
     int il, im;
     int facet_off_l, facet_off_m;
     char *path, *hdf5; // random if not set
-    bool set;
+    bool set; // empty otherwise
 };
 
 // Work to do for a subgrid on a baseline
@@ -60,6 +60,8 @@ struct work_config {
     struct vis_spec spec;
     char *vis_path; // Visibility file (pattern)
     char *gridder_path; // Gridding kernel file
+    double gridder_x0; // Accuracy limit of gridder
+    double *grid_correction; // Grid correction function
 
     // Worker configuration
     int facet_workers; // number of facet workers
@@ -99,7 +101,7 @@ void config_free(struct work_config *cfg);
 void config_set_visibilities(struct work_config *cfg,
                              struct vis_spec *spec, double theta,
                              const char *vis_path);
-void config_set_degrid(struct work_config *cfg,
+bool config_set_degrid(struct work_config *cfg,
                        const char *gridder_path);
 
 void config_load_facets(struct work_config *cfg, const char *path_fmt, const char *hdf5);
