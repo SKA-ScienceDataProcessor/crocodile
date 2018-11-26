@@ -263,7 +263,7 @@ bool streamer_degrid_chunk(struct streamer *streamer,
     double complex *vis_data = (double complex *) alloca(vis_data_size);
     memset(vis_data, 0, vis_data_size);
 
-    // Do degridding. Twice if necessary.
+    // Do degridding
     double start = get_time_ns();
     uint64_t flops = 0;
     int time, freq;
@@ -273,21 +273,27 @@ bool streamer_degrid_chunk(struct streamer *streamer,
             // Bounds check
             double u = uvw_lambda(bl_data, time, freq, 0);
             double v = uvw_lambda(bl_data, time, freq, 1);
-            if ((u >= fmax(0, sg_min_u) || u < sg_max_u) &&
-                (v >= sg_min_v || v < sg_max_v)) {
+            bool inv = false;
+            if (u >= sg_min_u && u < sg_max_u &&
+                v >= sg_min_v && v < sg_max_v) {
 
+                // Degrid normal
                 vis_data[(time-it0)*spec->freq_chunk + freq-if0] =
                     degrid_conv_uv(subgrid, cfg->xM_size, theta,
                                    u-sg_mid_u, v-sg_mid_v, &streamer->kern, &flops);
 
-            } else if ((-u >= fmax(0, sg_min_u) || -u < sg_max_u) &&
-                       (-v >= sg_min_v || -v < sg_max_v)) {
+            } else if (-u >= sg_min_u && -u < sg_max_u &&
+                       -v >= sg_min_v && -v < sg_max_v) {
 
+                // Degrid conjugate at negative coordinate
+                inv = true;
                 vis_data[(time-it0)*spec->freq_chunk + freq-if0] =
                     conj(degrid_conv_uv(subgrid, cfg->xM_size, theta,
                                         -u-sg_mid_u, -v-sg_mid_v, &streamer->kern, &flops)
                          );
 
+            } else {
+                continue;
             }
 
         }
