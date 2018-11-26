@@ -452,7 +452,6 @@ void streamer_work(struct streamer *streamer,
 
     // Perform Fourier transform
     fftw_execute_dft(streamer->subgrid_plan, subgrid, subgrid);
-    fft_shift(subgrid, cfg->xM_size);
 
     // Check accumulated result
     if (work->check_path) {
@@ -467,6 +466,8 @@ void streamer_work(struct streamer *streamer,
                work->iu, work->iv, rmse);
 
     }
+
+    fft_shift(subgrid, cfg->xM_size);
 
     // Check some degridded example visibilities
     if (work->check_degrid_path && streamer->have_kern) {
