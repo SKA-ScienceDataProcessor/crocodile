@@ -55,6 +55,8 @@ struct streamer
     double recombine_time, degrid_time;
     uint64_t received_data, received_subgrids, baselines_covered;
     uint64_t written_vis_data, rewritten_vis_data;
+    uint64_t square_error_samples;
+    double square_error_sum, worst_error;
 };
 
 static double complex *nmbf_slot(struct streamer *streamer, int slot, int facet)
@@ -266,6 +268,12 @@ bool streamer_degrid_chunk(struct streamer *streamer,
     // Do degridding
     double start = get_time_ns();
     uint64_t flops = 0;
+    uint64_t square_error_samples = 0;
+    double square_error_sum = 0, worst_err = 0;
+    const int source_count = streamer->work_cfg->produce_source_count;
+    const double facet_x0 = streamer->work_cfg->spec.fov / streamer->work_cfg->theta / 2;
+    const int image_size = streamer->work_cfg->recombine.image_size;
+    const int image_x0_size = (int)floor(2 * facet_x0 * image_size);
     int time, freq;
     for (time = it0; time < it1; time++) {
         for (freq = if0; freq < if1; freq++) {
@@ -296,6 +304,28 @@ bool streamer_degrid_chunk(struct streamer *streamer,
                 continue;
             }
 
+            // Check against DFT
+            if (source_count > 0) {
+
+                // Generate visibility
+                complex double vis = 0;
+                unsigned int seed = 0;
+                int i;
+                for (i = 0; i < source_count; i++) {
+                    int il = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
+                    int im = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
+
+                    double ph = 2 * M_PI * (il * u * theta / image_size + im * v * theta / image_size);
+                    vis += cos(ph) + 1j * sin(ph);
+                }
+                vis /= (double)image_size * image_size;
+
+                square_error_samples += 1;
+                double err = cabs(vis_data[(time-it0)*spec->freq_chunk + freq-if0] - vis);
+                worst_err = fmax(err, worst_err);
+                square_error_sum += err * err;
+
+            }
         }
     }
 
@@ -316,6 +346,9 @@ bool streamer_degrid_chunk(struct streamer *streamer,
         streamer->critical_wait_time += get_time_ns() - start;
         vis_slot = streamer->vis_in_ptr;
         streamer->vis_in_ptr = (streamer->vis_in_ptr + 1) % streamer->vis_queue_length;
+        streamer->square_error_samples += square_error_samples;
+        streamer->square_error_sum += square_error_sum;
+        streamer->worst_error = fmax(streamer->worst_error, worst_err);
     }
 
     // Obtain lock for writing data (writer thread might not have
@@ -556,6 +589,9 @@ bool streamer_init(struct streamer *streamer,
     streamer->received_data = 0;
     streamer->received_subgrids = streamer->baselines_covered = 0;
     streamer->written_vis_data = streamer->rewritten_vis_data = 0;
+    streamer->square_error_samples = 0;
+    streamer->square_error_sum = 0;
+    streamer->worst_error = 0;
 
     // Load gridding kernel
     if (wcfg->gridder_path) {
@@ -770,5 +806,16 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
     printf("Writer: Wait: %gs, Read: %gs, Write: %gs, Idle: %gs\n",
            streamer.wait_out_time, streamer.read_time, streamer.write_time,
            stream_time - streamer.wait_out_time - streamer.read_time - streamer.write_time);
+    if (streamer.square_error_samples > 0) {
+        // Calculate root mean square error
+        double rmse = sqrt(streamer.square_error_sum / streamer.square_error_samples);
+        // Normalise by assuming that the energy of sources is
+        // distributed evenly to all grid points
+        const int source_count = wcfg->produce_source_count;
+        const int image_size = wcfg->recombine.image_size;
+        double energy = (double)source_count / image_size / image_size;
+        printf("Accuracy: RMSE %g, worst %g (%ld samples)\n", rmse / energy,
+               streamer.worst_error / energy, streamer.square_error_samples);
+    }
 
 }
