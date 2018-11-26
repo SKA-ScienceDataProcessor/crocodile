@@ -216,6 +216,7 @@ enum Opts
         Opt_recombine, Opt_rec_aa, Opt_rec_set,
         Opt_rec_load_facet, Opt_rec_load_facet_hdf5,
         Opt_facet_workers, Opt_parallel_cols, Opt_dont_retain_bf,
+        Opt_source_count,
         Opt_bls_per_task, Opt_subgrid_queue, Opt_visibility_queue,
     };
 
@@ -245,6 +246,7 @@ bool set_cmdarg_config(int argc, char **argv,
         {"facet-workers", required_argument, 0, Opt_facet_workers },
         {"parallel-columns", no_argument, &cfg->produce_parallel_cols, true },
         {"dont-retain-bf", no_argument,   &cfg->produce_retain_bf, false },
+        {"source-count", required_argument, 0, Opt_source_count },
         {"bls-per-task", required_argument, 0, Opt_bls_per_task },
         {"subgrid-queue", required_argument, 0, Opt_subgrid_queue },
         {"visibility-queue", required_argument, 0, Opt_visibility_queue },
@@ -353,6 +355,12 @@ bool set_cmdarg_config(int argc, char **argv,
                 invalid=true; fprintf(stderr, "ERROR: Could not parse 'facet-workers' option!\n");
             }
             break;
+        case Opt_source_count:
+            nscan = sscanf(optarg, "%d", &cfg->produce_source_count);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'source-count' option!\n");
+            }
+            break;
         case Opt_bls_per_task:
             nscan = sscanf(optarg, "%d", &cfg->vis_bls_per_task);
             if (nscan != 1) {
@@ -389,6 +397,8 @@ bool set_cmdarg_config(int argc, char **argv,
         if (!spec.dec) { invalid=1; fprintf(stderr, "ERROR: Please specify non-zero declination!\n"); }
         if (!spec.time_count) { invalid=1; fprintf(stderr, "ERROR: Please specify dump times!\n"); }
         if (!spec.freq_count) { invalid=1; fprintf(stderr, "ERROR: Please specify frequency channels!\n"); }
+    } else {
+        if (cfg->produce_source_count) { invalid=1; fprintf(stderr, "ERROR: Please specify visibilities (FoV) when generating sources!\n"); }
     }
 
     if (!recombine_pars[0]) {
@@ -396,7 +406,10 @@ bool set_cmdarg_config(int argc, char **argv,
     }
 
     if (invalid) {
-        printf("Usage: %s...\n", argv[0]);
+        printf("Usage: %s [options] <path>\n", argv[0]);
+        printf("\n");
+        printf("Image Parameters:\n");
+        printf("  --source-count=<n>     Number of sources (default 0 = entire image random)\n");
         printf("\n");
         printf("Visibility Parameters:\n");
         printf("  --telescope=<path>     Read stations from file\n");
