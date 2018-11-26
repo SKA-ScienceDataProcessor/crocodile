@@ -504,6 +504,7 @@ void config_init(struct work_config *cfg)
     cfg->gridder_x0 = 0.5;
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
+    cfg->produce_source_count = 0;
     cfg->vis_skip_metadata = true;
     cfg->vis_bls_per_task = 256;
     cfg->vis_subgrid_queue_length = 32;

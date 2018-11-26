@@ -223,7 +223,10 @@ void producer_send_subgrid(struct work_config *wcfg, struct producer_stream *pro
 
 bool producer_fill_facet(struct recombine2d_config *cfg,
                          struct facet_work *work,
-                         double complex *F, int x0_start, int x0_end) {
+                         double complex *F,
+                         int source_count,
+                         double gridder_x0, double *grid_correction,
+                         int x0_start, int x0_end) {
 
     int offset = sizeof(double complex) *x0_start * cfg->yB_size;
     int size = sizeof(double complex) *(x0_end - x0_start) * cfg->yB_size;
@@ -260,6 +263,41 @@ bool producer_fill_facet(struct recombine2d_config *cfg,
         // Copy
         memcpy(F, data + offset / sizeof(double complex), size);
         free(data);
+
+    } else if (source_count > 0) {
+
+        // Place sources in gridder's usable region
+        unsigned int seed = 0;
+        int image_x0_size = (int)floor(2 * gridder_x0 * cfg->image_size);
+        int i;
+        for (i = 0; i < source_count; i++) {
+            int il = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
+            int im = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
+
+            // Skip sources outside the current facet (region)
+            if (il - work->facet_off_l < -cfg->yB_size/2 ||
+                il - work->facet_off_l >= cfg->yB_size/2 ||
+                im - work->facet_off_m < -cfg->yB_size/2 ||
+                im - work->facet_off_m >= cfg->yB_size/2) {
+
+                continue;
+            }
+
+            // Calculate facet coordinates, keeping in mind that the
+            // centre is at (0/0).
+            int x0 = (im - work->facet_off_m + cfg->yB_size) % cfg->yB_size;
+            int x1 = (il - work->facet_off_l + cfg->yB_size) % cfg->yB_size;
+            if (x0 < x0_start || x0 >= x0_end) {
+                continue;
+            }
+
+            double c =
+                grid_correction[(il + cfg->image_size) % cfg->image_size] *
+                grid_correction[(im + cfg->image_size) % cfg->image_size];
+            assert(c != 0);
+
+            F[(x0-x0_start)*cfg->F_stride0 + x1*cfg->F_stride1] += 1 / c;
+        }
 
     } else {
 
@@ -405,7 +443,7 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
     // Get number of facets we need to cover, warn if it is bigger than 1
     int facet_work_count = 0; int ifacet;
     for (ifacet = 0; ifacet < wcfg->facet_max_work; ifacet++)
-        if (wcfg->facet_work[facet_worker * wcfg->facet_max_work + ifacet].set)
+        if (fwork[ifacet].set)
             facet_work_count++;
 
     uint64_t F_size = facet_work_count * cfg->F_size;
@@ -431,16 +469,20 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
     printf("Filling %d facet%s...\n", facet_work_count, facet_work_count != 1 ? "s" : "");
     double generate_start = get_time_ns();
     int x0; const int x0_chunk = 256;
-    for (ifacet = 0; ifacet < facet_work_count; ifacet++)
+    for (ifacet = 0; ifacet < facet_work_count; ifacet++) {
 #pragma omp parallel for schedule(dynamic)
         for (x0 = 0; x0 < cfg->yB_size; x0+=x0_chunk) {
-            int x0_end = x0 + x0+x0_chunk;
+            int x0_end = x0 + x0_chunk;
             if (x0_end > cfg->yB_size) x0_end = cfg->yB_size;
             double complex *pF =
                 F + ifacet * wcfg->recombine.F_size / sizeof(*F)
                   + x0*cfg->F_stride0;
-            producer_fill_facet(cfg, fwork + ifacet, pF, x0, x0_end);
+            producer_fill_facet(cfg, fwork + ifacet, pF,
+                                wcfg->produce_source_count,
+                                wcfg->gridder_x0, wcfg->grid_correction,
+                                x0, x0_end);
         }
+    }
     printf(" %.2f s\n", get_time_ns() - generate_start);
 
     // Debugging (TODO: remove)
