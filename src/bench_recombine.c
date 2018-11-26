@@ -101,7 +101,20 @@ bool load_recombine_parset(const char *parset,
         strcpy(gridder_path, "../data/grid/T05_in.h5");
         return true;
     }
-    if (!strcasecmp(parset, "tiny")) {
+    if (!strcasecmp(parset, "T05_") || !strcasecmp(parset, "512-216-256")) {
+        recombine_pars[0] = 512;
+        recombine_pars[1] = 128;
+        recombine_pars[2] = 128;
+        recombine_pars[3] = 140;
+        recombine_pars[4] = 216;
+        recombine_pars[5] = 128;
+        recombine_pars[6] = 256;
+        recombine_pars[7] = 136;
+        strcpy(aa_path, "../data/grid/T05_pswf.in");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
+        return true;
+    }
+    if (!strcasecmp(parset, "tiny") || !strcasecmp(parset, "8k-2k-512")) {
         recombine_pars[0] = 8192;
         recombine_pars[1] = 128;
         recombine_pars[2] = 1280;
@@ -111,59 +124,85 @@ bool load_recombine_parset(const char *parset,
         recombine_pars[6] = 512;
         recombine_pars[7] = 144;
         strcpy(aa_path, "../data/grid/T06_pswf_tiny.in");
-        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
         return true;
     }
-    if (!strcasecmp(parset, "small")) {
+    if (!strcasecmp(parset, "small") || !strcasecmp(parset, "16k-8k-512")) {
         recombine_pars[0] = 16384;
+        recombine_pars[1] = 32;
+        recombine_pars[2] = 5120;
+        recombine_pars[3] = 5632;
+        recombine_pars[4] = 8192;
+        recombine_pars[5] = 416;
+        recombine_pars[6] = 512;
+        recombine_pars[7] = 280;
+        strcpy(aa_path, "../data/grid/T06_pswf_small.in");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
+        return true;
+    }
+    if (!strcasecmp(parset, "smallish") || !strcasecmp(parset, "32k-8k-1k")) {
+        recombine_pars[0] = 32768;
         recombine_pars[1] = 64;
         recombine_pars[2] = 5120;
-        recombine_pars[3] = 6144;
+        recombine_pars[3] = 5632;
         recombine_pars[4] = 8192;
-        recombine_pars[5] = 448;
-        recombine_pars[6] = 512;
-        recombine_pars[7] = 272;
-        strcpy(aa_path, "../data/grid/T06_pswf_small.in");
-        strcpy(gridder_path, "../data/grid/T05_in.h5");
-        return true;
-    }
-    if (!strcasecmp(parset, "medium")) {
-        recombine_pars[0] = 65536;
-        recombine_pars[1] = 128;
-        recombine_pars[2] = 10240;
-        recombine_pars[3] = 12288;
-        recombine_pars[4] = 16384;
-        recombine_pars[5] = 896;
+        recombine_pars[5] = 832;
         recombine_pars[6] = 1024;
-        recombine_pars[7] = 272;
-        strcpy(aa_path, "../data/grid/T06_pswf_medium.in");
-        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        recombine_pars[7] = 280;
+        strcpy(aa_path, "../data/grid/T06_pswf_smallish.in");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
         return true;
     }
-    if (!strcasecmp(parset, "large")) {
+    if (!strcasecmp(parset, "medium") || !strcasecmp(parset, "64k-16k-1k")) {
+        recombine_pars[0] = 65536;
+        recombine_pars[1] = 64;
+        recombine_pars[2] = 10240;
+        recombine_pars[3] = 11264;
+        recombine_pars[4] = 16384;
+        recombine_pars[5] = 832;
+        recombine_pars[6] = 1024;
+        recombine_pars[7] = 280;
+        strcpy(aa_path, "../data/grid/T06_pswf_medium.in");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
+        return true;
+    }
+    if (!strcasecmp(parset, "large") || !strcasecmp(parset, "96k-24k-1k")) {
         recombine_pars[0] = 98304;
         recombine_pars[1] = 64;
-        recombine_pars[2] = 7680;
-        recombine_pars[3] = 9216;
-        recombine_pars[4] = 12288;
-        recombine_pars[5] = 704;
+        recombine_pars[2] = 15360;
+        recombine_pars[3] = 16896;
+        recombine_pars[4] = 24576;
+        recombine_pars[5] = 832;
         recombine_pars[6] = 1024;
-        recombine_pars[7] = 146;
+        recombine_pars[7] = 280;
         strcpy(aa_path, "../data/grid/T06_pswf_large.in");
-        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
         return true;
     }
-    if (!strcasecmp(parset, "huge")) {
-        recombine_pars[0] = 262144;
-        recombine_pars[1] = 256;
+    if (!strcasecmp(parset, "tremendous") || !strcasecmp(parset, "128k-32k-2k")) {
+        recombine_pars[0] = 131072;
+        recombine_pars[1] = 64;
         recombine_pars[2] = 20480;
-        recombine_pars[3] = 24576;
+        recombine_pars[3] = 22528;
         recombine_pars[4] = 32768;
-        recombine_pars[5] = 1792;
+        recombine_pars[5] = 1856;
         recombine_pars[6] = 2048;
-        recombine_pars[7] = 272;
+        recombine_pars[7] = 536;
+        strcpy(aa_path, "../data/grid/T06_pswf_128k_32k_2k.in");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
+        return true;
+    }
+    if (!strcasecmp(parset, "huge") || !strcasecmp(parset, "256k-32k-2k")) {
+        recombine_pars[0] = 262144;
+        recombine_pars[1] = 128;
+        recombine_pars[2] = 20480;
+        recombine_pars[3] = 22528;
+        recombine_pars[4] = 32768;
+        recombine_pars[5] = 1664;
+        recombine_pars[6] = 2048;
+        recombine_pars[7] = 280;
         strcpy(aa_path, "../data/grid/T06_pswf_huge.in");
-        strcpy(gridder_path, "../data/grid/T05_in.h5");
+        strcpy(gridder_path, "../data/grid/T05b_kern.h5");
         return true;
     }
     return false;
