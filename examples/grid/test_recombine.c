@@ -92,9 +92,9 @@ int T02_extract_subgrid() {
     write_dump(bf_b, sizeof(double complex) * yP_size_b, "../../data/grid/T02_bf_b.out");
     int y;
     for (y = 0; y < yP_size; y++)
-        assert(fabs(bf[y] - bf_ref[y]) < 1.5e-13);
+        assert(fabs(bf[y] - bf_ref[y]) < 1.8e-13);
     for (y = 0; y < yP_size_b; y++)
-        assert(fabs(bf_b[y] - bf_ref_b[y]) < 1.5e-13);
+        assert(fabs(bf_b[y] - bf_ref_b[y]) < 1.8e-13);
 
     // Test subgrid extraction
     double complex *mbf = (double complex *)malloc(sizeof(double complex) * xM_yP_size_b);
