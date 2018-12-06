@@ -487,7 +487,7 @@ void streamer_work(struct streamer *streamer,
     fftw_execute_dft(streamer->subgrid_plan, subgrid, subgrid);
 
     // Check accumulated result
-    if (work->check_path) {
+    if (work->check_path && streamer->work_cfg->facet_workers > 0) {
         double complex *approx_ref = read_hdf5(cfg->SG_size, work->check_hdf5, work->check_path);
         double err_sum = 0; int y;
         for (y = 0; y < cfg->xM_size * cfg->xM_size; y++) {
@@ -503,7 +503,7 @@ void streamer_work(struct streamer *streamer,
     fft_shift(subgrid, cfg->xM_size);
 
     // Check some degridded example visibilities
-    if (work->check_degrid_path && streamer->have_kern) {
+    if (work->check_degrid_path && streamer->have_kern && streamer->work_cfg->facet_workers > 0) {
         int nvis = get_npoints_hdf5(work->check_hdf5, "%s/vis", work->check_degrid_path);
         double *uvw_sg = read_hdf5(3 * sizeof(double) * nvis, work->check_hdf5,
                                    "%s/uvw_subgrid", work->check_degrid_path);

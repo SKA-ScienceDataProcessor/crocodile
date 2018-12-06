@@ -478,6 +478,7 @@ static bool generate_full_redistribute_assignment(struct work_config *cfg)
     cfg->iu_min = cfg->iv_min = 0;
     cfg->iu_max = cfg->iv_max = nsubgrid-1;
 
+    if (cfg->facet_workers == 0) return true;
     int nfacet = cfg->recombine.image_size / cfg->recombine.yB_size;
     cfg->facet_max_work = (nfacet * nfacet + cfg->facet_workers - 1) / cfg->facet_workers;
     cfg->facet_count = nfacet * nfacet;
