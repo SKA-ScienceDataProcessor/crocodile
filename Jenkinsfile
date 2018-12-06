@@ -34,16 +34,16 @@ py.test -n 4 --verbose tests
             }
         }
 
-       stage('Run Notebooks') {
-           steps {
-               sh '''
+        stage('Make Documentation') {
+            steps {
+                sh '''
 cd $WORKSPACE
 . $WORKSPACE/_build/bin/activate
 
-make -C docs html
+make -k -j 4 -C docs html
 '''
            }
-       }
+        }
     }
     post {
         failure {

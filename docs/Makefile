@@ -62,8 +62,7 @@ make_example_rst = \
 
 .PHONY: prepare
 prepare:
-
-	$(call make_example_rst,notebooks,*_files)
+	+$(call make_example_rst,notebooks,*_files)
 
 .PHONY: html
 html: prepare
