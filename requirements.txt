@@ -16,3 +16,4 @@ pylru
 Sphinx
 astropy
 h5py
+json-tricks
