@@ -2,10 +2,16 @@
 
 pipeline {
     agent {label 'sdp-ci-01'}
+    // Master branch gets built daily, otherwise only after GitHub push
+    triggers {
+        cron(env.BRANCH_NAME == 'master' ? '@daily' : '')
+        githubPush()
+    }
     environment {
         MPLBACKEND='agg'
         CROCODILE="${env.WORKSPACE}"
     }
+    options { timestamps() }
     stages {
         stage('Setup') {
             steps {
