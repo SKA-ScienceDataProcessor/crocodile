@@ -1,7 +1,7 @@
 
-NBs = coordinates.ipynb Interferometry.ipynb wkernel.ipynb wimaging.ipynb \
-  wsnapshot.ipynb aaf.ipynb aimaging.iypnb awtowers.ipynb facet-subgrid.ipynb \
-  facet-subgrid-imply.ipynb grid-predict.ipynb predict.ipynb \
+NBs = grid-predict.ipynb coordinates.ipynb Interferometry.ipynb wimaging.ipynb \
+  wsnapshot.ipynb aaf.ipynb aimaging.ipynb awtowers.ipynb facet-subgrid.ipynb \
+  facet-subgrid-impl.ipynb predict.ipynb \
   wtowers.ipynb wtowers-predict.ipynb
 
 include ../jupyter.mk
