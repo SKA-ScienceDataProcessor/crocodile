@@ -438,16 +438,15 @@ void streamer_work(struct streamer *streamer,
     const int facets = streamer->work_cfg->facet_workers * streamer->work_cfg->facet_max_work;
     const int nmbf_length = cfg->NMBF_NMBF_size / sizeof(double complex);
 
-    // Identify slot to write to
-    int slot = subgrid_work % streamer->queue_length;
-    double start_wait = get_time_ns();
-    while(streamer->subgrid_locks[slot] != 0) {
-        #pragma omp taskyield
-        if (get_time_ns() > start_wait + 1) {
-            //printf("Waiting on slot %d (%d)...\n", slot, streamer->subgrid_locks[slot]);
-            fflush(stdout);
-            start_wait = get_time_ns();
-        }
+    // Find slot to write to
+    int slot;
+    while(true) {
+        for (slot = 0; slot < streamer->queue_length; slot++)
+            if (streamer->subgrid_locks[slot] == 0)
+                break;
+        if (slot < streamer->queue_length)
+            break;
+#pragma omp taskyield
     }
 
     double recombine_start = get_time_ns();
