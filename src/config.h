@@ -80,6 +80,8 @@ struct work_config {
     int produce_parallel_cols;
     int produce_retain_bf;
     int produce_source_count;
+    int produce_batch_rows;
+    int produce_queue_length;
     int vis_skip_metadata;
     int vis_bls_per_task;
     int vis_subgrid_queue_length;
