@@ -10,6 +10,9 @@
 #include <fftw3.h>
 #include <omp.h>
 #include <fenv.h>
+#ifdef USE_AVX
+#include <immintrin.h>
+#endif
 
 #include "grid.h"
 
@@ -185,6 +188,7 @@ double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double thet
                       theta, u, v,
                       &grid_offset, &sub_offset_x, &sub_offset_y);
 
+#ifndef USE_AVX
     // Get visibility
     double complex vis = 0;
     int y, x;
@@ -198,6 +202,31 @@ double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double thet
     *flops += 4 * (1 + kernel->size) * kernel->size;
 
     return vis;
+
+#else
+
+    // Get visibility
+    double test[4];
+    __m256d vis = _mm256_setzero_pd();
+    int y, x;
+    for (y = 0; y < kernel->size; y += 1) {
+        __m256d sum = _mm256_setzero_pd();
+        for (x = 0; x < kernel->size; x += 2) {
+            double *pk = kernel->data + sub_offset_x + x;
+            __m256d kern = _mm256_setr_pd(*pk, *pk, *(pk+1), *(pk+1));
+            __m256d grid = _mm256_loadu_pd((double *)(uvgrid + grid_offset + y*grid_size + x));
+            sum = _mm256_fmadd_pd(kern, grid, sum);
+        }
+        double kern_y = kernel->data[sub_offset_y + y];
+        vis = _mm256_fmadd_pd(sum, _mm256_set1_pd(kern_y), vis);
+    }
+    __attribute__ ((aligned (32))) double vis_s[4];
+    _mm256_store_pd(vis_s, vis);
+    double complex vis_res = vis_s[0] + vis_s[2] + 1j * (vis_s[1] + vis_s[3]);
+
+    *flops += 4 * (1 + kernel->size) * kernel->size;
+    return vis_res;
+#endif
 }
 
 uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
