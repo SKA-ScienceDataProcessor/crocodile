@@ -227,9 +227,9 @@ enum Opts
 
         Opt_telescope, Opt_fov, Opt_dec, Opt_time, Opt_freq, Opt_grid, Opt_vis_set,
         Opt_recombine, Opt_rec_aa, Opt_rec_set,
-        Opt_rec_load_facet, Opt_rec_load_facet_hdf5,
+        Opt_rec_load_facet, Opt_rec_load_facet_hdf5, Opt_batch_rows,
         Opt_facet_workers, Opt_parallel_cols, Opt_dont_retain_bf,
-        Opt_source_count,
+        Opt_source_count, Opt_send_queue,
         Opt_bls_per_task, Opt_subgrid_queue, Opt_visibility_queue,
         Opt_statsd, Opt_statsd_port,
     };
@@ -256,12 +256,14 @@ bool set_cmdarg_config(int argc, char **argv,
         {"rec-set",    required_argument, 0, Opt_rec_set },
         {"load-facet", required_argument, 0, Opt_rec_load_facet },
         {"load-facet-hdf5", required_argument, 0, Opt_rec_load_facet_hdf5 },
+        {"batch-rows", required_argument, 0, Opt_batch_rows },
 
         {"facet-workers", required_argument, 0, Opt_facet_workers },
         {"parallel-columns", no_argument, &cfg->produce_parallel_cols, true },
         {"dont-retain-bf", no_argument,   &cfg->produce_retain_bf, false },
         {"source-count", required_argument, 0, Opt_source_count },
         {"bls-per-task", required_argument, 0, Opt_bls_per_task },
+        {"send-queue", required_argument, 0, Opt_send_queue },
         {"subgrid-queue", required_argument, 0, Opt_subgrid_queue },
         {"visibility-queue", required_argument, 0, Opt_visibility_queue },
 
@@ -367,6 +369,12 @@ bool set_cmdarg_config(int argc, char **argv,
                 invalid=true; fprintf(stderr, "ERROR: Unknown recombination parameter set: %s!\n", optarg);
             }
             break;
+        case Opt_batch_rows:
+            nscan = sscanf(optarg, "%d", &cfg->produce_batch_rows);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'batch-rows' option!\n");
+            }
+            break;
         case Opt_facet_workers:
             nscan = sscanf(optarg, "%d", &facet_workers);
             if (nscan != 1) {
@@ -383,6 +391,12 @@ bool set_cmdarg_config(int argc, char **argv,
             nscan = sscanf(optarg, "%d", &cfg->vis_bls_per_task);
             if (nscan != 1) {
                 invalid=true; fprintf(stderr, "ERROR: Could not parse 'bls-per-task' option!\n");
+            }
+            break;
+        case Opt_send_queue:
+            nscan = sscanf(optarg, "%d", &cfg->produce_queue_length);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'send-queue' option!\n");
             }
             break;
         case Opt_subgrid_queue:
@@ -448,14 +462,16 @@ bool set_cmdarg_config(int argc, char **argv,
         printf("  --recombine=<N>,<Ny>,<yBs>,<yNs>,<yPs>,<xAs>,<xMs>,<xMxMyPs>\n");
         printf("                         Facet/subgrid recombination parameters\n");
         printf("  --rec-aa=<path>        Anti-aliasing function to use for recombination\n");
-        printf("  --rec-set=[test]");
+        printf("  --rec-set=[test]       Selection recombination parameter set");
+        printf("  --batch-rows=<N>       Image rows to batch per thread");
         printf("\n");
         printf("Distribution Parameters:\n");
         printf("  --facet-workers=<val>  Number of workers holding facets (default: half)\n");
         printf("  --dont-retain-bf       Discard BF term. Saves memory at expense of compute.\n");
         printf("  --parallel-columns     Work on grid columns in parallel. Worse for distribution.\n");
+        printf("  --send-queue=<N>       Outgoing subgrid queue length (default 8)");
         printf("  --bls-per-task=<N>     Number of baselines per OpenMP task (default 256)\n");
-        printf("  --subgrid-queue=<N>    Incoming subgrid queue length (default 32)\n");
+        printf("  --subgrid-queue=<N>    Incoming subgrid queue length (default 8)\n");
         printf("  --visibility-queue=<N> Outgoing visibility queue length (default 32768)\n");
         printf("\n");
         printf("Positional Parameters:\n");

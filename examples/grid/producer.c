@@ -437,8 +437,8 @@ int producer(struct work_config *wcfg, int facet_worker, int *streamer_ranks)
     struct recombine2d_config *cfg = &wcfg->recombine;
     struct facet_work *fwork = wcfg->facet_work + facet_worker * wcfg->facet_max_work;
 
-    const int BF_batch = 16;
-    const int send_queue_length = 8;
+    const int BF_batch = wcfg->produce_batch_rows;
+    const int send_queue_length = wcfg->produce_queue_length;
 
     // Get number of facets we need to cover, warn if it is bigger than 1
     int facet_work_count = 0; int ifacet;
