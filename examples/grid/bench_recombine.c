@@ -25,14 +25,14 @@ bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec
             return false;
         spec->fov = (double)image_size / 210000;
         spec->dec = 90 * atan(1) * 4 / 180;
-        spec->time_start = 10 * -45 / 3600; // h
-        spec->time_count = 64;
-        spec->time_chunk = 32;
-        spec->time_step = 10 * 0.9 / 3600; // h
-        spec->freq_start = 250e6; // Hz
-        spec->freq_count = 64;
-        spec->freq_chunk = 32;
-        spec->freq_step = 50.e6 / spec->freq_count; // Hz
+        spec->time_start = -230 / 3600; // h
+        spec->time_count = 128;
+        spec->time_chunk = 64;
+        spec->time_step = 460 / 3600; // h
+        spec->freq_start = 225e6; // Hz
+        spec->freq_count = 2048;
+        spec->freq_chunk = 64;
+        spec->freq_step = 75.e6 / spec->freq_count; // Hz
         return true;
     }
 
@@ -166,7 +166,20 @@ bool load_recombine_parset(const char *parset,
         strcpy(gridder_path, "../../data/grid/T05b_kern.h5");
         return true;
     }
-    if (!strcasecmp(parset, "large") || !strcasecmp(parset, "96k-24k-1k")) {
+    if (!strcasecmp(parset, "large") || !strcasecmp(parset, "96k-12k-1k")) {
+        recombine_pars[0] = 98304;
+        recombine_pars[1] = 256;
+        recombine_pars[2] = 6912;
+        recombine_pars[3] = 8832;
+        recombine_pars[4] = 12288;
+        recombine_pars[5] = 768;
+        recombine_pars[6] = 1024;
+        recombine_pars[7] = 144;
+        strcpy(aa_path, "../../data/grid/T06_pswf_96k_12k_1k_1e-07.in");
+        strcpy(gridder_path, "../../data/grid/T05b_kern.h5");
+        return true;
+    }
+    if (!strcasecmp(parset, "96k-24k-1k")) {
         recombine_pars[0] = 98304;
         recombine_pars[1] = 64;
         recombine_pars[2] = 15360;
