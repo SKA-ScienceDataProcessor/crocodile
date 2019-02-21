@@ -8,6 +8,8 @@
 #include <complex.h>
 #include <string.h>
 #include <omp.h>
+#include <float.h>
+#include <pthread.h>
 
 #ifndef NO_MPI
 #include <mpi.h>

@@ -7,6 +7,11 @@
 #include <assert.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <errno.h>
 
 const int WORK_SPLIT_THRESHOLD = 3;
 
@@ -510,6 +515,11 @@ void config_init(struct work_config *cfg)
     cfg->vis_bls_per_task = 256;
     cfg->vis_subgrid_queue_length = 32;
     cfg->vis_chunk_queue_length = 32768;
+
+    cfg->statsd_socket = -1;
+    cfg->statsd_rate = 1;
+}
+
 }
 
 bool config_set(struct work_config *cfg,
@@ -547,6 +557,9 @@ void config_free(struct work_config *cfg)
     free(cfg->subgrid_work);
     free(cfg->spec.ha_sin);
     free(cfg->spec.ha_cos);
+
+    if (cfg->statsd_socket != -1) close(cfg->statsd_socket);
+    cfg->statsd_socket = -1;
 }
 
 void config_set_visibilities(struct work_config *cfg,
@@ -623,6 +636,64 @@ bool config_set_degrid(struct work_config *cfg, const char *gridder_path)
     }
 
     return true;
+}
+
+bool config_set_statsd(struct work_config *cfg,
+                       const char *node, const char *service)
+{
+    if (cfg->statsd_socket != -1) close(cfg->statsd_socket);
+    cfg->statsd_socket = -1;
+
+    // Resolve statsd address
+    struct addrinfo hints, *result;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    int ret = getaddrinfo(node, service, &hints, &result);
+    if (ret != 0) {
+        fprintf(stderr, "ERROR: Could not resolve statsd address (%s)", gai_strerror(ret));
+        return false;
+    }
+
+    // Create socket
+    struct addrinfo *addr = NULL;
+    for (addr = result; addr; addr = addr->ai_next) {
+        // Attempt to create socket
+        cfg->statsd_socket = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+        if (cfg->statsd_socket == -1)
+            continue;
+
+        // And connect
+        if (connect(cfg->statsd_socket, addr->ai_addr, addr->ai_addrlen) != -1)
+            break;
+
+        close(cfg->statsd_socket); cfg->statsd_socket = -1;
+    }
+    if (cfg->statsd_socket == -1) {
+        fprintf(stderr, "ERROR: Could not create statsd socket (%s)", strerror(errno));
+        freeaddrinfo(result);
+        return false;
+    }
+
+    freeaddrinfo(result);
+
+    // Initialise stats
+    printf("Opened statsd connection to %s:%s\n", node, service);
+    return true;
+}
+
+void config_send_statsd(struct work_config *cfg, const char *stat)
+{
+    if (cfg->statsd_socket == -1)
+        return;
+
+    //printf("stats: %s\n", stat);
+
+    if (write(cfg->statsd_socket, stat, strlen(stat)) != strlen(stat)) {
+        fprintf(stderr, "ERROR: Failed to send to statsd (%s)\n", strerror(errno));
+        close(cfg->statsd_socket);
+        cfg->statsd_socket = -1;
+    }
 }
 
 void config_load_facets(struct work_config *cfg,

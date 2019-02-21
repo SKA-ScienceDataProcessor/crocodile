@@ -231,6 +231,7 @@ enum Opts
         Opt_facet_workers, Opt_parallel_cols, Opt_dont_retain_bf,
         Opt_source_count,
         Opt_bls_per_task, Opt_subgrid_queue, Opt_visibility_queue,
+        Opt_statsd, Opt_statsd_port,
     };
 
 bool set_cmdarg_config(int argc, char **argv,
@@ -264,6 +265,9 @@ bool set_cmdarg_config(int argc, char **argv,
         {"subgrid-queue", required_argument, 0, Opt_subgrid_queue },
         {"visibility-queue", required_argument, 0, Opt_visibility_queue },
 
+        {"statsd",     optional_argument, 0, Opt_statsd },
+        {"statsd-port",required_argument, 0, Opt_statsd_port },
+
         {0, 0, 0, 0}
       };
 
@@ -277,12 +281,13 @@ bool set_cmdarg_config(int argc, char **argv,
            subgrid_degrid_threshold = 1e-8;
     int facet_workers = (world_size + 1) / 2;
     char gridder_path[256]; char vis_path[256];
+    char statsd_addr[256]; char statsd_port[256] = "8125";
     memset(&spec, 0, sizeof(spec));
     spec.dec = 90 * atan(1) * 4 / 180;
     memset(&recombine_pars, 0, sizeof(recombine_pars));
     aa_path[0] = gridder_path[0] = facet_path[0] = facet_path_hdf5[0] =
         subgrid_path[0] = subgrid_fct_path[0] = subgrid_degrid_path[0] =
-        subgrid_path_hdf5[0] = vis_path[0] = 0;
+        subgrid_path_hdf5[0] = vis_path[0] = statsd_addr[0] = 0;
 
     int option_index = 0, invalid = 0, c, nscan;
     while ((c = getopt_long(argc, argv, ":", options, &option_index)) != -1) {
@@ -392,6 +397,12 @@ bool set_cmdarg_config(int argc, char **argv,
                 invalid=true; fprintf(stderr, "ERROR: Could not parse 'visibility-queue' option!\n");
             }
             break;
+        case Opt_statsd:
+            strncpy(statsd_addr, optarg, 254); statsd_addr[255] = 0;
+            break;
+        case Opt_statsd_port:
+            strncpy(statsd_port, optarg, 254); statsd_port[255] = 0;
+            break;
         case '?':
         default:
             invalid=true; fprintf(stderr, "ERROR: Unknown option '%s'!\n", argv[opterr]);
@@ -455,6 +466,12 @@ bool set_cmdarg_config(int argc, char **argv,
     // Set configuration
     int subgrid_workers = world_size - facet_workers;
     if (subgrid_workers < 1) subgrid_workers = 1;
+
+    if (statsd_addr[0]) {
+        if (!config_set_statsd(cfg, statsd_addr, statsd_port)) {
+            return false;
+        }
+    }
 
     if (!config_set(cfg,
                     recombine_pars[0], recombine_pars[1],
