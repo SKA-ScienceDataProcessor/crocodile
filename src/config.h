@@ -84,6 +84,10 @@ struct work_config {
     int vis_bls_per_task;
     int vis_subgrid_queue_length;
     int vis_chunk_queue_length;
+
+    // Statsd connection
+    int statsd_socket;
+    double statsd_rate;
 };
 
 double get_time_ns();
@@ -104,6 +108,10 @@ void config_set_visibilities(struct work_config *cfg,
                              const char *vis_path);
 bool config_set_degrid(struct work_config *cfg,
                        const char *gridder_path);
+
+bool config_set_statsd(struct work_config *cfg,
+                       const char *node, const char *service);
+void config_send_statsd(struct work_config *cfg, const char *stat);
 
 void config_load_facets(struct work_config *cfg, const char *path_fmt, const char *hdf5);
 void config_check_subgrids(struct work_config *cfg,
