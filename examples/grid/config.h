@@ -85,6 +85,7 @@ struct work_config {
     int vis_skip_metadata;
     int vis_bls_per_task;
     int vis_subgrid_queue_length;
+    int vis_task_queue_length;
     int vis_chunk_queue_length;
 
     // Statsd connection

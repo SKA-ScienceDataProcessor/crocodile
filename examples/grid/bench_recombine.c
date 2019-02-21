@@ -230,7 +230,7 @@ enum Opts
         Opt_rec_load_facet, Opt_rec_load_facet_hdf5, Opt_batch_rows,
         Opt_facet_workers, Opt_parallel_cols, Opt_dont_retain_bf,
         Opt_source_count, Opt_send_queue,
-        Opt_bls_per_task, Opt_subgrid_queue, Opt_visibility_queue,
+        Opt_bls_per_task, Opt_subgrid_queue, Opt_task_queue, Opt_visibility_queue,
         Opt_statsd, Opt_statsd_port,
     };
 
@@ -265,6 +265,7 @@ bool set_cmdarg_config(int argc, char **argv,
         {"bls-per-task", required_argument, 0, Opt_bls_per_task },
         {"send-queue", required_argument, 0, Opt_send_queue },
         {"subgrid-queue", required_argument, 0, Opt_subgrid_queue },
+        {"task-queue", required_argument, 0, Opt_task_queue },
         {"visibility-queue", required_argument, 0, Opt_visibility_queue },
 
         {"statsd",     optional_argument, 0, Opt_statsd },
@@ -403,6 +404,12 @@ bool set_cmdarg_config(int argc, char **argv,
             nscan = sscanf(optarg, "%d", &cfg->vis_subgrid_queue_length);
             if (nscan != 1) {
                 invalid=true; fprintf(stderr, "ERROR: Could not parse 'subgrid-queue' option!\n");
+            }
+            break;
+        case Opt_task_queue:
+            nscan = sscanf(optarg, "%d", &cfg->vis_task_queue_length);
+            if (nscan != 1) {
+                invalid=true; fprintf(stderr, "ERROR: Could not parse 'task-queue' option!\n");
             }
             break;
         case Opt_visibility_queue:

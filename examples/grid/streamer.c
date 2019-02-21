@@ -35,6 +35,7 @@ struct streamer
 
     // Subgrid queue (to be degridded)
     double complex *subgrid_queue;
+    int subgrid_tasks;
     int *subgrid_locks;
     fftw_plan subgrid_plan;
 
@@ -421,6 +422,8 @@ void streamer_task(struct streamer *streamer,
 
     // Done with this chunk
 #pragma omp atomic
+    streamer->subgrid_tasks--;
+#pragma omp atomic
     streamer->subgrid_locks[slot]--;
 
 }
@@ -551,7 +554,15 @@ void streamer_work(struct streamer *streamer,
             // We are spawning a task: Add lock to subgrid data to
             // make sure it doesn't get overwritten
             #pragma omp atomic
+            streamer->subgrid_tasks++;
+            #pragma omp atomic
             streamer->subgrid_locks[slot]++;
+
+            // Task queue full? Execute directly
+            if (streamer->subgrid_tasks >= streamer->work_cfg->vis_task_queue_length) {
+                streamer_task(streamer, work, bl, slot, subgrid_work, subgrid);
+                continue;
+            }
 
             // Start task. Make absolutely sure it sees *everything*
             // as private, as Intel's C compiler otherwise loves to
@@ -640,13 +651,19 @@ bool streamer_init(struct streamer *streamer,
     streamer->request_queue = (MPI_Request *)malloc(requests_size);
     streamer->subgrid_queue = (double complex *)malloc(sg_queue_size);
     streamer->subgrid_locks = (int *)calloc(sizeof(int), streamer->queue_length);
+    streamer->skip_receive = (bool *)calloc(sizeof(bool), wcfg->subgrid_max_work);
     if (!streamer->nmbf_queue || !streamer->request_queue ||
-        !streamer->subgrid_queue || !streamer->subgrid_locks) {
+        !streamer->subgrid_queue || !streamer->subgrid_locks ||
+        !streamer->skip_receive) {
 
         fprintf(stderr, "ERROR: Could not allocate subgrid queue!\n");
         return false;
     }
-    streamer->skip_receive = (bool *)calloc(sizeof(bool), wcfg->subgrid_max_work);
+    int i;
+    for (i = 0; i < facets * streamer->queue_length; i++) {
+        streamer->request_queue[i] = MPI_REQUEST_NULL;
+    }
+    streamer->subgrid_tasks = 0;
 
     // Plan FFTs
     streamer->subgrid_plan = fftw_plan_dft_2d(cfg->xM_size, cfg->xM_size,
@@ -677,7 +694,6 @@ bool streamer_init(struct streamer *streamer,
         return false;
     }
 
-    int i;
     for (i = 0; i < streamer->vis_queue_length; i++) {
         omp_init_lock(streamer->vis_in_lock + i);
         omp_init_lock(streamer->vis_out_lock + i);
