@@ -29,8 +29,8 @@ inline static int coord(int grid_size, double theta,
     return (y+grid_size/2) * grid_size + (x+grid_size/2);
 }
 
-void frac_coord(int grid_size, int oversample,
-                double u, int *x, int *fx) {
+inline static void _frac_coord(int grid_size, int oversample,
+                              double u, int *x, int *fx) {
 
     // Round to nearest oversampling value. We assume the kernel to be
     // in "natural" order, so what we are looking for is the best
@@ -40,6 +40,13 @@ void frac_coord(int grid_size, int oversample,
     int ox = lrint((grid_size / 2 - u) * oversample);
     *x = grid_size-(ox / oversample);
     *fx = ox % oversample;
+
+}
+void frac_coord(int grid_size, int oversample,
+                double u, int *x, int *fx) {
+
+    _frac_coord(grid_size, oversample, u, x, fx);
+
 }
 
 // Fractional coordinate calculation for oversampled 2D kernel
@@ -62,8 +69,8 @@ inline static void frac_coord_2d(int grid_size, int kernel_size, int oversample,
 
     // Find fractional coordinates
     int ix, iy, ixf, iyf;
-    frac_coord(grid_size, oversample, x, &ix, &ixf);
-    frac_coord(grid_size, oversample, y, &iy, &iyf);
+    _frac_coord(grid_size, oversample, x, &ix, &ixf);
+    _frac_coord(grid_size, oversample, y, &iy, &iyf);
 
     // Calculate grid and oversampled kernel offsets
     *grid_offset = (iy-kernel_size/2)*grid_size + (ix-kernel_size/2);
@@ -81,8 +88,8 @@ inline static void frac_coord_sep_uv(int grid_size, int kernel_size, int oversam
     double x = theta * u, y = theta * v;
     // Find fractional coordinates
     int ix, iy, ixf, iyf;
-    frac_coord(grid_size, oversample, x, &ix, &ixf);
-    frac_coord(grid_size, oversample, y, &iy, &iyf);
+    _frac_coord(grid_size, oversample, x, &ix, &ixf);
+    _frac_coord(grid_size, oversample, y, &iy, &iyf);
     // Calculate grid and oversampled kernel offsets
     *grid_offset = (iy-kernel_size/2)*grid_size + (ix-kernel_size/2);
     *sub_offset_x = kernel_size * ixf;
