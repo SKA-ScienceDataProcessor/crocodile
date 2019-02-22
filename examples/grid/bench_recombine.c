@@ -594,7 +594,6 @@ int main(int argc, char *argv[]) {
                     streamer_ranks[i] = config.facet_workers + i;
                 }
             }
-            printf("%d subgrid workers, streamer_ranks = %p\n", config.subgrid_workers, streamer_ranks);
 
             producer(&config, world_rank, streamer_ranks);
 
@@ -610,7 +609,6 @@ int main(int argc, char *argv[]) {
                     producer_ranks[i] = i;
                 }
             }
-            printf("%d facet workers, producer_ranks = %p\n", config.facet_workers, producer_ranks);
 
             streamer(&config, world_rank - config.facet_workers, producer_ranks);
         }
