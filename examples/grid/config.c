@@ -261,14 +261,16 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
     // Count how many sub-grids actually have visibilities
     int npop = 0, nbl_total = 0, nbl_max = 0;
     int iu, iv;
-    for (iu = nsubgrid/2; iu < nsubgrid; iu++)
-        for (iv = 0; iv < nsubgrid; iv++)
+    for (iv = 0; iv < nsubgrid; iv++) {
+        for (iu = nsubgrid/2; iu < nsubgrid; iu++) {
             if (nbl[iv * nsubgrid + iu]) {
                 npop++;
                 nbl_total+=nbl[iv * nsubgrid + iu];
                 if (nbl[iv * nsubgrid + iu] > nbl_max)
                     nbl_max = nbl[iv * nsubgrid + iu];
             }
+        }
+    }
 
     double coverage = (double)npop * cfg->recombine.xA_size * cfg->recombine.xA_size
                     / cfg->recombine.image_size  / cfg->recombine.image_size;
