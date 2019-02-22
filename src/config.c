@@ -248,6 +248,10 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
     double xA = (double)cfg->recombine.xA_size / cfg->recombine.image_size;
     int *nbl; struct subgrid_work_bl **bls;
 
+    printf("Covering %d time steps, %d channels, %d baselines\n",
+           cfg->spec.time_count, cfg->spec.freq_count,
+           cfg->spec.cfg->ant_count * (cfg->spec.cfg->ant_count - 1) / 2);
+
     printf("Binning chunks...\n");
     double start = get_time_ns();
     int nsubgrid = collect_baselines(spec, cfg->recombine.image_size / cfg->theta,
@@ -523,6 +527,15 @@ void config_init(struct work_config *cfg)
     cfg->statsd_rate = 1;
 }
 
+static void print_power2(int x)
+{
+    if (x >= 1024 * 1024 && x % (1024 * 1024) == 0) {
+        printf("%dM", x / 1024 / 1024);
+    } else if (x >= 1024 && x % 1024 == 0) {
+        printf("%dk", x / 1024);
+    } else {
+        printf("%d", x);
+    }
 }
 
 bool config_set(struct work_config *cfg,
@@ -533,7 +546,10 @@ bool config_set(struct work_config *cfg,
 {
 
     // Set recombination configuration
-    printf("\nInitialising recombination...\n");
+    printf("\nInitialising recombination (image size "); print_power2(image_size);
+    printf(", facet FFT "); print_power2(yP_size);
+    printf(", subgrid FFT "); print_power2(xM_size);
+    printf(")...\n");
     if (!recombine2d_set_config(&cfg->recombine, image_size, subgrid_spacing, pswf_file,
                                 yB_size, yN_size, yP_size,
                                 xA_size, xM_size, xMxN_yP_size))
