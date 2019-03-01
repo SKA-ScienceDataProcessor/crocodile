@@ -789,6 +789,109 @@ void streamer_work(struct streamer *streamer,
     }
 }
 
+void *streamer_publish_stats(void *par)
+{
+
+    // Get streamer state. Make a copy to maintain differences
+    struct streamer *streamer = (struct streamer *)par;
+    struct streamer last, now;
+    memcpy(&last, streamer, sizeof(struct streamer));
+
+    double sample_rate = streamer->work_cfg->statsd_rate;
+    double next_stats = get_time_ns() + sample_rate;
+
+    while(!streamer->finished) {
+
+        // Make a copy of streamer state
+        memcpy(&now, streamer, sizeof(struct streamer));
+
+        // Add counters
+        char stats[4096];
+        stats[0] = 0;
+#define PUBLISH(stat, mult, max)                                        \
+        do {                                                            \
+            sprintf(stats + strlen(stats), "user.recombine.streamer." #stat ".g:%ld|g\n", \
+                    (uint64_t)(mult * (now.stat - last.stat) / max));   \
+        } while(0)
+        PUBLISH(wait_time, 100, sample_rate);
+        PUBLISH(wait_in_time, 100, streamer->num_workers * sample_rate);
+        PUBLISH(wait_out_time, 100, sample_rate);
+        PUBLISH(read_time, 100, sample_rate);
+        PUBLISH(write_time, 100, sample_rate);
+        PUBLISH(task_start_time, 100, sample_rate);
+        PUBLISH(recombine_time, 100, sample_rate);
+        PUBLISH(degrid_time, 100, streamer->num_workers * sample_rate);
+        PUBLISH(received_data, 1, sample_rate);
+        PUBLISH(received_subgrids, 1, sample_rate);
+        PUBLISH(baselines_covered, 1, sample_rate);
+        PUBLISH(written_vis_data, 1, sample_rate);
+        PUBLISH(rewritten_vis_data, 1, sample_rate);
+        PUBLISH(degrid_flops, 1, sample_rate);
+        PUBLISH(produced_chunks, 1, sample_rate);
+        PUBLISH(task_yields, 1, sample_rate);
+        PUBLISH(square_error_samples, 1, sample_rate);
+        config_send_statsd(streamer->work_cfg, stats);
+
+        // Receiver idle time
+        stats[0] = 0;
+        double receiver_idle_time = 0;
+        receiver_idle_time = sample_rate;
+        receiver_idle_time -= now.wait_time - last.wait_time;
+        receiver_idle_time -= now.task_start_time - last.task_start_time;
+        receiver_idle_time -= now.recombine_time - last.recombine_time;
+        sprintf(stats + strlen(stats), "user.recombine.streamer.receiver_idle_time.gg:%ld|g\n",
+                (int64_t)(receiver_idle_time * 100 / sample_rate));
+
+        // Worker idle time
+        double worker_idle_time = 0;
+        worker_idle_time = streamer->num_workers * sample_rate;
+        worker_idle_time -= now.wait_in_time - last.wait_in_time;
+        worker_idle_time -= now.degrid_time - last.degrid_time;
+        sprintf(stats + strlen(stats), "user.recombine.streamer.worker_idle_time.gg:%ld|g\n",
+                (int64_t)(worker_idle_time * 100 / sample_rate / streamer->num_workers));
+
+        // Add gauges
+        double derror_sum = now.square_error_sum - last.square_error_sum;
+        uint64_t dsamples = now.square_error_samples - last.square_error_samples;
+        if (dsamples > 0) {
+            const int source_count = streamer->work_cfg->produce_source_count;
+            const int image_size = streamer->work_cfg->recombine.image_size;
+            double energy = (double)source_count / image_size / image_size;
+            sprintf(stats + strlen(stats),
+                    "user.recombine.streamer.visibility_samples:%ld|g\n"
+                    "user.recombine.streamer.visibility_rmse:%g|g\n",
+                    dsamples, 10 * log(sqrt(derror_sum / dsamples) / energy) / log(10));
+        }
+        sprintf(stats + strlen(stats),
+                "user.recombine.streamer.degrid_tasks:%d|g\n",
+                now.subgrid_tasks);
+        int i, nrequests = 0; //, nactual = 0;
+        const int request_queue_length = streamer->work_cfg->facet_workers *
+            streamer->work_cfg->facet_max_work * streamer->queue_length;
+        for (i = 0; i < request_queue_length; i++) {
+            if (now.request_queue[i] != MPI_REQUEST_NULL)
+                nrequests++;
+        }
+        sprintf(stats + strlen(stats), "user.recombine.streamer.waiting_requests:%d|g\n", nrequests);
+        sprintf(stats + strlen(stats), "user.recombine.streamer.outstanding_requests:%d|g\n", nrequests);
+        sprintf(stats + strlen(stats),
+                "user.recombine.streamer.chunks_to_write:%ld|g\n",
+                now.chunks_to_write);
+
+        // Send to statsd server
+        config_send_statsd(streamer->work_cfg, stats);
+        memcpy(&last, &now, sizeof(struct streamer));
+
+        // Determine when to next send stats, sleep
+        while (next_stats <= get_time_ns()) {
+            next_stats += sample_rate;
+        }
+        usleep((useconds_t) (1000000 * (next_stats - get_time_ns())) );
+    }
+
+    return NULL;
+}
+
 bool streamer_init(struct streamer *streamer,
                    struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
 {
@@ -991,6 +1094,9 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
     // not count towards worker limit.
     int num_threads = streamer.num_workers;
     num_threads++; // reader thread
+    if (wcfg->statsd_socket >= 0) {
+        num_threads++; // statistics thread
+    }
     if (streamer.vis_file >= 0) {
         num_threads++; // writer thread
     }
@@ -1021,6 +1127,12 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
         streamer.vis_tchunk[streamer.vis_in_ptr] = -1;
         streamer.vis_fchunk[streamer.vis_in_ptr] = -1;
         omp_unset_lock(streamer.vis_out_lock + streamer.vis_in_ptr);
+    }
+#pragma omp section
+    {
+        if (wcfg->statsd_socket >= 0) {
+            streamer_publish_stats(&streamer);
+        }
     }
 
 #pragma omp section
