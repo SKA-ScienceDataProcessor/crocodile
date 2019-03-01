@@ -29,10 +29,10 @@ bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec
         spec->time_count = 128;
         spec->time_chunk = 64;
         spec->time_step = 460 / 3600; // h
-        spec->freq_start = 225e6; // Hz
+        spec->freq_start = 260e6; // Hz
         spec->freq_count = 2048;
         spec->freq_chunk = 64;
-        spec->freq_step = 75.e6 / spec->freq_count; // Hz
+        spec->freq_step = 40.e6 / spec->freq_count; // Hz
         return true;
     }
 
@@ -43,14 +43,14 @@ bool load_vis_parset(const char *set_name, int image_size, struct vis_spec *spec
             return false;
         spec->fov = (double)image_size / 100000;
         spec->dec = 90 * atan(1) * 4 / 180;
-        spec->time_start = 10 * -45 / 3600; // h
-        spec->time_count = 64;
-        spec->time_chunk = 32;
-        spec->time_step = 10 * 0.9 / 3600; // h
-        spec->freq_start = 250e6; // Hz
-        spec->freq_count = 64;
-        spec->freq_chunk = 32;
-        spec->freq_step = 50.e6 / spec->freq_count; // Hz
+        spec->time_start = -230 / 3600; // h
+        spec->time_count = 128;
+        spec->time_chunk = 64;
+        spec->time_step = 460 / 3600; // h
+        spec->freq_start = 260e6; // Hz
+        spec->freq_count = 2048;
+        spec->freq_chunk = 64;
+        spec->freq_step = 40.e6 / spec->freq_count; // Hz
         return true;
     }
 
