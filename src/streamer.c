@@ -31,7 +31,8 @@ struct streamer
     int queue_length;
     double complex *nmbf_queue;
     MPI_Request *request_queue;
-    bool *skip_receive; // duplicated receive slots to skip
+    int *request_work; // per request: subgrid work to perform
+    bool *skip_receive; // per subgrid work: skip, because subgrid is being/was received already
 
     // Subgrid queue (to be degridded)
     double complex *subgrid_queue;
@@ -51,15 +52,22 @@ struct streamer
     hid_t vis_group;
 
     // Statistics
+    int num_workers;
     double wait_time;
-    double critical_wait_time;
     double wait_in_time, wait_out_time;
     double read_time, write_time;
-    double recombine_time, degrid_time;
+    double recombine_time, task_start_time, degrid_time;
     uint64_t received_data, received_subgrids, baselines_covered;
     uint64_t written_vis_data, rewritten_vis_data;
     uint64_t square_error_samples;
     double square_error_sum, worst_error;
+    uint64_t degrid_flops;
+    uint64_t produced_chunks;
+    uint64_t task_yields;
+    uint64_t chunks_to_write;
+
+    // Signal for being finished
+    bool finished;
 };
 
 static double complex *nmbf_slot(struct streamer *streamer, int slot, int facet)
@@ -84,29 +92,34 @@ static double complex *subgrid_slot(struct streamer *streamer, int slot)
 }
 
 void streamer_ireceive(struct streamer *streamer,
-                       int subgrid_work)
+                       int subgrid_work, int slot)
 {
 
     const int xM_yN_size = streamer->work_cfg->recombine.xM_yN_size;
     struct subgrid_work *work = streamer->work_cfg->subgrid_work +
         streamer->subgrid_worker * streamer->work_cfg->subgrid_max_work;
+    const int facet_count = streamer->work_cfg->facet_workers * streamer->work_cfg->facet_max_work;
 
-    // Not populated? skip
-    if (!work[subgrid_work].nbl)
+    // Not populated or marked to skip? Clear slot
+    if (!work[subgrid_work].nbl || streamer->skip_receive[subgrid_work]) {
+        int facet;
+        for (facet = 0; facet < facet_count; facet++) {
+            *request_slot(streamer, slot, facet) = MPI_REQUEST_NULL;
+        }
+        streamer->request_work[slot] = -1;
         return;
+    }
 
-    // Skip? This is to prevent a subgrid getting received twice
-    if (streamer->skip_receive[subgrid_work])
-        return;
+    // Set work
+    streamer->request_work[slot] = subgrid_work;
+
+    // Mark later subgrid repeats for skipping
     int iw;
     for (iw = subgrid_work+1; iw < streamer->work_cfg->subgrid_max_work; iw++)
         if (work[iw].iu == work[subgrid_work].iu && work[iw].iv == work[subgrid_work].iv)
             streamer->skip_receive[iw] = true;
 
-    // Identify slot
-    const int slot = subgrid_work % streamer->queue_length;
-
-    // Walk through all facets we expect contributions from
+    // Walk through all facets we expect contributions from, save requests
     const int facets = streamer->work_cfg->facet_workers * streamer->work_cfg->facet_max_work;
     int facet;
     for (facet = 0; facet < facets; facet++) {
@@ -132,8 +145,135 @@ void streamer_ireceive(struct streamer *streamer,
 
 }
 
-void streamer_writer(struct streamer *streamer)
+void streamer_work(struct streamer *streamer,
+                   int subgrid_work,
+                   double complex *nmbf);
+
+int streamer_receive_a_subgrid(struct streamer *streamer,
+                               struct subgrid_work *work,
+                               int *waitsome_indices)
 {
+    const int facet_work_count = streamer->work_cfg->facet_workers * streamer->work_cfg->facet_max_work;
+
+    double start = get_time_ns();
+
+    int slot; int waiting = 0;
+    for(;;) {
+
+        // Wait for MPI data to arrive. We only use "Waitsome" if this
+        // is not the first iteration *and* we know that there are
+        // actually waiting requests. Waitsome might block
+        // indefinetely - so we should only do that if we are sure
+        // that we need to receive *something* before we get more work
+        // to do.
+        int index_count = 0;
+        if (waiting == 0) {
+            MPI_Testsome(facet_work_count * streamer->queue_length, streamer->request_queue,
+                         &index_count, waitsome_indices, MPI_STATUSES_IGNORE);
+        } else {
+            MPI_Waitsome(facet_work_count * streamer->queue_length, streamer->request_queue,
+                         &index_count, waitsome_indices, MPI_STATUSES_IGNORE);
+        }
+
+        // Note how much data was received, and check that the
+        // indicated requests were actually cleared (this behaviour
+        // isn't exactly prominently documented?).
+        int i;
+#pragma omp atomic
+        streamer->received_data += index_count * streamer->work_cfg->recombine.NMBF_NMBF_size;
+        for (i = 0; i < index_count; i++) {
+            assert(streamer->request_queue[waitsome_indices[i]] == MPI_REQUEST_NULL);
+            streamer->request_queue[waitsome_indices[i]] = MPI_REQUEST_NULL;
+        }
+
+        // Find finished slot
+        waiting = 0;
+        for (slot = 0; slot < streamer->queue_length; slot++) {
+            if (streamer->request_work[slot] >= 0) {
+                // Check whether all requests are finished
+                int i;
+                for (i = 0; i < facet_work_count; i++)
+                    if (*request_slot(streamer, slot, i) != MPI_REQUEST_NULL)
+                        break;
+                if (i >= facet_work_count)
+                    break;
+                else {
+                    waiting++;
+                }
+            }
+        }
+
+        // Found and task queue not full?
+        if (streamer->subgrid_tasks < streamer->work_cfg->vis_task_queue_length) {
+            if (slot < streamer->queue_length)
+                break;
+            assert(waiting > 0);
+        } else {
+            // We are waiting for tasks to finish - idle for a bit
+            usleep(1000);
+        }
+
+    }
+
+    // Alright, found a slot with all data to form a subgrid.
+    double complex *data_slot = nmbf_slot(streamer, slot, 0);
+    streamer->received_subgrids++;
+    streamer->wait_time += get_time_ns() - start;
+
+    // Do work on received data. If a subgrid appears twice in our
+    // work list, spawn all of the matching work
+    const int iwork = streamer->request_work[slot];
+    int iw;
+    for (iw = iwork; iw < streamer->work_cfg->subgrid_max_work; iw++)
+        if (work[iw].iu == work[iwork].iu && work[iw].iv == work[iwork].iv)
+            streamer_work(streamer, iw, data_slot);
+
+    // Return the (now free) slot
+    streamer->request_work[slot] = -1;
+    return slot;
+}
+
+void *streamer_reader_thread(void *param)
+{
+
+    struct streamer *streamer = (struct streamer *)param;
+
+    struct work_config *wcfg = streamer->work_cfg;
+    struct subgrid_work *work = wcfg->subgrid_work + streamer->subgrid_worker * wcfg->subgrid_max_work;
+    const int facets = wcfg->facet_workers * wcfg->facet_max_work;
+
+    int *waitsome_indices = (int *)malloc(sizeof(int) * facets * streamer->queue_length);
+
+    // Walk through subgrid work packets
+    int iwork = 0, iwork_r = streamer->queue_length;
+    for (iwork = 0; iwork < streamer->work_cfg->subgrid_max_work; iwork++) {
+
+        // Skip?
+        if (!work[iwork].nbl || streamer->skip_receive[iwork])
+            continue;
+
+        // Receive a subgrid. Does not have to be in order.
+        int slot = streamer_receive_a_subgrid(streamer, work, waitsome_indices);
+
+        // Set up slot for new data (if appropriate)
+        while (iwork_r < wcfg->subgrid_max_work && !work[iwork_r].nbl)
+            iwork_r++;
+        if (iwork_r < wcfg->subgrid_max_work) {
+            streamer_ireceive(streamer, iwork_r, slot);
+        }
+        iwork_r++;
+
+    }
+
+    free(waitsome_indices);
+
+    return NULL;
+}
+
+void *streamer_writer_thread(void *param)
+{
+    struct streamer *streamer = (struct streamer *) param;
+
     struct vis_spec *const spec = &streamer->work_cfg->spec;
     const int vis_data_size = sizeof(double complex) * spec->time_chunk * spec->freq_chunk;
     double complex *vis_data_h5 = (double complex *) alloca(vis_data_size);
@@ -159,6 +299,13 @@ void streamer_writer(struct streamer *streamer)
         int fchunk = streamer->vis_fchunk[streamer->vis_out_ptr];
         if (tchunk == -1 && fchunk == -1)
             break; // Signal to end thread
+        if (tchunk == -2 && fchunk == -2) {
+            #pragma omp atomic
+                streamer->chunks_to_write -= 1;
+            omp_unset_lock(streamer->vis_in_lock + streamer->vis_out_ptr);
+            streamer->vis_out_ptr = (streamer->vis_out_ptr + 1) % streamer->vis_queue_length;
+            continue; // Signal to ignore chunk
+        }
         vis_spec_to_bl_data(&bl_data, spec,
                             streamer->vis_a1[streamer->vis_out_ptr],
                             streamer->vis_a2[streamer->vis_out_ptr]);
@@ -193,6 +340,7 @@ void streamer_writer(struct streamer *streamer)
         write_vis_chunk(streamer->vis_group, &bl_data,
                         spec->time_chunk, spec->freq_chunk, tchunk, fchunk,
                         vis_data_h5);
+
         streamer->written_vis_data += vis_data_size;
         if (bls_written[chunk_index])
             streamer->rewritten_vis_data += vis_data_size;
@@ -201,16 +349,141 @@ void streamer_writer(struct streamer *streamer)
         free(bl_data.time); free(bl_data.uvw_m); free(bl_data.freq);
 
         // Release "in" lock to mark the slot free for writing
+        #pragma omp atomic
+            streamer->chunks_to_write -= 1;
         omp_unset_lock(streamer->vis_in_lock + streamer->vis_out_ptr);
         streamer->vis_out_ptr = (streamer->vis_out_ptr + 1) % streamer->vis_queue_length;
         streamer->write_time += get_time_ns() - start;
 
     }
 
+    return NULL;
 }
 
 static double min(double a, double b) { return a > b ? b : a; }
 static double max(double a, double b) { return a < b ? b : a; }
+
+uint64_t streamer_degrid_worker(struct streamer *streamer,
+                                struct bl_data *bl_data,
+                                double complex *subgrid,
+                                double mid_u, double mid_v, int iu, int iv,
+                                int it0, int it1, int if0, int if1,
+                                double min_u, double max_u, double min_v, double max_v,
+                                double complex *vis_data)
+{
+    struct vis_spec *const spec = &streamer->work_cfg->spec;
+    const double theta = streamer->work_cfg->theta;
+    const int subgrid_size = streamer->work_cfg->recombine.xM_size;
+
+    // Calculate l/m positions of sources in case we are meant to
+    // check them
+    int i;
+    const int image_size = streamer->work_cfg->recombine.image_size;
+    const int source_count = streamer->work_cfg->produce_source_count;
+    int source_checks = streamer->work_cfg->produce_source_checks;
+    const double facet_x0 = streamer->work_cfg->spec.fov / streamer->work_cfg->theta / 2;
+    const int image_x0_size = (int)floor(2 * facet_x0 * image_size);
+    double *source_pos_l = NULL, *source_pos_m = NULL;
+    int check_counter = 0;
+    if (source_checks > 0 && source_count > 0) {
+        source_pos_l = (double *)malloc(sizeof(double) * source_count);
+        source_pos_m = (double *)malloc(sizeof(double) * source_count);
+        unsigned int seed = 0;
+        for (i = 0; i < source_count; i++) {
+            int il = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
+            int im = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
+            // Create source positions scaled for quick usage below
+            source_pos_l[i] = 2 * M_PI * il * theta / image_size;
+            source_pos_m[i] = 2 * M_PI * im * theta / image_size;
+        }
+        // Initialise counter to random value so we check random
+        // visibilities
+        check_counter = rand() % source_checks;
+    } else {
+        source_checks = 0;
+    }
+
+    // Do degridding
+    uint64_t flops = 0;
+    uint64_t square_error_samples = 0;
+    double square_error_sum = 0, worst_err = 0;
+    int time, freq;
+    for (time = it0; time < it1; time++) {
+        for (freq = if0; freq < if1; freq++) {
+
+            // Bounds check. Make sure to only degrid visibilities
+            // exactly once - meaning u must be positive, and can only
+            // be 0 if the visibility is not conjugated.
+            double u = uvw_lambda(bl_data, time, freq, 0);
+            double v = uvw_lambda(bl_data, time, freq, 1);
+            double complex vis_out;
+            if (u >= fmax(min_u, 0) && u < max_u &&
+                v >= min_v && v < max_v) {
+
+                // Degrid normal
+                vis_out = degrid_conv_uv(subgrid, subgrid_size, theta,
+                                         u-mid_u, v-mid_v, &streamer->kern, &flops);
+
+            } else if (-u >= fmax(min_u, DBL_MIN) && -u < max_u &&
+                       -v >= min_v && -v < max_v) {
+
+                // Degrid conjugate at negative coordinate
+                vis_out = conj(degrid_conv_uv(subgrid, subgrid_size, theta,
+                                              -u-mid_u, -v-mid_v, &streamer->kern, &flops)
+                               );
+
+            } else {
+                vis_data[(time-it0)*spec->freq_chunk + freq-if0] = 0.;
+                continue;
+            }
+
+            // Write visibility
+            vis_data[(time-it0)*spec->freq_chunk + freq-if0] = vis_out;
+
+            // Check against DFT
+            if (source_checks > 0 && !--check_counter) {
+                check_counter = source_checks;
+
+                // Generate visibility
+                complex double vis = 0;
+                for (i = 0; i < source_count; i++) {
+                    double ph = u * source_pos_l[i] + v * source_pos_m[i];
+                    vis += cos(ph) + 1j * sin(ph);
+                }
+                vis /= (double)image_size * image_size;
+
+                square_error_samples += 1;
+                double err = cabs(vis_out - vis);
+                if (err > 1e-3) {
+                    printf("WARNING: uv %g/%g (sg %d/%d): %g%+gj != %g%+gj",
+                           u, v, iu, iv, creal(vis_out), cimag(vis_out), creal(vis), cimag(vis));
+                }
+                worst_err = fmax(err, worst_err);
+                square_error_sum += err * err;
+
+            }
+        }
+    }
+
+    free(source_pos_l); free(source_pos_m);
+
+    // Add to statistics
+    #pragma omp atomic
+        streamer->square_error_samples += square_error_samples;
+    #pragma omp atomic
+        streamer->square_error_sum += square_error_sum;
+    if (worst_err > streamer->worst_error) {
+        // Likely happens rarely enough that a critical section won't be a problem
+        #pragma omp critical
+           streamer->worst_error = max(streamer->worst_error, worst_err);
+    }
+    #pragma omp atomic
+        streamer->degrid_flops += flops;
+    #pragma omp atomic
+        streamer->produced_chunks += 1;
+
+    return flops;
+}
 
 bool streamer_degrid_chunk(struct streamer *streamer,
                            struct subgrid_work *work,
@@ -223,6 +496,8 @@ bool streamer_degrid_chunk(struct streamer *streamer,
     struct vis_spec *const spec = &streamer->work_cfg->spec;
     struct recombine2d_config *const cfg = &streamer->work_cfg->recombine;
     const double theta = streamer->work_cfg->theta;
+
+    double start = get_time_ns();
 
     double sg_mid_u = work->subgrid_off_u / theta;
     double sg_mid_v = work->subgrid_off_v / theta;
@@ -263,117 +538,53 @@ bool streamer_degrid_chunk(struct streamer *streamer,
     if (!overlap && !inv_overlap)
         return false;
 
-    // Allocate visibility chunk (on stack)
-    const int vis_data_size = sizeof(double complex) * spec->time_chunk * spec->freq_chunk;
-    double complex *vis_data = (double complex *) alloca(vis_data_size);
-    memset(vis_data, 0, vis_data_size);
-
-    // Do degridding
-    double start = get_time_ns();
-    uint64_t flops = 0;
-    uint64_t square_error_samples = 0;
-    double square_error_sum = 0, worst_err = 0;
-    const int source_count = streamer->work_cfg->produce_source_count;
-    const double facet_x0 = streamer->work_cfg->spec.fov / streamer->work_cfg->theta / 2;
-    const int image_size = streamer->work_cfg->recombine.image_size;
-    const int image_x0_size = (int)floor(2 * facet_x0 * image_size);
-    int time, freq;
-    for (time = it0; time < it1; time++) {
-        for (freq = if0; freq < if1; freq++) {
-
-            // Bounds check
-            double u = uvw_lambda(bl_data, time, freq, 0);
-            double v = uvw_lambda(bl_data, time, freq, 1);
-            bool inv = false;
-            if (u >= sg_min_u && u < sg_max_u &&
-                v >= sg_min_v && v < sg_max_v) {
-
-                // Degrid normal
-                vis_data[(time-it0)*spec->freq_chunk + freq-if0] =
-                    degrid_conv_uv(subgrid, cfg->xM_size, theta,
-                                   u-sg_mid_u, v-sg_mid_v, &streamer->kern, &flops);
-
-            } else if (-u >= sg_min_u && -u < sg_max_u &&
-                       -v >= sg_min_v && -v < sg_max_v) {
-
-                // Degrid conjugate at negative coordinate
-                inv = true;
-                vis_data[(time-it0)*spec->freq_chunk + freq-if0] =
-                    conj(degrid_conv_uv(subgrid, cfg->xM_size, theta,
-                                        -u-sg_mid_u, -v-sg_mid_v, &streamer->kern, &flops)
-                         );
-
-            } else {
-                continue;
-            }
-
-            // Check against DFT
-            if (source_count > 0) {
-
-                // Generate visibility
-                complex double vis = 0;
-                unsigned int seed = 0;
-                int i;
-                for (i = 0; i < source_count; i++) {
-                    int il = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
-                    int im = (int)(rand_r(&seed) % image_x0_size) - image_x0_size / 2;
-
-                    double ph = 2 * M_PI * (il * u * theta / image_size + im * v * theta / image_size);
-                    vis += cos(ph) + 1j * sin(ph);
-                }
-                vis /= (double)image_size * image_size;
-
-                square_error_samples += 1;
-                double err = cabs(vis_data[(time-it0)*spec->freq_chunk + freq-if0] - vis);
-                worst_err = fmax(err, worst_err);
-                square_error_sum += err * err;
-
-            }
-        }
-    }
-
-    #pragma omp atomic
-    streamer->degrid_time += get_time_ns() - start;
-
-    // No flops executed? Skip doing I/O
-    if (flops == 0) {
-        return true;
-    }
-
     // Determine our slot (competing with other tasks, so need to have
     // critical section here)
     int vis_slot;
-    start = get_time_ns();
     #pragma omp critical
     {
-        streamer->critical_wait_time += get_time_ns() - start;
         vis_slot = streamer->vis_in_ptr;
         streamer->vis_in_ptr = (streamer->vis_in_ptr + 1) % streamer->vis_queue_length;
-        streamer->square_error_samples += square_error_samples;
-        streamer->square_error_sum += square_error_sum;
-        streamer->worst_error = fmax(streamer->worst_error, worst_err);
     }
 
     // Obtain lock for writing data (writer thread might not have
     // written this data to disk yet)
-    start = get_time_ns();
     if(streamer->vis_group >= 0)
         omp_set_lock(streamer->vis_in_lock + vis_slot);
-    #pragma omp atomic
-    streamer->wait_in_time += get_time_ns() - start;
 
     // Set slot data
-    double complex *vis_data_out = streamer->vis_queue +
-        vis_slot * spec->time_chunk * spec->freq_chunk;
-    memcpy(vis_data_out, vis_data, vis_data_size);
     streamer->vis_a1[vis_slot] = bl->a1;
     streamer->vis_a2[vis_slot] = bl->a2;
     streamer->vis_tchunk[vis_slot] = tchunk;
     streamer->vis_fchunk[vis_slot] = fchunk;
+    #pragma omp atomic
+        streamer->wait_in_time += get_time_ns() - start;
+    start = get_time_ns();
+
+    // Do degridding
+    double complex *vis_data_out = streamer->vis_queue +
+        vis_slot * spec->time_chunk * spec->freq_chunk;
+    uint64_t flops = streamer_degrid_worker(streamer, bl_data, subgrid,
+                                            sg_mid_u, sg_mid_v, work->iu, work->iv,
+                                            it0, it1, if0, if1,
+                                            sg_min_u, sg_max_u, sg_min_v, sg_max_v,
+                                            vis_data_out);
+    #pragma omp atomic
+      streamer->degrid_time += get_time_ns() - start;
+
+    // No flops executed? Signal to writer that we can skip writing
+    // this chunk (small optimisation)
+    if (flops == 0) {
+        streamer->vis_tchunk[vis_slot] = -2;
+        streamer->vis_fchunk[vis_slot] = -2;
+    }
 
     // Signal slot for output
-    if(streamer->vis_group >= 0)
+    if(streamer->vis_group >= 0) {
         omp_unset_lock(streamer->vis_out_lock + vis_slot);
+    #pragma omp atomic
+        streamer->chunks_to_write += 1;
+    }
 
     return true;
 }
@@ -449,7 +660,7 @@ void streamer_work(struct streamer *streamer,
                 break;
         if (slot < streamer->queue_length)
             break;
-#pragma omp taskyield
+        #pragma omp taskyield
     }
 
     double recombine_start = get_time_ns();
@@ -554,25 +765,21 @@ void streamer_work(struct streamer *streamer,
             // We are spawning a task: Add lock to subgrid data to
             // make sure it doesn't get overwritten
             #pragma omp atomic
-            streamer->subgrid_tasks++;
+              streamer->subgrid_tasks++;
             #pragma omp atomic
-            streamer->subgrid_locks[slot]++;
-
-            // Task queue full? Execute directly
-            if (streamer->subgrid_tasks >= streamer->work_cfg->vis_task_queue_length) {
-                streamer_task(streamer, work, bl, slot, subgrid_work, subgrid);
-                continue;
-            }
+              streamer->subgrid_locks[slot]++;
 
             // Start task. Make absolutely sure it sees *everything*
             // as private, as Intel's C compiler otherwise loves to
             // generate segfaulting code. OpenMP complains here that
             // having a "private" constant is unecessary (requiring
             // the copy), but I don't trust its judgement.
+            double task_start = get_time_ns();
             struct subgrid_work *_work = work;
             #pragma omp task firstprivate(streamer, _work, bl, slot, subgrid_work, subgrid)
                 streamer_task(streamer, _work, bl, slot, subgrid_work, subgrid);
-
+            #pragma omp atomic
+                streamer->task_start_time += get_time_ns() - task_start;
         }
 
         printf("Subgrid %d/%d (%d baselines)\n", work->iu, work->iv, i_bl);
@@ -595,8 +802,9 @@ bool streamer_init(struct streamer *streamer,
 
     streamer->have_kern = false;
     streamer->vis_file = streamer->vis_group = -1;
+    streamer->num_workers = omp_get_max_threads();
     streamer->wait_time = streamer->wait_in_time = streamer->wait_out_time =
-        streamer->critical_wait_time = streamer->recombine_time = 0;
+        streamer->task_start_time = streamer->recombine_time = 0;
     streamer->read_time = streamer->write_time = streamer->degrid_time = 0;
     streamer->received_data = 0;
     streamer->received_subgrids = streamer->baselines_covered = 0;
@@ -604,6 +812,11 @@ bool streamer_init(struct streamer *streamer,
     streamer->square_error_samples = 0;
     streamer->square_error_sum = 0;
     streamer->worst_error = 0;
+    streamer->degrid_flops = 0;
+    streamer->produced_chunks = 0;
+    streamer->task_yields = 0;
+    streamer->chunks_to_write = 0;
+    streamer->finished = false;
 
     // Load gridding kernel
     if (wcfg->gridder_path) {
@@ -649,6 +862,7 @@ bool streamer_init(struct streamer *streamer,
     // Allocate receive queue
     streamer->nmbf_queue = (double complex *)malloc(queue_size);
     streamer->request_queue = (MPI_Request *)malloc(requests_size);
+    streamer->request_work = (int *)malloc(sizeof(int) * streamer->queue_length);
     streamer->subgrid_queue = (double complex *)malloc(sg_queue_size);
     streamer->subgrid_locks = (int *)calloc(sizeof(int), streamer->queue_length);
     streamer->skip_receive = (bool *)calloc(sizeof(bool), wcfg->subgrid_max_work);
@@ -659,24 +873,25 @@ bool streamer_init(struct streamer *streamer,
         fprintf(stderr, "ERROR: Could not allocate subgrid queue!\n");
         return false;
     }
-    int i;
-    for (i = 0; i < facets * streamer->queue_length; i++) {
-        streamer->request_queue[i] = MPI_REQUEST_NULL;
+
+    // Populate receive queue
+    int iwork;
+    for (iwork = 0; iwork < wcfg->subgrid_max_work && iwork < streamer->queue_length; iwork++) {
+        streamer_ireceive(streamer, iwork, iwork);
     }
-    streamer->subgrid_tasks = 0;
+    for (; iwork < streamer->queue_length; iwork++) {
+        int i;
+        for (i = 0; i < facets; i++) {
+            *request_slot(streamer, iwork, i) = MPI_REQUEST_NULL;
+        }
+        streamer->request_work[iwork] = -1;
+    }
 
     // Plan FFTs
     streamer->subgrid_plan = fftw_plan_dft_2d(cfg->xM_size, cfg->xM_size,
                                               streamer->subgrid_queue,
                                               streamer->subgrid_queue,
                                               FFTW_BACKWARD, FFTW_MEASURE);
-
-    // Populate receive queue
-    int iwork;
-    for (iwork = 0; iwork < wcfg->subgrid_max_work && iwork < streamer->queue_length; iwork++) {
-        streamer_ireceive(streamer, iwork);
-    }
-
     // Allocate visibility queue
     streamer->vis_queue = malloc((size_t)streamer->vis_queue_length * vis_data_size);
     streamer->vis_a1 = malloc((size_t)streamer->vis_queue_length * sizeof(int));
@@ -694,6 +909,7 @@ bool streamer_init(struct streamer *streamer,
         return false;
     }
 
+    int i;
     for (i = 0; i < streamer->vis_queue_length; i++) {
         omp_init_lock(streamer->vis_in_lock + i);
         omp_init_lock(streamer->vis_out_lock + i);
@@ -701,6 +917,63 @@ bool streamer_init(struct streamer *streamer,
     }
 
     return true;
+}
+
+void streamer_free(struct streamer *streamer,
+                   double stream_start)
+{
+
+    free(streamer->nmbf_queue); free(streamer->subgrid_queue);
+    free(streamer->request_queue); free(streamer->subgrid_locks);
+    free(streamer->skip_receive);
+    fftw_free(streamer->subgrid_plan);
+    free(streamer->vis_queue);
+    free(streamer->vis_a1); free(streamer->vis_a2);
+    free(streamer->vis_tchunk); free(streamer->vis_fchunk);
+    free(streamer->vis_in_lock); free(streamer->vis_out_lock);
+
+    if (streamer->vis_group >= 0) {
+        H5Gclose(streamer->vis_group); H5Fclose(streamer->vis_file);
+    }
+
+    double stream_time = get_time_ns() - stream_start;
+    printf("Streamed for %.2fs\n", stream_time);
+    printf("Received %.2f GB (%ld subgrids, %ld baselines)\n",
+           (double)streamer->received_data / 1000000000, streamer->received_subgrids,
+           streamer->baselines_covered);
+    printf("Written %.2f GB (rewritten %.2f GB), rate %.2f GB/s (%.2f GB/s effective)\n",
+           (double)streamer->written_vis_data / 1000000000,
+           (double)streamer->rewritten_vis_data / 1000000000,
+           (double)streamer->written_vis_data / 1000000000 / stream_time,
+           (double)(streamer->written_vis_data - streamer->rewritten_vis_data)
+           / 1000000000 / stream_time);
+    printf("Receiver: Wait: %gs, Recombine: %gs, Idle: %gs\n",
+           streamer->wait_time, streamer->recombine_time,
+           stream_time - streamer->wait_time - streamer->recombine_time);
+    printf("Worker: Wait: %gs, Degrid: %gs, Idle: %gs\n",
+           streamer->wait_in_time,
+           streamer->degrid_time,
+           streamer->num_workers * stream_time
+           - streamer->wait_in_time - streamer->degrid_time
+           - streamer->wait_time - streamer->recombine_time);
+    printf("Writer: Wait: %gs, Read: %gs, Write: %gs, Idle: %gs\n",
+           streamer->wait_out_time, streamer->read_time, streamer->write_time,
+           stream_time - streamer->wait_out_time - streamer->read_time - streamer->write_time);
+    printf("Operations: degrid %.1f GFLOP/s (%ld chunks)\n",
+           (double)streamer->degrid_flops / stream_time / 1000000000,
+           streamer->produced_chunks);
+    if (streamer->square_error_samples > 0) {
+        // Calculate root mean square error
+        double rmse = sqrt(streamer->square_error_sum / streamer->square_error_samples);
+        // Normalise by assuming that the energy of sources is
+        // distributed evenly to all grid points
+        const int source_count = streamer->work_cfg->produce_source_count;
+        const int image_size = streamer->work_cfg->recombine.image_size;
+        double energy = (double)source_count / image_size / image_size;
+        printf("Accuracy: RMSE %g, worst %g (%ld samples)\n", rmse / energy,
+               streamer->worst_error / energy, streamer->square_error_samples);
+    }
+
 }
 
 void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
@@ -711,128 +984,53 @@ void streamer(struct work_config *wcfg, int subgrid_worker, int *producer_ranks)
         return;
     }
 
-    struct subgrid_work *work = wcfg->subgrid_work + subgrid_worker * wcfg->subgrid_max_work;
-    const int facets = wcfg->facet_workers * wcfg->facet_max_work;
-    const int nmbf_length = wcfg->recombine.NMBF_NMBF_size / sizeof(double complex);
-
-#ifndef NO_MPI
-    MPI_Status *status_queue = (MPI_Status *)
-        malloc(sizeof(MPI_Status) * facets * streamer.queue_length);
-#endif
-
-    printf("Waiting for data...\n");
     double stream_start = get_time_ns();
 
-    // Start doing work
-    int num_workers = 0;
+    // Add reader, writer and statistic threads to OpenMP
+    // threads. Those will idle most of the time, and therefore should
+    // not count towards worker limit.
+    int num_threads = streamer.num_workers;
+    num_threads++; // reader thread
+    if (streamer.vis_file >= 0) {
+        num_threads++; // writer thread
+    }
+    omp_set_num_threads(num_threads);
+    printf("Waiting for data (%d threads)...\n", num_threads);
+
+    // Start doing work. Note that all the actual work will be added
+    // by the reader thread, which will generate OpenMP tasks to be
+    // executed by the following parallel section. All we're doing
+    // here is yielding to them and shutting everything down once all
+    // work has been completed.
 #pragma omp parallel sections
     {
 #pragma omp section
-    if(streamer.vis_group >= 0)
-        streamer_writer(&streamer);
+    {
+        streamer_reader_thread(&streamer);
+
+        // Wait for tasks to finish (could do a taskwait, but that
+        // might mess up the thread balance)
+        while (streamer.subgrid_tasks > 0) {
+            usleep(10000);
+        }
+        #pragma omp taskwait // Just to be sure
+
+        // All work is done - signal writer task to exit
+        streamer.finished = true;
+        omp_set_lock(streamer.vis_in_lock + streamer.vis_in_ptr);
+        streamer.vis_tchunk[streamer.vis_in_ptr] = -1;
+        streamer.vis_fchunk[streamer.vis_in_ptr] = -1;
+        omp_unset_lock(streamer.vis_out_lock + streamer.vis_in_ptr);
+    }
 
 #pragma omp section
     {
-    // Determine number of workers. If we are streaming to disk (see
-    // above) this will tie up one thread from the pool permanently.
-    num_workers = omp_get_num_threads();
-    if(streamer.vis_group >= 0)
-        num_workers--;
-
-    int iwork;
-    for (iwork = 0; iwork < wcfg->subgrid_max_work; iwork++) {
-        int work_slot = iwork % streamer.queue_length;
-        double complex *data_slot = streamer.nmbf_queue + work_slot * facets * nmbf_length;
-
-        if (work[iwork].nbl && !streamer.skip_receive[iwork]) {
-
-            double start = get_time_ns();
-#ifndef NO_MPI
-            // Wait for all facet data for this work to arrive (TODO:
-            // start doing some work earlier)
-            MPI_Waitall(facets, streamer.request_queue + facets * work_slot,
-                        status_queue + facets * work_slot);
-#endif
-            int i;
-            for (i = 0; i < facets; i++) {
-                streamer.request_queue[facets * work_slot + i] = MPI_REQUEST_NULL;
-            }
-            streamer.received_data += sizeof(double complex) * facets * nmbf_length;
-            streamer.received_subgrids++;
-            streamer.wait_time += get_time_ns() - start;
+        if (streamer.vis_file >= 0) {
+            streamer_writer_thread(&streamer);
         }
+    } // #pragma omp section
+    } // #pragma omp parallel sections
 
-        // Do work on received data
-        streamer_work(&streamer, iwork, data_slot);
-
-        // Set up slot for new data (if appropriate)
-        int iwork_r = iwork + streamer.queue_length;
-        if (iwork_r < wcfg->subgrid_max_work) {
-            streamer_ireceive(&streamer, iwork_r);
-        }
-
-    }
-
-    #pragma omp taskwait
-
-    // Signal writer task to exit
-    omp_set_lock(streamer.vis_in_lock + streamer.vis_in_ptr);
-    streamer.vis_tchunk[streamer.vis_in_ptr] = -1;
-    streamer.vis_fchunk[streamer.vis_in_ptr] = -1;
-    omp_unset_lock(streamer.vis_out_lock + streamer.vis_in_ptr);
-
-    }
-    }
-
-    free(streamer.nmbf_queue); free(streamer.subgrid_queue);
-    free(streamer.request_queue); free(streamer.subgrid_locks);
-    free(streamer.skip_receive);
-    fftw_free(streamer.subgrid_plan);
-#ifndef NO_MPI
-    free(status_queue);
-#endif
-    free(streamer.vis_queue);
-    free(streamer.vis_a1); free(streamer.vis_a2);
-    free(streamer.vis_tchunk); free(streamer.vis_fchunk);
-    free(streamer.vis_in_lock); free(streamer.vis_out_lock);
-
-    if (streamer.vis_group >= 0) {
-        H5Gclose(streamer.vis_group); H5Fclose(streamer.vis_file);
-    }
-
-    double stream_time = get_time_ns() - stream_start;
-    printf("Streamed for %.2fs\n", stream_time);
-    printf("Received %.2f GB (%ld subgrids, %ld baselines)\n",
-           (double)streamer.received_data / 1000000000, streamer.received_subgrids,
-           streamer.baselines_covered);
-    printf("Written %.2f GB (rewritten %.2f GB), rate %.2f GB/s (%.2f GB/s effective)\n",
-           (double)streamer.written_vis_data / 1000000000,
-           (double)streamer.rewritten_vis_data / 1000000000,
-           (double)streamer.written_vis_data / 1000000000 / stream_time,
-           (double)(streamer.written_vis_data - streamer.rewritten_vis_data)
-           / 1000000000 / stream_time);
-    printf("Receiver: Wait: %gs, Recombine: %gs, Idle: %gs\n",
-           streamer.wait_time, streamer.recombine_time,
-           stream_time - streamer.wait_time - streamer.recombine_time);
-    printf("Worker: Wait: %gs, Critical: %gs, Degrid: %gs, Idle: %gs\n",
-           streamer.wait_in_time, streamer.critical_wait_time,
-           streamer.degrid_time,
-           num_workers * stream_time
-           - streamer.wait_in_time - streamer.critical_wait_time - streamer.degrid_time
-           - streamer.wait_time - streamer.recombine_time);
-    printf("Writer: Wait: %gs, Read: %gs, Write: %gs, Idle: %gs\n",
-           streamer.wait_out_time, streamer.read_time, streamer.write_time,
-           stream_time - streamer.wait_out_time - streamer.read_time - streamer.write_time);
-    if (streamer.square_error_samples > 0) {
-        // Calculate root mean square error
-        double rmse = sqrt(streamer.square_error_sum / streamer.square_error_samples);
-        // Normalise by assuming that the energy of sources is
-        // distributed evenly to all grid points
-        const int source_count = wcfg->produce_source_count;
-        const int image_size = wcfg->recombine.image_size;
-        double energy = (double)source_count / image_size / image_size;
-        printf("Accuracy: RMSE %g, worst %g (%ld samples)\n", rmse / energy,
-               streamer.worst_error / energy, streamer.square_error_samples);
-    }
+    streamer_free(&streamer, stream_start);
 
 }

@@ -82,6 +82,7 @@ struct work_config {
     int produce_parallel_cols;
     int produce_retain_bf;
     int produce_source_count;
+    int produce_source_checks;
     int produce_batch_rows;
     int produce_queue_length;
     int vis_skip_metadata;
