@@ -12,7 +12,7 @@ TEST_RECOMBINE_OBJS = recombine.o test_recombine.o grid.o hdf5.o
 TEST_CONFIG_OBJS = test_config.o config.o recombine.o  hdf5.o
 
 iotest : $(IOTEST_OBJS)
-recombine : $(BENCH_RECOMBINE_OBJS)
+test_recombine : $(TEST_RECOMBINE_OBJS)
 test_config : $(TEST_CONFIG_OBJS)
 
 .PHONY: clean
