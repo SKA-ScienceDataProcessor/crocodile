@@ -551,12 +551,13 @@ void config_init(struct work_config *cfg)
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
     cfg->produce_source_count = 0;
+    cfg->produce_source_checks = 16384;
     cfg->produce_batch_rows = 16;
     cfg->produce_queue_length = 4;
     cfg->vis_skip_metadata = true;
     cfg->vis_bls_per_task = 256;
     cfg->vis_subgrid_queue_length = 4;
-    cfg->vis_task_queue_length = 32;
+    cfg->vis_task_queue_length = 96;
     cfg->vis_chunk_queue_length = 32768;
 
     cfg->statsd_socket = -1;
