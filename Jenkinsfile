@@ -29,17 +29,6 @@ done
 '''
            }
         }
-
-        stage('Make Documentation') {
-            steps {
-                sh '''
-cd $WORKSPACE
-. $WORKSPACE/_build/bin/activate
-
-make -k -j 4 -C docs html
-'''
-           }
-        }
     }
     post {
         failure {
