@@ -105,40 +105,6 @@ struct sep_kernel_data
     int oversampling;
 };
 
-// W-kernel data
-struct w_kernel
-{
-    double complex *data;
-    double w;
-};
-struct w_kernel_data
-{
-    int plane_count;
-    struct w_kernel *kern;
-    struct w_kernel *kern_by_w;
-    double w_min, w_max, w_step;
-    int size_x, size_y;
-    int oversampling;
-};
-
-// A-kernel data
-struct a_kernel
-{
-    double complex *data;
-    int antenna;
-    double time;
-    double freq;
-};
-struct a_kernel_data
-{
-    int antenna_count, time_count, freq_count;
-    struct a_kernel *kern;
-    struct a_kernel *kern_by_atf;
-    double t_min, t_max, t_step;
-    double f_min, f_max, f_step;
-    int size_x, size_y;
-};
-
 // Performance counter data
 struct perf_counters
 {
@@ -168,18 +134,10 @@ bool write_vis_chunk(hid_t vis_group,
 
 int load_vis(const char *filename, struct vis_data *vis,
              double min_len, double max_len);
-int load_wkern(const char *filename, double theta,
-               struct w_kernel_data *wkern);
-int load_akern(const char *filename, double theta,
-               struct a_kernel_data *akern);
 int load_sep_kern(const char *filename, struct sep_kernel_data *sepkern);
 
 void frac_coord(int grid_size, int oversample,
                 double u, int *x, int *fx);
-void weight(unsigned int *wgrid, int grid_size, double theta,
-            struct vis_data *vis);
-uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
-                     struct vis_data *vis);
 double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double theta,
                               double u, double v,
                               struct sep_kernel_data *kernel,
@@ -189,22 +147,6 @@ uint64_t degrid_conv_bl(double complex *uvgrid, int grid_size, double theta,
                         double min_u, double max_u, double min_v, double max_v,
                         struct bl_data *bl, int time0, int time1, int freq0, int freq1,
                         struct sep_kernel_data *kernel);
-uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
-                          struct vis_data *vis, struct w_kernel_data *wkern);
-uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
-                      double theta,
-                      struct vis_data *vis, struct w_kernel_data *wkern,
-                      int subgrid_size, int fsample_size,
-                      int subgrid_margin, double wincrement);
-void convolve_aw_kernels(struct bl_data *bl,
-                         struct w_kernel_data *wkern,
-                         struct a_kernel_data *akern);
-uint64_t grid_awprojection(double complex *uvgrid, int grid_size, double theta,
-                           struct vis_data *vis,
-                           struct w_kernel_data *wkern,
-                           struct a_kernel_data *akern,
-                           int bl_min, int bl_max);
-void make_hermitian(double complex *uvgrid, int grid_size);
 void fft_shift(double complex *uvgrid, int grid_size);
 
 void open_perf_counters(struct perf_counters *counter);
