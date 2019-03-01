@@ -74,14 +74,14 @@ static double complex *nmbf_slot(struct streamer *streamer, int slot, int facet)
 {
     const int facets = streamer->work_cfg->facet_workers * streamer->work_cfg->facet_max_work;
     const int xM_yN_size = streamer->work_cfg->recombine.xM_yN_size;
-    assert(facet >= 0 && facet < facets);
+    assert(facet >= 0 && facet < (facets == 0 ? 1 : facets));
     return streamer->nmbf_queue + xM_yN_size * xM_yN_size * ((slot * facets) + facet);
 }
 
 static MPI_Request *request_slot(struct streamer *streamer, int slot, int facet)
 {
     const int facets = streamer->work_cfg->facet_workers * streamer->work_cfg->facet_max_work;
-    assert(facet >= 0 && facet < facets);
+    assert(facet >= 0 && facet < (facets == 0 ? 1 : facets));
     return streamer->request_queue + (slot * facets) + facet;
 }
 
