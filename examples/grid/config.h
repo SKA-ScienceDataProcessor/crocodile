@@ -77,6 +77,8 @@ struct work_config {
     struct recombine2d_config recombine;
 
     // Parameters
+    int config_dump_baseline_bins;
+    int config_dump_subgrid_work;
     int produce_parallel_cols;
     int produce_retain_bf;
     int produce_source_count;

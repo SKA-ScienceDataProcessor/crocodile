@@ -170,7 +170,8 @@ static void bin_baseline(struct vis_spec *spec, double lam, double xA,
 // Bin baselines per overlapping subgrid
 static int collect_baselines(struct vis_spec *spec,
                              double lam, double xA,
-                             int **pnbl, struct subgrid_work_bl ***pbls)
+                             int **pnbl, struct subgrid_work_bl ***pbls,
+                             bool dump_baselines)
 {
 
     // Determine number of subgrid bins we need
@@ -215,6 +216,23 @@ static int collect_baselines(struct vis_spec *spec,
 
     free(sg_mins); free(sg_maxs);
 
+    // Produce dump if requested
+    if (dump_baselines) {
+        printf("Baseline bins:\n---\niu,iv,chunks\n");
+        for (iv = 0; iv < nsubgrid; iv++) {
+            for (iu = nsubgrid/2; iu < nsubgrid; iu++) {
+                int chunks = 0; struct subgrid_work_bl *bl;
+                for (bl = bls[nsubgrid*iv+iu]; bl; bl=bl->next) {
+                    chunks += bl->chunks;
+                }
+                if (chunks) {
+                    printf("%d,%d,%d\n", iu, iv, chunks);
+                }
+            }
+        }
+        printf("---\n");
+    }
+
     *pnbl = nbl;
     *pbls = bls;
     return nsubgrid;
@@ -255,7 +273,7 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
     printf("Binning chunks...\n");
     double start = get_time_ns();
     int nsubgrid = collect_baselines(spec, cfg->recombine.image_size / cfg->theta,
-                                     xA, &nbl, &bls);
+                                     xA, &nbl, &bls, cfg->config_dump_baseline_bins);
     printf(" %g s\n", get_time_ns() - start);
 
     // Count how many sub-grids actually have visibilities
@@ -427,6 +445,20 @@ static bool generate_subgrid_work_assignment(struct work_config *cfg)
     }
     printf("Assigned workers %d chunks min, %d chunks max (after %d swaps)\n", min_vis, max_vis, nswaps);
 
+    if (cfg->config_dump_subgrid_work) {
+        printf("Subgrid work (after swaps):\n---\nworker,work,chunks\n");
+        for (i = 0; i < cfg->subgrid_workers; i++) {
+            int j;
+            for (j = 0; j < cfg->subgrid_max_work; j++) {
+                struct subgrid_work *work = cfg->subgrid_work + i* cfg->subgrid_max_work+j;
+                if (work->nbl > 0) {
+                    printf("%d,%d,%d\n", i,j, work->nbl);
+                }
+            }
+        }
+        puts("---");
+    }
+
     return true;
 }
 
@@ -514,6 +546,8 @@ void config_init(struct work_config *cfg)
     // Initialise structure
     memset(cfg, 0, sizeof(*cfg));
     cfg->gridder_x0 = 0.5;
+    cfg->config_dump_baseline_bins = false;
+    cfg->config_dump_subgrid_work = false;
     cfg->produce_parallel_cols = false;
     cfg->produce_retain_bf = true;
     cfg->produce_source_count = 0;

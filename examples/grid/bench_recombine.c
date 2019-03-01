@@ -250,6 +250,8 @@ bool set_cmdarg_config(int argc, char **argv,
         {"grid",       required_argument, 0, Opt_grid },
         {"vis-set",    required_argument, 0, Opt_vis_set},
         {"add-meta",   no_argument,       &cfg->vis_skip_metadata, false },
+        {"dump-baseline-bins", no_argument, &cfg->config_dump_baseline_bins, true },
+        {"dump-subgrid-work", no_argument, &cfg->config_dump_subgrid_work, true },
 
         {"recombine",  required_argument, 0, Opt_recombine },
         {"rec-aa",     required_argument, 0, Opt_rec_aa },
