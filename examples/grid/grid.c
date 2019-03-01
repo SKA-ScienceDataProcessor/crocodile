@@ -10,7 +10,7 @@
 #include <fftw3.h>
 #include <omp.h>
 #include <fenv.h>
-#ifdef USE_AVX
+#ifdef __AVX2__
 #include <immintrin.h>
 #endif
 
@@ -188,7 +188,8 @@ double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double thet
                       theta, u, v,
                       &grid_offset, &sub_offset_x, &sub_offset_y);
 
-#ifndef USE_AVX
+#ifndef __AVX2__
+
     // Get visibility
     double complex vis = 0;
     int y, x;
@@ -206,6 +207,7 @@ double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double thet
 #else
 
     // Get visibility
+    assert(kernel->size % 2 == 0);
     double test[4];
     __m256d vis = _mm256_setzero_pd();
     int y, x;
