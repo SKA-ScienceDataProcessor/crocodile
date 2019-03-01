@@ -42,7 +42,6 @@ void simple_benchmark(const char *filename,
     int nfchunk = (spec->freq_count + spec->freq_chunk - 1) / spec->freq_chunk;
     double lam = (double)work_cfg->recombine.image_size / work_cfg->theta;
     double xA = (double)work_cfg->recombine.xA_size / work_cfg->recombine.image_size;
-    printf("lam = %g, xA = %g\n");
     for (iwork = 0; iwork < work_cfg->subgrid_max_work; iwork++) {
         if (!work[iwork].nbl) continue;
 

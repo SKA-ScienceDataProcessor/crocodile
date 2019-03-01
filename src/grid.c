@@ -103,7 +103,6 @@ double complex degrid_conv_uv(double complex *uvgrid, int grid_size, double thet
 
     // Get visibility
     assert(kernel->size % 2 == 0);
-    double test[4];
     __m256d vis = _mm256_setzero_pd();
     int y, x;
     for (y = 0; y < kernel->size; y += 1) {
