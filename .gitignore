@@ -1,41 +1,12 @@
 
 /.gitignore~
-/.idea
-/.cproject
-/.project
-/.eggs
-/crocodile.egg-info
 
-*.pyc
 *.o
+*.wisdom
 *~
 \#*\#
 perf.data
-/build
-/_build
 
-/examples/**/*.rst
-/examples/**/*.html
-/examples/*/figures
-/examples/*/*_files
-/examples/*/.ipynb_checkpoints
-/examples/pyweave/figures
-/examples/pyweave/docset.zip
-/examples/anna/simulated_data.txt
-
-/examples/**/*.h5
-/examples/**/*.grid
-
-/docs/build
-/docs/pyweave
-/docs/notebooks
-/docs/anna
-/docs/ben
-/docs/arl
-.ipynb_checkpoints
-
-/*.fits
-
-/doc
-/.ipynb_checkpoints
-.DS_Store
+src/iotest
+src/test_recombine
+src/test_config

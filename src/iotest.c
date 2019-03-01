@@ -559,7 +559,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     // Read FFTW wisdom to get through planning quicker
-    fftw_import_wisdom_from_filename("recombine.wisdom");
+    fftw_import_wisdom_from_filename("iotest.wisdom");
 
     // HDF5 initialisation
     init_dtype_cpx();
