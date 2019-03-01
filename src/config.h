@@ -11,6 +11,9 @@ struct vis_spec
     double dec; // declination (radian)
     double time_start; int time_count; int time_chunk; double time_step; // hour angle (radian)
     double freq_start; int freq_count; int freq_chunk; double freq_step; // (Hz)
+    // Cached hour angle / declination cosinus & sinus
+    double *ha_sin, *ha_cos;
+    double dec_sin, dec_cos;
 };
 
 // Work to do on a facet

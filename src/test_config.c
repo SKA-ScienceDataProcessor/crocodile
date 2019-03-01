@@ -108,13 +108,13 @@ int main(int argc, char *argv[])
     spec.fov = 0.1;
     spec.dec = 90 * atan(1) * 4 / 180;
     spec.time_start = 10 * -45 / 3600; // h
-    spec.time_count = 64;
+    spec.time_count = 512;
     spec.time_chunk = 64;
     spec.time_step = 0.9 / 3600; // h
-    spec.freq_start = 250e6; // Hz
-    spec.freq_count = 64;
+    spec.freq_start = 225e6; // Hz
+    spec.freq_count = 4096;
     spec.freq_chunk = 64;
-    spec.freq_step = 50.e6 / spec.freq_count; // Hz
+    spec.freq_step = 75.e6 / spec.freq_count; // Hz
 
     struct work_config work_cfg;
     config_init(&work_cfg);
@@ -125,8 +125,7 @@ int main(int argc, char *argv[])
                     704, 1024, 146)) {
         return 1;
     }
-    double fov = (double)work_cfg.recombine.image_size / 210000;
-    config_set_visibilities(&work_cfg, &spec, fov, NULL);
+    config_set_visibilities(&work_cfg, &spec, spec.fov / 2 / 0.4, NULL);
     config_assign_work(&work_cfg, 9, subgrid_workers);
 
     int i;
