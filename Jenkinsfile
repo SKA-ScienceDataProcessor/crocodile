@@ -7,55 +7,24 @@ pipeline {
         cron(env.BRANCH_NAME == 'master' ? '@daily' : '')
         githubPush()
     }
-    environment {
-        MPLBACKEND='agg'
-        CROCODILE="${env.WORKSPACE}"
-    }
     options { timestamps() }
     stages {
-        stage('Setup') {
+        stage('Test benchmark') {
             steps {
                 sh '''
-# Set up fresh Python virtual environment
-virtualenv -p `which python3` --no-site-packages _build
-. _build/bin/activate
+cd $WORKSPACE/src
 
-# Install requirements
-pip install -U pip setuptools
-pip install -r requirements.txt
-pip install pymp-pypi
-jupyter nbextension enable --py widgetsnbextension
-pip install pytest pytest-xdist pytest-cov
-'''
-            }
-        }
-        stage('Test Python') {
-            steps {
-                sh '''
-cd $WORKSPACE
-. _build/bin/activate
-
-py.test -n 4 --verbose tests
-'''
-            }
-        }
-
-        stage('Test Recombination') {
-            steps {
-                sh '''
-cd $WORKSPACE/examples/grid
-
-make -k -j 4 test_recombine test_config recombine
+make -k -j 4 test_recombine test_config iotest
 ./test_recombine
 
 # Standard test
-mpirun -n 2 ./recombine --rec-set=T05 | tee recombine.out
-if grep ERROR recombine.out; then exit 1; fi
+mpirun -n 2 ./iotest --rec-set=T05 | tee iotest.out
+if grep ERROR iotest.out; then exit 1; fi
 
 # Distributed tests
 for i in $(seq 0 16); do
-  mpirun -n 16 ./recombine --rec-set=T05 --facet-workers=$i > recombine$i.out
-  if grep ERROR recombine$i.out; then exit 1; fi
+  mpirun -n 16 ./iotest --rec-set=T05 --facet-workers=$i > iotest$i.out
+  if grep ERROR iotest$i.out; then exit 1; fi
 done
 '''
            }
