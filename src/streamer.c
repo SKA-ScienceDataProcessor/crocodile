@@ -179,8 +179,10 @@ int streamer_receive_a_subgrid(struct streamer *streamer,
         // indicated requests were actually cleared (this behaviour
         // isn't exactly prominently documented?).
         int i;
+        if (index_count > 0) {
 #pragma omp atomic
-        streamer->received_data += index_count * streamer->work_cfg->recombine.NMBF_NMBF_size;
+            streamer->received_data += index_count * streamer->work_cfg->recombine.NMBF_NMBF_size;
+        }
         for (i = 0; i < index_count; i++) {
             assert(streamer->request_queue[waitsome_indices[i]] == MPI_REQUEST_NULL);
             streamer->request_queue[waitsome_indices[i]] = MPI_REQUEST_NULL;
@@ -951,6 +953,10 @@ bool streamer_init(struct streamer *streamer,
 
     // Calculate size of queues
     streamer->queue_length = wcfg->vis_subgrid_queue_length;
+    if (streamer->queue_length < streamer->num_workers) {
+	fprintf(stderr, "WARNING: %d workers, but %d subgrid queue length, might undersaturate!",
+		streamer->num_workers, streamer->queue_length);
+    }
     streamer->vis_queue_length = wcfg->vis_chunk_queue_length;
     const int nmbf_length = cfg->NMBF_NMBF_size / sizeof(double complex);
     const size_t queue_size = (size_t)sizeof(double complex) * nmbf_length * facets * streamer->queue_length;

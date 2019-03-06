@@ -556,9 +556,9 @@ void config_init(struct work_config *cfg)
     cfg->produce_queue_length = 4;
     cfg->vis_skip_metadata = true;
     cfg->vis_bls_per_task = 256;
-    cfg->vis_subgrid_queue_length = 4;
+    cfg->vis_subgrid_queue_length = 32;
     cfg->vis_task_queue_length = 96;
-    cfg->vis_chunk_queue_length = 32768;
+    cfg->vis_chunk_queue_length = 2048;
 
     cfg->statsd_socket = -1;
     cfg->statsd_rate = 1;
