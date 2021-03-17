@@ -22,6 +22,9 @@ perf.data
 /examples/pyweave/figures
 /examples/pyweave/docset.zip
 /examples/anna/simulated_data.txt
+/examples/notebooks/*.tsv
+/examples/notebooks/*.tikz
+/examples/notebooks/*.png
 
 /examples/**/*.h5
 /examples/**/*.grid
